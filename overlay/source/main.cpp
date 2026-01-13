@@ -190,7 +190,8 @@ public:
         char current[64];
         if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, current))) {
             if (strlen(current) == 16 && strncmp(current, "Ryujinx-", 8) == 0) {
-                strncpy(m_input, current + 8, 8);
+                memcpy(m_input, current + 8, 8);
+                m_input[8] = '\0';
                 m_inputLen = 8;
             }
         }
@@ -339,7 +340,7 @@ private:
 
     void UpdateSelectedKeyDisplay() {
         if (m_selectedKeyItem) {
-            char buf[32];
+            char buf[48];
             snprintf(buf, sizeof(buf), "'%c' (row %d, col %d)", GetSelectedChar(), m_cursorY + 1, m_cursorX + 1);
             m_selectedKeyItem->setValue(buf);
         }
