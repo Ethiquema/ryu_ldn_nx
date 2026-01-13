@@ -7,6 +7,9 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     name: Unit Tests
@@ -196,3 +199,76 @@ jobs:
         with:
           name: ryu_ldn_nx-${{ github.sha }}
           path: ryu_ldn_nx-${{ github.sha }}.zip
+
+  pre-release:
+    name: Create Pre-Release
+    runs-on: ubuntu-latest
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ryu_ldn_nx-${{ github.sha }}
+          path: .
+
+      - name: Download debug symbols
+        uses: actions/download-artifact@v4
+        with:
+          name: ryu_ldn_nx-debug-${{ github.sha }}
+          path: debug
+
+      - name: Get short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      - name: Delete existing pre-release
+        run: |
+          gh release delete dev --yes || true
+          git push origin :refs/tags/dev || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pre-Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: dev
+          name: "Development Build (${{ steps.sha.outputs.short }})"
+          prerelease: true
+          body: |
+            ## Development Build
+
+            **Commit:** ${{ github.sha }}
+            **Branch:** main
+            **Date:** ${{ github.event.head_commit.timestamp }}
+
+            ---
+
+            ### WARNING
+
+            This is an automatic development build. **No guarantee of functionality.**
+
+            These builds are automatically generated on each commit to the main branch and may
+            contain bugs, incomplete features, or regressions.
+
+            **Use at your own risk.**
+
+            ---
+
+            ### Installation
+
+            1. Download the ZIP below
+            2. Extract to the root of your SD card
+            3. Reboot your Switch
+
+            ### Files
+
+            - `ryu_ldn_nx-*.zip` - Complete package (sysmodule + overlay + config)
+            - `ryu_ldn_nx.elf` - Debug symbols
+          files: |
+            ryu_ldn_nx-${{ github.sha }}.zip
+            debug/ryu_ldn_nx.elf
