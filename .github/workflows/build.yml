@@ -65,6 +65,7 @@ jobs:
         run: |
           cd sysmodule
           make -j$(nproc) PREFIX="ccache aarch64-none-elf-"
+          make dist
         continue-on-error: true
 
       - name: Install libnx master & Retry build
@@ -79,20 +80,13 @@ jobs:
           popd
           cd sysmodule
           make -j$(nproc) PREFIX="ccache aarch64-none-elf-"
+          make dist
 
-      - name: Prepare artifacts
-        run: |
-          mkdir -p artifact/atmosphere/contents/4200000000000020
-          cp sysmodule/ryu_ldn_nx.nsp artifact/atmosphere/contents/4200000000000020/exefs.nsp 2>/dev/null || true
-          cp sysmodule/ryu_ldn_nx.npdm artifact/atmosphere/contents/4200000000000020/main.npdm 2>/dev/null || true
-          cp sysmodule/res/toolbox.json artifact/atmosphere/contents/4200000000000020/ 2>/dev/null || true
-          cp sysmodule/res/app.json artifact/atmosphere/contents/4200000000000020/ 2>/dev/null || true
-
-      - name: Upload sysmodule (SD structure)
+      - name: Upload sysmodule ZIP
         uses: actions/upload-artifact@v4
         with:
           name: ryu_ldn_nx-sysmodule-${{ github.sha }}
-          path: artifact/
+          path: sysmodule/ryu_ldn_nx-sysmodule.zip
           if-no-files-found: warn
 
       - name: Upload ELF (debug symbols)
@@ -124,12 +118,13 @@ jobs:
         run: |
           cd overlay
           make -j$(nproc) LIBTESLA=/opt/libtesla
+          make dist LIBTESLA=/opt/libtesla
 
-      - name: Upload overlay
+      - name: Upload overlay ZIP
         uses: actions/upload-artifact@v4
         with:
           name: ryu_ldn_nx-overlay-${{ github.sha }}
-          path: overlay/ryu_ldn_nx_overlay.ovl
+          path: overlay/ryu_ldn_nx_overlay.zip
           if-no-files-found: warn
 
   package:
@@ -141,31 +136,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download sysmodule artifact
+      - name: Download sysmodule ZIP
         uses: actions/download-artifact@v4
         with:
           name: ryu_ldn_nx-sysmodule-${{ github.sha }}
-          path: sysmodule-artifact
+          path: artifacts
 
-      - name: Download overlay artifact
+      - name: Download overlay ZIP
         uses: actions/download-artifact@v4
         with:
           name: ryu_ldn_nx-overlay-${{ github.sha }}
-          path: overlay-artifact
+          path: artifacts
 
-      - name: Create SD card structure
+      - name: Create combined SD card structure
         run: |
-          mkdir -p release/atmosphere/contents/4200000000000020
-          mkdir -p release/switch/.overlays
-          mkdir -p release/config/ryu_ldn_nx
+          mkdir -p release
 
-          # Copy sysmodule
-          cp -r sysmodule-artifact/atmosphere/contents/4200000000000020/* release/atmosphere/contents/4200000000000020/
+          # Extract sysmodule ZIP
+          unzip -o artifacts/ryu_ldn_nx-sysmodule.zip -d release/
 
-          # Copy overlay
-          cp overlay-artifact/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
+          # Extract overlay ZIP
+          unzip -o artifacts/ryu_ldn_nx_overlay.zip -d release/
 
           # Create default config
+          mkdir -p release/config/ryu_ldn_nx
           cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
           ; ryu_ldn_nx Configuration
           [server]

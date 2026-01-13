@@ -99,10 +99,30 @@ export BUILD_EXEFS_SRC := $(TOPDIR)/$(EXEFS_SRC)
 
 export APP_JSON := $(TOPDIR)/res/app.json
 
-.PHONY: $(BUILD) clean all rebuild
+.PHONY: $(BUILD) clean all rebuild dist
+
+#---------------------------------------------------------------------------------
+# Title ID for sysmodule
+#---------------------------------------------------------------------------------
+TITLE_ID	:=	4200000000000020
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
+
+#---------------------------------------------------------------------------------
+# dist: create SD card structure ZIP
+#---------------------------------------------------------------------------------
+dist: all
+	@echo "Creating SD card structure..."
+	@rm -rf dist
+	@mkdir -p dist/atmosphere/contents/$(TITLE_ID)
+	@cp $(TARGET).nsp dist/atmosphere/contents/$(TITLE_ID)/exefs.nsp 2>/dev/null || true
+	@cp $(TARGET).npdm dist/atmosphere/contents/$(TITLE_ID)/main.npdm 2>/dev/null || true
+	@cp res/toolbox.json dist/atmosphere/contents/$(TITLE_ID)/ 2>/dev/null || true
+	@cp res/app.json dist/atmosphere/contents/$(TITLE_ID)/ 2>/dev/null || true
+	@echo "Creating ZIP..."
+	@cd dist && zip -r ../$(TARGET)-sysmodule.zip .
+	@echo "Created $(TARGET)-sysmodule.zip"
 
 #---------------------------------------------------------------------------------
 rebuild: clean all
@@ -114,7 +134,7 @@ $(BUILD):
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).kip $(TARGET).elf $(TARGET).nso $(TARGET).npdm $(TARGET).nsp
+	@rm -fr $(BUILD) $(TARGET).kip $(TARGET).elf $(TARGET).nso $(TARGET).npdm $(TARGET).nsp dist $(TARGET)-sysmodule.zip
 
 #---------------------------------------------------------------------------------
 else

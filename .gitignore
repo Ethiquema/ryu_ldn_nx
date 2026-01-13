@@ -8,19 +8,23 @@
 
 # Sysmodule build
 sysmodule/build/
+sysmodule/dist/
 sysmodule/*.nsp
 sysmodule/*.nso
 sysmodule/*.npdm
 sysmodule/*.elf
 sysmodule/*.nacp
 sysmodule/*.lst
+sysmodule/*-sysmodule.zip
 
 # Overlay build
 overlay/build/
+overlay/dist/
 overlay/*.ovl
 overlay/*.nacp
 overlay/*.elf
 overlay/*.lst
+overlay/*.zip
 
 # Object files
 *.o

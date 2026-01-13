@@ -149,11 +149,22 @@ ifneq ($(ROMFS),)
     export NROFLAGS += --romfsdir=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: $(BUILD) clean all
+.PHONY: $(BUILD) clean all dist
 
 #---------------------------------------------------------------------------------
 all: $(BUILD)
 
+#---------------------------------------------------------------------------------
+# dist: create SD card structure ZIP
+#---------------------------------------------------------------------------------
+dist: all
+	@echo "Creating SD card structure..."
+	@rm -rf dist
+	@mkdir -p dist/switch/.overlays
+	@cp $(TARGET).ovl dist/switch/.overlays/ 2>/dev/null || true
+	@echo "Creating ZIP..."
+	@cd dist && zip -r ../$(TARGET).zip .
+	@echo "Created $(TARGET).zip"
 
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
@@ -161,7 +172,7 @@ $(BUILD):
 
 #---------------------------------------------------------------------------------
 clean:
-	@rm -fr $(BUILD) $(TARGET).ovl $(TARGET).nro $(TARGET).nacp $(TARGET).elf
+	@rm -fr $(BUILD) $(TARGET).ovl $(TARGET).nro $(TARGET).nacp $(TARGET).elf dist $(TARGET).zip
 
 
 #---------------------------------------------------------------------------------
