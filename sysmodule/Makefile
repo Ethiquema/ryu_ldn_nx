@@ -17,7 +17,7 @@ include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/Atmosphere-libs/config/te
 #---------------------------------------------------------------------------------
 TARGET		:=	ryu_ldn_nx
 BUILD		:=	build
-SOURCES		:=	source source/config source/network source/protocol source/ldn
+SOURCES		:=	source source/config source/debug source/network source/protocol source/ldn
 DATA		:=	data
 INCLUDES	:=	source
 
