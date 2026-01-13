@@ -175,17 +175,6 @@ jobs:
           # Extract overlay ZIP
           unzip -o artifacts/ryu_ldn_nx_overlay.zip -d release/
 
-          # Create default config
-          mkdir -p release/config/ryu_ldn_nx
-          cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
-          ; ryu_ldn_nx Configuration
-          [server]
-          host = ldn.ryujinx.app
-          port = 30456
-          [settings]
-          debug = 0
-          EOF
-
           echo "=== Package contents ==="
           find release -type f
 
@@ -214,6 +203,18 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ryu_ldn_nx-${{ github.sha }}
+          path: .
+
+      - name: Download sysmodule ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: ryu_ldn_nx-sysmodule-${{ github.sha }}
+          path: .
+
+      - name: Download overlay ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: ryu_ldn_nx-overlay-${{ github.sha }}
           path: .
 
       - name: Download debug symbols
@@ -261,14 +262,19 @@ jobs:
 
             ### Installation
 
-            1. Download the ZIP below
+            1. Download the ZIP(s) below
             2. Extract to the root of your SD card
             3. Reboot your Switch
+            4. Config file will be created automatically on first boot
 
             ### Files
 
-            - `ryu_ldn_nx-*.zip` - Complete package (sysmodule + overlay + config)
+            - `ryu_ldn_nx-*.zip` - Complete package (sysmodule + overlay)
+            - `ryu_ldn_nx-sysmodule.zip` - Sysmodule only
+            - `ryu_ldn_nx_overlay.zip` - Tesla overlay only
             - `ryu_ldn_nx.elf` - Debug symbols
           files: |
             ryu_ldn_nx-${{ github.sha }}.zip
+            ryu_ldn_nx-sysmodule.zip
+            ryu_ldn_nx_overlay.zip
             debug/ryu_ldn_nx.elf
