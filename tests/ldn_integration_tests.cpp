@@ -17,10 +17,12 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 #include <functional>
 #include <queue>
 #include <mutex>
+#include <stdexcept>
 
 //=============================================================================
 // Test Framework
