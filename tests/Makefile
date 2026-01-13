@@ -21,6 +21,7 @@ endif
 TEST_SOURCES := \
 	protocol_tests.cpp \
 	config_tests.cpp \
+	config_manager_tests.cpp \
 	log_tests.cpp \
 	socket_tests.cpp \
 	tcp_client_tests.cpp \
@@ -32,11 +33,13 @@ TEST_SOURCES := \
 	ldn_proxy_tests.cpp \
 	ldn_error_handling_tests.cpp \
 	ldn_integration_tests.cpp \
-	overlay_tests.cpp
+	overlay_tests.cpp \
+	ipc_config_tests.cpp
 
 # Implementation sources needed for tests
 IMPL_SOURCES := \
 	../sysmodule/source/config/config.cpp \
+	../sysmodule/source/config/config_manager.cpp \
 	../sysmodule/source/debug/log.cpp \
 	../sysmodule/source/network/socket.cpp \
 	../sysmodule/source/network/tcp_client.cpp \
@@ -50,6 +53,7 @@ IMPL_OBJECTS := $(notdir $(IMPL_SOURCES:.cpp=.o))
 # Targets
 TARGET_PROTOCOL := run_protocol_tests
 TARGET_CONFIG := run_config_tests
+TARGET_CONFIG_MANAGER := run_config_manager_tests
 TARGET_LOG := run_log_tests
 TARGET_SOCKET := run_socket_tests
 TARGET_TCP_CLIENT := run_tcp_client_tests
@@ -62,14 +66,15 @@ TARGET_LDN_PROXY := run_ldn_proxy_tests
 TARGET_LDN_ERROR := run_ldn_error_handling_tests
 TARGET_LDN_INTEGRATION := run_ldn_integration_tests
 TARGET_OVERLAY := run_overlay_tests
+TARGET_IPC_CONFIG := run_ipc_config_tests
 TARGET_ALL := run_all_tests
 
 #---------------------------------------------------------------------------------
 # Build rules
 #---------------------------------------------------------------------------------
-.PHONY: all clean test test-protocol test-config test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay coverage
+.PHONY: all clean test test-protocol test-config test-config-manager test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay test-ipc-config coverage
 
-all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG)
 
 # Protocol tests (header-only, no impl needed)
 $(TARGET_PROTOCOL): protocol_tests.o
@@ -77,6 +82,10 @@ $(TARGET_PROTOCOL): protocol_tests.o
 
 # Config tests (needs config.cpp impl)
 $(TARGET_CONFIG): config_tests.o config.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+# Config Manager tests (needs config.cpp and config_manager.cpp)
+$(TARGET_CONFIG_MANAGER): config_manager_tests.o config_manager.o config.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Log tests (needs log.cpp and config.cpp impl)
@@ -127,12 +136,19 @@ $(TARGET_LDN_INTEGRATION): ldn_integration_tests.o
 $(TARGET_OVERLAY): overlay_tests.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+# IPC Config tests (extended config commands)
+$(TARGET_IPC_CONFIG): ipc_config_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Compile test sources
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Compile implementation sources
 config.o: ../sysmodule/source/config/config.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+config_manager.o: ../sysmodule/source/config/config_manager.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 log.o: ../sysmodule/source/debug/log.cpp
@@ -154,12 +170,15 @@ client.o: ../sysmodule/source/network/client.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Run all tests
-test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG)
 	@echo "=== Running Protocol Tests ==="
 	./$(TARGET_PROTOCOL)
 	@echo ""
 	@echo "=== Running Config Tests ==="
 	./$(TARGET_CONFIG)
+	@echo ""
+	@echo "=== Running Config Manager Tests ==="
+	./$(TARGET_CONFIG_MANAGER)
 	@echo ""
 	@echo "=== Running Log Tests ==="
 	./$(TARGET_LOG)
@@ -196,12 +215,18 @@ test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGE
 	@echo ""
 	@echo "=== Running Overlay Tests ==="
 	./$(TARGET_OVERLAY)
+	@echo ""
+	@echo "=== Running IPC Config Tests ==="
+	./$(TARGET_IPC_CONFIG)
 
 test-protocol: $(TARGET_PROTOCOL)
 	./$(TARGET_PROTOCOL)
 
 test-config: $(TARGET_CONFIG)
 	./$(TARGET_CONFIG)
+
+test-config-manager: $(TARGET_CONFIG_MANAGER)
+	./$(TARGET_CONFIG_MANAGER)
 
 test-log: $(TARGET_LOG)
 	./$(TARGET_LOG)
@@ -239,13 +264,16 @@ test-ldn-integration: $(TARGET_LDN_INTEGRATION)
 test-overlay: $(TARGET_OVERLAY)
 	./$(TARGET_OVERLAY)
 
+test-ipc-config: $(TARGET_IPC_CONFIG)
+	./$(TARGET_IPC_CONFIG)
+
 coverage: clean
 	$(MAKE) COVERAGE=1 test
 	gcov $(TEST_SOURCES)
 	@echo "Coverage report generated"
 
 clean:
-	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG)
 	rm -f *.gcno *.gcda *.gcov
 
 #---------------------------------------------------------------------------------
@@ -260,6 +288,14 @@ config_tests.o: config_tests.cpp \
 	../sysmodule/source/config/config.hpp
 
 config.o: ../sysmodule/source/config/config.cpp \
+	../sysmodule/source/config/config.hpp
+
+config_manager_tests.o: config_manager_tests.cpp \
+	../sysmodule/source/config/config_manager.hpp \
+	../sysmodule/source/config/config.hpp
+
+config_manager.o: ../sysmodule/source/config/config_manager.cpp \
+	../sysmodule/source/config/config_manager.hpp \
 	../sysmodule/source/config/config.hpp
 
 log_tests.o: log_tests.cpp \
@@ -325,3 +361,5 @@ ldn_error_handling_tests.o: ldn_error_handling_tests.cpp
 ldn_integration_tests.o: ldn_integration_tests.cpp
 
 overlay_tests.o: overlay_tests.cpp
+
+ipc_config_tests.o: ipc_config_tests.cpp

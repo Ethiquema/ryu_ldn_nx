@@ -7,6 +7,8 @@
  *
  * ## IPC Interface
  * The service is obtained via command 65000 on ldn:u and exposes:
+ *
+ * ### Basic Commands (65001-65010)
  * - 65001: GetVersion - Returns sysmodule version string
  * - 65002: GetConnectionStatus - Returns server connection state
  * - 65003: GetLdnState - Returns current LDN state
@@ -17,6 +19,19 @@
  * - 65008: SetDebugEnabled - Enables/disables debug logging
  * - 65009: ForceReconnect - Forces server reconnection
  * - 65010: GetLastRtt - Returns last ping RTT
+ *
+ * ### Extended Config Commands (65011-65030)
+ * - 65011: GetPassphrase / 65012: SetPassphrase
+ * - 65013: GetLdnEnabled / 65014: SetLdnEnabled
+ * - 65015: GetUseTls / 65016: SetUseTls
+ * - 65017: GetConnectTimeout / 65018: SetConnectTimeout
+ * - 65019: GetPingInterval / 65020: SetPingInterval
+ * - 65021: GetReconnectDelay / 65022: SetReconnectDelay
+ * - 65023: GetMaxReconnectAttempts / 65024: SetMaxReconnectAttempts
+ * - 65025: GetDebugLevel / 65026: SetDebugLevel
+ * - 65027: GetLogToFile / 65028: SetLogToFile
+ * - 65029: SaveConfig - Save current config to file
+ * - 65030: ReloadConfig - Reload config from file
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -64,6 +79,47 @@ struct ServerAddress {
     u16 padding;
 };
 static_assert(sizeof(ServerAddress) == 68);
+
+/**
+ * @brief Passphrase structure for IPC
+ */
+struct Passphrase {
+    char passphrase[64];
+};
+static_assert(sizeof(Passphrase) == 64);
+
+/**
+ * @brief Network settings structure for batch retrieval
+ */
+struct NetworkSettings {
+    u32 connect_timeout_ms;
+    u32 ping_interval_ms;
+    u32 reconnect_delay_ms;
+    u32 max_reconnect_attempts;
+};
+static_assert(sizeof(NetworkSettings) == 16);
+
+/**
+ * @brief Debug settings structure for batch retrieval
+ */
+struct DebugSettings {
+    u32 enabled;      ///< Bool as u32
+    u32 level;        ///< 0-3
+    u32 log_to_file;  ///< Bool as u32
+    u32 reserved;
+};
+static_assert(sizeof(DebugSettings) == 16);
+
+/**
+ * @brief Config operation result
+ */
+enum class ConfigResult : u32 {
+    Success = 0,
+    FileNotFound = 1,
+    ParseError = 2,
+    IoError = 3,
+    InvalidValue = 4,
+};
 
 /**
  * @brief Configuration service for Tesla overlay
@@ -158,6 +214,114 @@ public:
      * @return Always succeeds
      */
     Result GetLastRtt(sf::Out<u32> out);
+
+    // =========================================================================
+    // Extended Configuration Commands (65011-65030)
+    // =========================================================================
+
+    /**
+     * @brief Get passphrase (65011)
+     */
+    Result GetPassphrase(sf::Out<Passphrase> out);
+
+    /**
+     * @brief Set passphrase (65012)
+     */
+    Result SetPassphrase(Passphrase passphrase);
+
+    /**
+     * @brief Get LDN enabled state (65013)
+     */
+    Result GetLdnEnabled(sf::Out<u32> out);
+
+    /**
+     * @brief Set LDN enabled state (65014)
+     */
+    Result SetLdnEnabled(u32 enabled);
+
+    /**
+     * @brief Get TLS enabled state (65015)
+     */
+    Result GetUseTls(sf::Out<u32> out);
+
+    /**
+     * @brief Set TLS enabled state (65016)
+     */
+    Result SetUseTls(u32 enabled);
+
+    /**
+     * @brief Get connect timeout in ms (65017)
+     */
+    Result GetConnectTimeout(sf::Out<u32> out);
+
+    /**
+     * @brief Set connect timeout in ms (65018)
+     */
+    Result SetConnectTimeout(u32 timeout_ms);
+
+    /**
+     * @brief Get ping interval in ms (65019)
+     */
+    Result GetPingInterval(sf::Out<u32> out);
+
+    /**
+     * @brief Set ping interval in ms (65020)
+     */
+    Result SetPingInterval(u32 interval_ms);
+
+    /**
+     * @brief Get reconnect delay in ms (65021)
+     */
+    Result GetReconnectDelay(sf::Out<u32> out);
+
+    /**
+     * @brief Set reconnect delay in ms (65022)
+     */
+    Result SetReconnectDelay(u32 delay_ms);
+
+    /**
+     * @brief Get max reconnect attempts (65023)
+     */
+    Result GetMaxReconnectAttempts(sf::Out<u32> out);
+
+    /**
+     * @brief Set max reconnect attempts (65024)
+     */
+    Result SetMaxReconnectAttempts(u32 attempts);
+
+    /**
+     * @brief Get debug level 0-3 (65025)
+     */
+    Result GetDebugLevel(sf::Out<u32> out);
+
+    /**
+     * @brief Set debug level 0-3 (65026)
+     */
+    Result SetDebugLevel(u32 level);
+
+    /**
+     * @brief Get log to file state (65027)
+     */
+    Result GetLogToFile(sf::Out<u32> out);
+
+    /**
+     * @brief Set log to file state (65028)
+     */
+    Result SetLogToFile(u32 enabled);
+
+    /**
+     * @brief Save config to file (65029)
+     *
+     * @param out Result of save operation
+     */
+    Result SaveConfig(sf::Out<ConfigResult> out);
+
+    /**
+     * @brief Reload config from file (65030)
+     *
+     * @param out Result of reload operation
+     */
+    Result ReloadConfig(sf::Out<ConfigResult> out);
 
 private:
     LdnICommunication* m_communication;

@@ -90,6 +90,54 @@ tsl::Color StatusColor(RyuLdnConnectionStatus status) {
     }
 }
 
+/**
+ * @brief Format debug level for display
+ */
+const char* DebugLevelToString(u32 level) {
+    switch (level) {
+        case 0: return "Error";
+        case 1: return "Warning";
+        case 2: return "Info";
+        case 3: return "Verbose";
+        default: return "Unknown";
+    }
+}
+
+/**
+ * @brief Format timeout for display
+ */
+void FormatTimeout(u32 timeout_ms, char* buf, size_t bufSize) {
+    if (timeout_ms < 1000) {
+        snprintf(buf, bufSize, "%u ms", timeout_ms);
+    } else {
+        snprintf(buf, bufSize, "%.1f s", timeout_ms / 1000.0);
+    }
+}
+
+/**
+ * @brief Format passphrase for display (masked)
+ */
+void FormatPassphraseMasked(const char* passphrase, char* buf, size_t bufSize) {
+    if (passphrase == nullptr || passphrase[0] == '\0') {
+        snprintf(buf, bufSize, "(not set)");
+    } else {
+        size_t len = strlen(passphrase);
+        if (len <= 4) {
+            snprintf(buf, bufSize, "****");
+        } else {
+            snprintf(buf, bufSize, "%c%c****%c%c",
+                     passphrase[0], passphrase[1],
+                     passphrase[len-2], passphrase[len-1]);
+        }
+    }
+}
+
+// Forward declarations for submenus
+class ServerSettingsGui;
+class NetworkSettingsGui;
+class LdnSettingsGui;
+class DebugSettingsGui;
+
 //=============================================================================
 // Custom List Items
 //=============================================================================
@@ -263,6 +311,13 @@ public:
 
 /**
  * @brief Reconnect button item
+ *
+ * Provides a button to force the sysmodule to disconnect and reconnect
+ * to the configured server. Useful when changing server settings or
+ * when the connection is in a bad state.
+ *
+ * Press A to trigger reconnection. The button shows "Reconnecting..."
+ * on success or "Failed" if the IPC call fails.
  */
 class ReconnectListItem : public tsl::elm::ListItem {
 public:
@@ -286,6 +341,323 @@ public:
     }
 };
 
+/**
+ * @brief Save configuration button item
+ *
+ * Saves the current in-memory configuration to the config.ini file
+ * on the SD card (/config/ryu_ldn_nx/config.ini).
+ *
+ * This allows settings changed via the overlay to persist across
+ * reboots. Without saving, changes are lost when the Switch is
+ * powered off or the sysmodule is restarted.
+ *
+ * Press A to save. Shows "Saved!" on success or "Failed" on error.
+ */
+class SaveConfigListItem : public tsl::elm::ListItem {
+public:
+    SaveConfigListItem() : tsl::elm::ListItem("Save Config") {
+        this->setValue("Press A");
+    }
+
+    virtual bool onClick(u64 keys) override {
+        if (keys & HidNpadButton_A) {
+            if (g_initState == InitState::Loaded) {
+                RyuLdnConfigResult result;
+                Result rc = ryuLdnSaveConfig(&g_configService, &result);
+                if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
+                    this->setValue("Saved!");
+                } else {
+                    this->setValue("Failed");
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+};
+
+/**
+ * @brief Reload configuration button item
+ *
+ * Reloads the configuration from the config.ini file on the SD card,
+ * discarding any unsaved in-memory changes.
+ *
+ * This is useful to revert changes made in the overlay without
+ * having saved them, or to pick up changes made by editing the
+ * config file directly on a PC.
+ *
+ * Press A to reload. Shows "Reloaded!" on success or "Failed" on error.
+ */
+class ReloadConfigListItem : public tsl::elm::ListItem {
+public:
+    ReloadConfigListItem() : tsl::elm::ListItem("Reload Config") {
+        this->setValue("Press A");
+    }
+
+    virtual bool onClick(u64 keys) override {
+        if (keys & HidNpadButton_A) {
+            if (g_initState == InitState::Loaded) {
+                RyuLdnConfigResult result;
+                Result rc = ryuLdnReloadConfig(&g_configService, &result);
+                if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
+                    this->setValue("Reloaded!");
+                } else {
+                    this->setValue("Failed");
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+};
+
+//=============================================================================
+// Settings Submenus
+//=============================================================================
+
+/**
+ * @brief Server Settings GUI
+ *
+ * Submenu for configuring server connection settings:
+ * - Server Address: Displays current host:port (read-only display,
+ *   editing requires keyboard which Tesla doesn't support well)
+ * - Use TLS: Toggle to enable/disable TLS encryption for server connection
+ * - Force Reconnect: Button to reconnect with new settings
+ *
+ * Changes take effect immediately for toggles. Server address changes
+ * require editing config.ini directly and using Reload Config.
+ */
+class ServerSettingsGui : public tsl::Gui {
+public:
+    virtual tsl::elm::Element* createUI() override {
+        auto frame = new tsl::elm::OverlayFrame("Server Settings", g_version);
+        auto list = new tsl::elm::List();
+
+        if (g_initState != InitState::Loaded) {
+            list->addItem(new tsl::elm::ListItem("Not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
+        // Server address display (read-only - editing text not practical in Tesla)
+        auto serverItem = new tsl::elm::ListItem("Server Address");
+        char host[64];
+        u16 port;
+        if (R_SUCCEEDED(ryuLdnGetServerAddress(&g_configService, host, &port))) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "%s:%u", host, port);
+            serverItem->setValue(buf);
+        }
+        list->addItem(serverItem);
+
+        // TLS encryption toggle
+        auto tlsItem = new tsl::elm::ToggleListItem("Use TLS", false);
+        u32 useTls;
+        if (R_SUCCEEDED(ryuLdnGetUseTls(&g_configService, &useTls))) {
+            tlsItem->setState(useTls != 0);
+        }
+        tlsItem->setStateChangedListener([](bool enabled) {
+            ryuLdnSetUseTls(&g_configService, enabled ? 1 : 0);
+        });
+        list->addItem(tlsItem);
+
+        // Reconnect button to apply changes
+        list->addItem(new ReconnectListItem());
+
+        frame->setContent(list);
+        return frame;
+    }
+};
+
+/**
+ * @brief Network Settings GUI
+ *
+ * Submenu for configuring network timing parameters:
+ * - Connect Timeout: Time to wait for initial connection (displayed only)
+ * - Ping Interval: How often to send keepalive pings (displayed only)
+ * - Reconnect Delay: Time to wait between reconnection attempts (displayed only)
+ * - Max Reconnect Attempts: Number of retries before giving up (displayed only)
+ *
+ * These values are displayed for information. Editing numeric values
+ * is not practical in Tesla overlay - use config.ini file to change them.
+ */
+class NetworkSettingsGui : public tsl::Gui {
+public:
+    virtual tsl::elm::Element* createUI() override {
+        auto frame = new tsl::elm::OverlayFrame("Network Settings", g_version);
+        auto list = new tsl::elm::List();
+
+        if (g_initState != InitState::Loaded) {
+            list->addItem(new tsl::elm::ListItem("Not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
+        // Connect timeout display
+        auto timeoutItem = new tsl::elm::ListItem("Connect Timeout");
+        u32 timeout;
+        if (R_SUCCEEDED(ryuLdnGetConnectTimeout(&g_configService, &timeout))) {
+            char buf[32];
+            FormatTimeout(timeout, buf, sizeof(buf));
+            timeoutItem->setValue(buf);
+        }
+        list->addItem(timeoutItem);
+
+        // Ping interval display
+        auto pingItem = new tsl::elm::ListItem("Ping Interval");
+        u32 pingInterval;
+        if (R_SUCCEEDED(ryuLdnGetPingInterval(&g_configService, &pingInterval))) {
+            char buf[32];
+            FormatTimeout(pingInterval, buf, sizeof(buf));
+            pingItem->setValue(buf);
+        }
+        list->addItem(pingItem);
+
+        // Reconnect delay display
+        auto delayItem = new tsl::elm::ListItem("Reconnect Delay");
+        u32 delay;
+        if (R_SUCCEEDED(ryuLdnGetReconnectDelay(&g_configService, &delay))) {
+            char buf[32];
+            FormatTimeout(delay, buf, sizeof(buf));
+            delayItem->setValue(buf);
+        }
+        list->addItem(delayItem);
+
+        // Max reconnect attempts display
+        auto attemptsItem = new tsl::elm::ListItem("Max Reconnect Attempts");
+        u32 attempts;
+        if (R_SUCCEEDED(ryuLdnGetMaxReconnectAttempts(&g_configService, &attempts))) {
+            char buf[32];
+            if (attempts == 0) {
+                snprintf(buf, sizeof(buf), "Unlimited");
+            } else {
+                snprintf(buf, sizeof(buf), "%u", attempts);
+            }
+            attemptsItem->setValue(buf);
+        }
+        list->addItem(attemptsItem);
+
+        frame->setContent(list);
+        return frame;
+    }
+};
+
+/**
+ * @brief LDN Settings GUI
+ *
+ * Submenu for configuring LDN (Local Network) settings:
+ * - LDN Enabled: Master toggle for the LDN MITM functionality
+ * - Passphrase: Room passphrase for matchmaking (displayed masked for privacy)
+ *
+ * When LDN is disabled, the sysmodule will not intercept LDN calls
+ * and games will use normal local wireless (if available).
+ *
+ * The passphrase is used to match players - only players with the
+ * same passphrase can see and join each other's sessions.
+ */
+class LdnSettingsGui : public tsl::Gui {
+public:
+    virtual tsl::elm::Element* createUI() override {
+        auto frame = new tsl::elm::OverlayFrame("LDN Settings", g_version);
+        auto list = new tsl::elm::List();
+
+        if (g_initState != InitState::Loaded) {
+            list->addItem(new tsl::elm::ListItem("Not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
+        // LDN enabled master toggle
+        auto ldnItem = new tsl::elm::ToggleListItem("LDN Enabled", true);
+        u32 ldnEnabled;
+        if (R_SUCCEEDED(ryuLdnGetLdnEnabled(&g_configService, &ldnEnabled))) {
+            ldnItem->setState(ldnEnabled != 0);
+        }
+        ldnItem->setStateChangedListener([](bool enabled) {
+            ryuLdnSetLdnEnabled(&g_configService, enabled ? 1 : 0);
+        });
+        list->addItem(ldnItem);
+
+        // Passphrase display (masked for privacy, edit via config.ini)
+        auto passphraseItem = new tsl::elm::ListItem("Passphrase");
+        char passphrase[64];
+        if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, passphrase))) {
+            char masked[32];
+            FormatPassphraseMasked(passphrase, masked, sizeof(masked));
+            passphraseItem->setValue(masked);
+        }
+        list->addItem(passphraseItem);
+
+        frame->setContent(list);
+        return frame;
+    }
+};
+
+/**
+ * @brief Debug Settings GUI
+ *
+ * Submenu for configuring debug and logging settings:
+ * - Debug Enabled: Master toggle for debug logging
+ * - Debug Level: Current log verbosity (Error/Warning/Info/Verbose)
+ * - Log to File: Toggle to write logs to SD card file
+ *
+ * When debug is enabled, log messages are written according to the
+ * debug level. Higher levels include all messages from lower levels:
+ * - Error (0): Only error messages
+ * - Warning (1): Errors + warnings
+ * - Info (2): Errors + warnings + info (default)
+ * - Verbose (3): All messages including detailed traces
+ *
+ * Log files are written to /config/ryu_ldn_nx/ryu_ldn.log when
+ * "Log to File" is enabled.
+ */
+class DebugSettingsGui : public tsl::Gui {
+public:
+    virtual tsl::elm::Element* createUI() override {
+        auto frame = new tsl::elm::OverlayFrame("Debug Settings", g_version);
+        auto list = new tsl::elm::List();
+
+        if (g_initState != InitState::Loaded) {
+            list->addItem(new tsl::elm::ListItem("Not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
+        // Debug enabled master toggle
+        auto debugItem = new tsl::elm::ToggleListItem("Debug Enabled", false);
+        u32 debugEnabled;
+        if (R_SUCCEEDED(ryuLdnGetDebugEnabled(&g_configService, &debugEnabled))) {
+            debugItem->setState(debugEnabled != 0);
+        }
+        debugItem->setStateChangedListener([](bool enabled) {
+            ryuLdnSetDebugEnabled(&g_configService, enabled ? 1 : 0);
+        });
+        list->addItem(debugItem);
+
+        // Debug level display (edit via config.ini for now)
+        auto levelItem = new tsl::elm::ListItem("Debug Level");
+        u32 level;
+        if (R_SUCCEEDED(ryuLdnGetDebugLevel(&g_configService, &level))) {
+            levelItem->setValue(DebugLevelToString(level));
+        }
+        list->addItem(levelItem);
+
+        // Log to file toggle
+        auto logFileItem = new tsl::elm::ToggleListItem("Log to File", false);
+        u32 logToFile;
+        if (R_SUCCEEDED(ryuLdnGetLogToFile(&g_configService, &logToFile))) {
+            logFileItem->setState(logToFile != 0);
+        }
+        logFileItem->setStateChangedListener([](bool enabled) {
+            ryuLdnSetLogToFile(&g_configService, enabled ? 1 : 0);
+        });
+        list->addItem(logFileItem);
+
+        frame->setContent(list);
+        return frame;
+    }
+};
+
 //=============================================================================
 // Main GUI
 //=============================================================================
@@ -293,7 +665,20 @@ public:
 /**
  * @brief Main overlay GUI
  *
- * Displays connection status, session info, and configuration options.
+ * Main menu of the ryu_ldn_nx Tesla overlay. Displays:
+ * - Status section: Connection status, LDN state, session info, latency
+ * - Server section: Current server address and reconnect button
+ * - Settings section: Links to configuration submenus
+ * - Config section: Save/reload configuration buttons
+ *
+ * The status section updates automatically every second (60 frames).
+ * Press R to force an immediate refresh.
+ *
+ * Settings are organized into submenus for better organization:
+ * - Server Settings: Host, port, TLS configuration
+ * - Network Settings: Timeouts and reconnection parameters
+ * - LDN Settings: Enable/disable LDN, passphrase
+ * - Debug Settings: Logging configuration
  */
 class MainGui : public tsl::Gui {
 public:
@@ -309,7 +694,7 @@ public:
         } else if (g_initState == InitState::Uninit) {
             list->addItem(new tsl::elm::ListItem("Initializing..."));
         } else {
-            // Status section
+            // Status section - live connection information
             list->addItem(new tsl::elm::CategoryHeader("Status"));
             m_statusItem = new StatusListItem();
             list->addItem(m_statusItem);
@@ -323,16 +708,68 @@ public:
             m_latencyItem = new LatencyListItem();
             list->addItem(m_latencyItem);
 
-            // Server section
+            // Server section - current server and quick reconnect
             list->addItem(new tsl::elm::CategoryHeader("Server"));
             m_serverItem = new ServerAddressListItem();
             list->addItem(m_serverItem);
 
             list->addItem(new ReconnectListItem());
 
-            // Settings section
+            // Settings section - links to configuration submenus
             list->addItem(new tsl::elm::CategoryHeader("Settings"));
-            list->addItem(new DebugToggleListItem());
+
+            // Server settings submenu
+            auto serverSettingsItem = new tsl::elm::ListItem("Server Settings");
+            serverSettingsItem->setValue(">");
+            serverSettingsItem->setClickListener([](u64 keys) {
+                if (keys & HidNpadButton_A) {
+                    tsl::changeTo<ServerSettingsGui>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(serverSettingsItem);
+
+            // Network settings submenu
+            auto networkSettingsItem = new tsl::elm::ListItem("Network Settings");
+            networkSettingsItem->setValue(">");
+            networkSettingsItem->setClickListener([](u64 keys) {
+                if (keys & HidNpadButton_A) {
+                    tsl::changeTo<NetworkSettingsGui>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(networkSettingsItem);
+
+            // LDN settings submenu
+            auto ldnSettingsItem = new tsl::elm::ListItem("LDN Settings");
+            ldnSettingsItem->setValue(">");
+            ldnSettingsItem->setClickListener([](u64 keys) {
+                if (keys & HidNpadButton_A) {
+                    tsl::changeTo<LdnSettingsGui>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(ldnSettingsItem);
+
+            // Debug settings submenu
+            auto debugSettingsItem = new tsl::elm::ListItem("Debug Settings");
+            debugSettingsItem->setValue(">");
+            debugSettingsItem->setClickListener([](u64 keys) {
+                if (keys & HidNpadButton_A) {
+                    tsl::changeTo<DebugSettingsGui>();
+                    return true;
+                }
+                return false;
+            });
+            list->addItem(debugSettingsItem);
+
+            // Config persistence section - save/reload buttons
+            list->addItem(new tsl::elm::CategoryHeader("Config"));
+            list->addItem(new SaveConfigListItem());
+            list->addItem(new ReloadConfigListItem());
         }
 
         frame->setContent(list);
