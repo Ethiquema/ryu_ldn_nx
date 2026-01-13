@@ -1,13 +1,24 @@
 /**
  * @file config.cpp
  * @brief Configuration Manager Implementation
+ *
+ * On Nintendo Switch (Atmosphere), uses ams::fs API for safe SD card access
+ * at boot. The standard library fopen/fclose causes kernel panic (DABRT 0x101)
+ * when called before the filesystem is fully ready.
+ *
+ * For testing on PC, uses standard C file I/O.
  */
 
 #include "config.hpp"
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+
+#ifdef __SWITCH__
+#include <stratosphere.hpp>
+#else
 #include <sys/stat.h>
+#endif
 
 namespace ryu_ldn::config {
 
@@ -151,6 +162,148 @@ void process_debug_key(const char* key, const char* value, DebugConfig& config) 
     }
 }
 
+#ifdef __SWITCH__
+/**
+ * @brief Parse file content line by line (for ams::fs buffer-based reading)
+ */
+void parse_config_content(const char* content, size_t size, Config& config) {
+    char line[512];
+    Section current_section = Section::None;
+    size_t line_pos = 0;
+
+    for (size_t i = 0; i <= size; i++) {
+        // End of line or end of content
+        if (i == size || content[i] == '\n' || content[i] == '\r') {
+            line[line_pos] = '\0';
+
+            if (line_pos > 0) {
+                // Remove trailing whitespace/newlines
+                trim_end(line);
+
+                // Skip empty lines
+                const char* trimmed = trim_start(line);
+                if (trimmed[0] != '\0') {
+                    // Skip comments
+                    if (trimmed[0] != ';' && trimmed[0] != '#') {
+                        // Check for section header
+                        Section new_section = parse_section(trimmed);
+                        if (new_section != Section::None) {
+                            current_section = new_section;
+                        } else if (current_section != Section::None &&
+                                   current_section != Section::Unknown) {
+                            // Parse key=value
+                            char* eq_pos = std::strchr(line, '=');
+                            if (eq_pos) {
+                                *eq_pos = '\0';
+                                char* key = line;
+                                char* value = eq_pos + 1;
+
+                                // Trim key and value
+                                const char* trimmed_key = trim_start(key);
+                                trim_end(key);
+
+                                const char* trimmed_value = trim_start(value);
+                                trim_end(value);
+
+                                // Copy trimmed key
+                                char key_buf[64];
+                                safe_strcpy(key_buf, trimmed_key, sizeof(key_buf) - 1);
+                                trim_end(key_buf);
+
+                                // Process based on current section
+                                switch (current_section) {
+                                    case Section::Server:
+                                        process_server_key(key_buf, trimmed_value, config.server);
+                                        break;
+                                    case Section::Network:
+                                        process_network_key(key_buf, trimmed_value, config.network);
+                                        break;
+                                    case Section::Ldn:
+                                        process_ldn_key(key_buf, trimmed_value, config.ldn);
+                                        break;
+                                    case Section::Debug:
+                                        process_debug_key(key_buf, trimmed_value, config.debug);
+                                        break;
+                                    default:
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            line_pos = 0;
+            // Skip \r if followed by \n
+            if (i < size && content[i] == '\r' && i + 1 < size && content[i + 1] == '\n') {
+                i++;
+            }
+        } else if (line_pos < sizeof(line) - 1) {
+            line[line_pos++] = content[i];
+        }
+    }
+}
+
+/**
+ * @brief Format config content into buffer for writing
+ * @return Number of bytes written
+ */
+size_t format_config_content(char* buffer, size_t buffer_size, const Config& config) {
+    size_t offset = 0;
+
+    #define WRITE_LINE(fmt, ...) do { \
+        int written = std::snprintf(buffer + offset, buffer_size - offset, fmt "\n", ##__VA_ARGS__); \
+        if (written > 0 && offset + written < buffer_size) offset += written; \
+    } while(0)
+
+    WRITE_LINE("; ryu_ldn_nx Configuration");
+    WRITE_LINE("; Auto-generated on first boot");
+    WRITE_LINE("; Edit this file to customize settings");
+    WRITE_LINE("");
+
+    WRITE_LINE("[server]");
+    WRITE_LINE("; Server hostname or IP address");
+    WRITE_LINE("host = %s", config.server.host);
+    WRITE_LINE("; Server port");
+    WRITE_LINE("port = %u", config.server.port);
+    WRITE_LINE("; Use TLS encryption (0/1)");
+    WRITE_LINE("use_tls = %d", config.server.use_tls ? 1 : 0);
+    WRITE_LINE("");
+
+    WRITE_LINE("[network]");
+    WRITE_LINE("; Connection timeout in milliseconds");
+    WRITE_LINE("connect_timeout = %u", config.network.connect_timeout_ms);
+    WRITE_LINE("; Ping interval in milliseconds");
+    WRITE_LINE("ping_interval = %u", config.network.ping_interval_ms);
+    WRITE_LINE("; Reconnect delay in milliseconds");
+    WRITE_LINE("reconnect_delay = %u", config.network.reconnect_delay_ms);
+    WRITE_LINE("; Max reconnect attempts (0 = infinite)");
+    WRITE_LINE("max_reconnect_attempts = %u", config.network.max_reconnect_attempts);
+    WRITE_LINE("");
+
+    WRITE_LINE("[ldn]");
+    WRITE_LINE("; Enable LDN emulation (0/1)");
+    WRITE_LINE("enabled = %d", config.ldn.enabled ? 1 : 0);
+    WRITE_LINE("; Room passphrase (empty = public)");
+    WRITE_LINE("passphrase = %s", config.ldn.passphrase);
+    WRITE_LINE("; Network interface (empty = auto)");
+    WRITE_LINE("interface = %s", config.ldn.interface_name);
+    WRITE_LINE("");
+
+    WRITE_LINE("[debug]");
+    WRITE_LINE("; Enable debug logging (0/1)");
+    WRITE_LINE("enabled = %d", config.debug.enabled ? 1 : 0);
+    WRITE_LINE("; Log level (0=errors, 1=warnings, 2=info, 3=verbose)");
+    WRITE_LINE("level = %u", config.debug.level);
+    WRITE_LINE("; Log to file (0/1)");
+    WRITE_LINE("log_to_file = %d", config.debug.log_to_file ? 1 : 0);
+
+    #undef WRITE_LINE
+
+    return offset;
+}
+#endif // __SWITCH__
+
 } // anonymous namespace
 
 // ============================================================================
@@ -183,6 +336,143 @@ Config get_default_config() {
 
     return config;
 }
+
+#ifdef __SWITCH__
+// =============================================================================
+// Nintendo Switch / Atmosphere Implementation
+// Uses ams::fs API to avoid kernel panic at boot
+// =============================================================================
+
+ConfigResult load_config(const char* path, Config& config) {
+    // Check if file exists using ams::fs
+    ams::fs::DirectoryEntryType entry_type;
+    if (R_FAILED(ams::fs::GetEntryType(&entry_type, path))) {
+        return ConfigResult::FileNotFound;
+    }
+
+    if (entry_type != ams::fs::DirectoryEntryType_File) {
+        return ConfigResult::FileNotFound;
+    }
+
+    // Open file for reading
+    ams::fs::FileHandle file;
+    if (R_FAILED(ams::fs::OpenFile(&file, path, ams::fs::OpenMode_Read))) {
+        return ConfigResult::IoError;
+    }
+
+    // Get file size
+    s64 file_size;
+    if (R_FAILED(ams::fs::GetFileSize(&file_size, file))) {
+        ams::fs::CloseFile(file);
+        return ConfigResult::IoError;
+    }
+
+    // Sanity check on file size (max 64KB)
+    if (file_size <= 0 || file_size > 65536) {
+        ams::fs::CloseFile(file);
+        if (file_size == 0) {
+            return ConfigResult::FileNotFound;
+        }
+        return ConfigResult::ParseError;
+    }
+
+    // Allocate buffer and read file
+    char* content = new (std::nothrow) char[file_size + 1];
+    if (!content) {
+        ams::fs::CloseFile(file);
+        return ConfigResult::IoError;
+    }
+
+    size_t bytes_read;
+    ams::Result read_result = ams::fs::ReadFile(&bytes_read, file, 0, content, static_cast<size_t>(file_size));
+    ams::fs::CloseFile(file);
+
+    if (R_FAILED(read_result)) {
+        delete[] content;
+        return ConfigResult::IoError;
+    }
+
+    content[bytes_read] = '\0';
+
+    // Parse content
+    parse_config_content(content, bytes_read, config);
+
+    delete[] content;
+    return ConfigResult::Success;
+}
+
+ConfigResult save_config(const char* path, const Config& config) {
+    // Ensure parent directory exists
+    char dir_path[256];
+    safe_strcpy(dir_path, path, sizeof(dir_path) - 1);
+
+    char* last_slash = std::strrchr(dir_path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+        // Use ams::fs::EnsureDirectory which creates recursively
+        ams::fs::EnsureDirectory(dir_path);
+    }
+
+    // Format config content
+    constexpr size_t buffer_size = 4096;
+    char* buffer = new (std::nothrow) char[buffer_size];
+    if (!buffer) {
+        return ConfigResult::IoError;
+    }
+
+    size_t content_size = format_config_content(buffer, buffer_size, config);
+
+    // Delete existing file if present
+    ams::fs::DirectoryEntryType entry_type;
+    if (R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, path))) {
+        ams::fs::DeleteFile(path);
+    }
+
+    // Create new file
+    if (R_FAILED(ams::fs::CreateFile(path, content_size))) {
+        delete[] buffer;
+        return ConfigResult::IoError;
+    }
+
+    // Open file for writing
+    ams::fs::FileHandle file;
+    if (R_FAILED(ams::fs::OpenFile(&file, path, ams::fs::OpenMode_Write))) {
+        delete[] buffer;
+        return ConfigResult::IoError;
+    }
+
+    // Write content
+    ams::Result write_result = ams::fs::WriteFile(file, 0, buffer, content_size, ams::fs::WriteOption::Flush);
+    ams::fs::CloseFile(file);
+
+    delete[] buffer;
+
+    if (R_FAILED(write_result)) {
+        return ConfigResult::IoError;
+    }
+
+    return ConfigResult::Success;
+}
+
+ConfigResult ensure_config_exists(const char* path) {
+    // Check if file exists using ams::fs
+    ams::fs::DirectoryEntryType entry_type;
+    if (R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, path))) {
+        if (entry_type == ams::fs::DirectoryEntryType_File) {
+            return ConfigResult::Success;  // File already exists
+        }
+    }
+
+    // File doesn't exist, create with defaults
+    Config default_config = get_default_config();
+    return save_config(path, default_config);
+}
+
+#else
+// =============================================================================
+// PC/Test Implementation
+// Uses standard C file I/O for testing on desktop platforms
+// =============================================================================
 
 ConfigResult load_config(const char* path, Config& config) {
     FILE* file = std::fopen(path, "r");
@@ -276,7 +566,6 @@ ConfigResult save_config(const char* path, const Config& config) {
     if (last_slash) {
         *last_slash = '\0';
         // Create directory (mkdir -p equivalent)
-        // On Switch with Atmosphere, this creates the directory on SD card
         mkdir(dir_path, 0755);
     }
 
@@ -339,5 +628,7 @@ ConfigResult ensure_config_exists(const char* path) {
     Config default_config = get_default_config();
     return save_config(path, default_config);
 }
+
+#endif // __SWITCH__
 
 } // namespace ryu_ldn::config
