@@ -45,10 +45,20 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Fix git safe directory
+        run: |
+          git config --global --add safe.directory /__w/ryu_ldn_nx/ryu_ldn_nx
+          git config --global --add safe.directory /__w/ryu_ldn_nx/ryu_ldn_nx/sysmodule/Atmosphere-libs
+
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ runner.os }}-ccache
+
+      - name: Build libstratosphere
+        run: |
+          cd sysmodule/Atmosphere-libs/libstratosphere
+          make nx_release -j$(nproc)
 
       - name: Build sysmodule
         id: build
