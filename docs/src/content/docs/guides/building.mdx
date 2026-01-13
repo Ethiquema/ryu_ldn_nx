@@ -106,7 +106,6 @@ docker-compose run --rm overlay
 # Create package structure
 mkdir -p release/atmosphere/contents/4200000000000010
 mkdir -p release/switch/.overlays
-mkdir -p release/config/ryu_ldn_nx
 
 # Copy files
 cp sysmodule/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
@@ -114,16 +113,7 @@ cp sysmodule/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000010/main.n
 cp sysmodule/res/*.json release/atmosphere/contents/4200000000000010/
 cp overlay/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
 
-# Create config
-cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
-[server]
-host = ldn.ryujinx.app
-port = 30456
-[settings]
-debug = 0
-EOF
-
-# Create ZIP
+# Create ZIP (config is generated on first boot)
 cd release && zip -r ../ryu_ldn_nx.zip .
 ```
 

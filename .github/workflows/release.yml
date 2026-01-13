@@ -178,7 +178,6 @@ jobs:
           # Create SD card directory structure
           mkdir -p release/atmosphere/contents/4200000000000010
           mkdir -p release/switch/.overlays
-          mkdir -p release/config/ryu_ldn_nx
 
           # Copy sysmodule files
           cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
@@ -191,20 +190,7 @@ jobs:
           # Copy overlay
           cp overlay-artifacts/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
 
-          # Create default config
-          cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
-          ; ryu_ldn_nx Configuration
-          ; https://github.com/ryu_ldn_nx/ryu_ldn_nx
-
-          [server]
-          ; Server address for ryu_ldn multiplayer
-          host = ldn.ryujinx.app
-          port = 30456
-
-          [settings]
-          ; Enable debug logging (0 = off, 1 = on)
-          debug = 0
-          EOF
+          # Config will be generated on first boot by the sysmodule
 
           # List contents for verification
           echo "=== Release contents ==="

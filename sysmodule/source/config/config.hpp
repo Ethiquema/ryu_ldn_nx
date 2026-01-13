@@ -94,6 +94,19 @@ constexpr size_t MAX_PASSPHRASE_LENGTH = 64;
  */
 constexpr size_t MAX_INTERFACE_LENGTH = 32;
 
+/**
+ * @brief Default configuration file path on SD card
+ *
+ * This is the standard location for ryu_ldn_nx config.
+ * The "sdmc:" prefix refers to the mounted SD card in Atmosphere.
+ */
+constexpr const char* CONFIG_PATH = "sdmc:/config/ryu_ldn_nx/config.ini";
+
+/**
+ * @brief Configuration directory path on SD card
+ */
+constexpr const char* CONFIG_DIR = "sdmc:/config/ryu_ldn_nx";
+
 // -----------------------------------------------------------------------------
 // Default Values - Server
 // -----------------------------------------------------------------------------
@@ -303,6 +316,29 @@ Config get_default_config();
  * - IoError: Read error - config unchanged
  */
 ConfigResult load_config(const char* path, Config& config);
+
+/**
+ * @brief Save configuration to INI file
+ *
+ * Writes the config structure to an INI file.
+ * Creates parent directories if they don't exist.
+ *
+ * @param path Absolute path to configuration file
+ * @param config Configuration to save
+ * @return ConfigResult indicating success or failure type
+ */
+ConfigResult save_config(const char* path, const Config& config);
+
+/**
+ * @brief Ensure configuration file exists, create with defaults if not
+ *
+ * Checks if config file exists. If not, creates it with default values.
+ * This should be called on sysmodule startup.
+ *
+ * @param path Absolute path to configuration file
+ * @return ConfigResult indicating success or failure type
+ */
+ConfigResult ensure_config_exists(const char* path);
 
 /**
  * @brief Convert ConfigResult to human-readable string

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <sys/stat.h>
 
 namespace ryu_ldn::config {
 
@@ -263,6 +264,80 @@ ConfigResult load_config(const char* path, Config& config) {
 
     std::fclose(file);
     return ConfigResult::Success;
+}
+
+ConfigResult save_config(const char* path, const Config& config) {
+    // Create parent directory if needed
+    // Extract directory path from file path
+    char dir_path[256];
+    safe_strcpy(dir_path, path, sizeof(dir_path) - 1);
+
+    char* last_slash = std::strrchr(dir_path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+        // Create directory (mkdir -p equivalent)
+        // On Switch with Atmosphere, this creates the directory on SD card
+        mkdir(dir_path, 0755);
+    }
+
+    FILE* file = std::fopen(path, "w");
+    if (!file) {
+        return ConfigResult::IoError;
+    }
+
+    std::fprintf(file, "; ryu_ldn_nx Configuration\n");
+    std::fprintf(file, "; Auto-generated on first boot\n");
+    std::fprintf(file, "; Edit this file to customize settings\n\n");
+
+    std::fprintf(file, "[server]\n");
+    std::fprintf(file, "; Server hostname or IP address\n");
+    std::fprintf(file, "host = %s\n", config.server.host);
+    std::fprintf(file, "; Server port\n");
+    std::fprintf(file, "port = %u\n", config.server.port);
+    std::fprintf(file, "; Use TLS encryption (0/1)\n");
+    std::fprintf(file, "use_tls = %d\n\n", config.server.use_tls ? 1 : 0);
+
+    std::fprintf(file, "[network]\n");
+    std::fprintf(file, "; Connection timeout in milliseconds\n");
+    std::fprintf(file, "connect_timeout = %u\n", config.network.connect_timeout_ms);
+    std::fprintf(file, "; Ping interval in milliseconds\n");
+    std::fprintf(file, "ping_interval = %u\n", config.network.ping_interval_ms);
+    std::fprintf(file, "; Reconnect delay in milliseconds\n");
+    std::fprintf(file, "reconnect_delay = %u\n", config.network.reconnect_delay_ms);
+    std::fprintf(file, "; Max reconnect attempts (0 = infinite)\n");
+    std::fprintf(file, "max_reconnect_attempts = %u\n\n", config.network.max_reconnect_attempts);
+
+    std::fprintf(file, "[ldn]\n");
+    std::fprintf(file, "; Enable LDN emulation (0/1)\n");
+    std::fprintf(file, "enabled = %d\n", config.ldn.enabled ? 1 : 0);
+    std::fprintf(file, "; Room passphrase (empty = public)\n");
+    std::fprintf(file, "passphrase = %s\n", config.ldn.passphrase);
+    std::fprintf(file, "; Network interface (empty = auto)\n");
+    std::fprintf(file, "interface = %s\n\n", config.ldn.interface_name);
+
+    std::fprintf(file, "[debug]\n");
+    std::fprintf(file, "; Enable debug logging (0/1)\n");
+    std::fprintf(file, "enabled = %d\n", config.debug.enabled ? 1 : 0);
+    std::fprintf(file, "; Log level (0=errors, 1=warnings, 2=info, 3=verbose)\n");
+    std::fprintf(file, "level = %u\n", config.debug.level);
+    std::fprintf(file, "; Log to file (0/1)\n");
+    std::fprintf(file, "log_to_file = %d\n", config.debug.log_to_file ? 1 : 0);
+
+    std::fclose(file);
+    return ConfigResult::Success;
+}
+
+ConfigResult ensure_config_exists(const char* path) {
+    // Try to open file to check if it exists
+    FILE* file = std::fopen(path, "r");
+    if (file) {
+        std::fclose(file);
+        return ConfigResult::Success;  // File already exists
+    }
+
+    // File doesn't exist, create with defaults
+    Config default_config = get_default_config();
+    return save_config(path, default_config);
 }
 
 } // namespace ryu_ldn::config

@@ -352,6 +352,120 @@ TEST(full_config_example) {
 }
 
 // ============================================================================
+// Save Config Tests
+// ============================================================================
+
+TEST(save_config_creates_file) {
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/test_save_config_%d.ini", rand());
+
+    Config config = get_default_config();
+    ConfigResult result = save_config(path, config);
+
+    ASSERT_EQ(result, ConfigResult::Success);
+
+    // Verify file exists and can be loaded back
+    Config loaded = get_default_config();
+    loaded.server.port = 0;  // Change to verify it gets loaded
+    result = load_config(path, loaded);
+
+    ASSERT_EQ(result, ConfigResult::Success);
+    ASSERT_EQ(loaded.server.port, DEFAULT_PORT);
+
+    std::remove(path);
+}
+
+TEST(save_config_preserves_values) {
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/test_save_preserve_%d.ini", rand());
+
+    Config config = get_default_config();
+    // Modify some values
+    strcpy(config.server.host, "test.example.com");
+    config.server.port = 12345;
+    config.server.use_tls = false;
+    config.network.connect_timeout_ms = 9999;
+    config.ldn.enabled = false;
+    strcpy(config.ldn.passphrase, "testpass");
+    config.debug.enabled = true;
+    config.debug.level = 3;
+
+    ConfigResult result = save_config(path, config);
+    ASSERT_EQ(result, ConfigResult::Success);
+
+    // Load it back
+    Config loaded = get_default_config();
+    result = load_config(path, loaded);
+
+    ASSERT_EQ(result, ConfigResult::Success);
+    ASSERT_STREQ(loaded.server.host, "test.example.com");
+    ASSERT_EQ(loaded.server.port, 12345);
+    ASSERT_EQ(loaded.server.use_tls, false);
+    ASSERT_EQ(loaded.network.connect_timeout_ms, 9999u);
+    ASSERT_EQ(loaded.ldn.enabled, false);
+    ASSERT_STREQ(loaded.ldn.passphrase, "testpass");
+    ASSERT_EQ(loaded.debug.enabled, true);
+    ASSERT_EQ(loaded.debug.level, 3u);
+
+    std::remove(path);
+}
+
+// ============================================================================
+// Ensure Config Exists Tests
+// ============================================================================
+
+TEST(ensure_config_exists_creates_new) {
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/test_ensure_%d.ini", rand());
+
+    // Make sure file doesn't exist
+    std::remove(path);
+
+    ConfigResult result = ensure_config_exists(path);
+    ASSERT_EQ(result, ConfigResult::Success);
+
+    // Verify file was created with defaults
+    Config loaded = get_default_config();
+    loaded.server.port = 0;  // Change to verify
+    result = load_config(path, loaded);
+
+    ASSERT_EQ(result, ConfigResult::Success);
+    ASSERT_EQ(loaded.server.port, DEFAULT_PORT);
+    ASSERT_STREQ(loaded.server.host, DEFAULT_HOST);
+
+    std::remove(path);
+}
+
+TEST(ensure_config_exists_keeps_existing) {
+    char path[256];
+    snprintf(path, sizeof(path), "/tmp/test_ensure_existing_%d.ini", rand());
+
+    // Create a config with custom values
+    const char* content =
+        "[server]\n"
+        "host = custom.host.com\n"
+        "port = 54321\n";
+
+    std::ofstream f(path);
+    f << content;
+    f.close();
+
+    // ensure_config_exists should not overwrite
+    ConfigResult result = ensure_config_exists(path);
+    ASSERT_EQ(result, ConfigResult::Success);
+
+    // Verify original values are preserved
+    Config loaded = get_default_config();
+    result = load_config(path, loaded);
+
+    ASSERT_EQ(result, ConfigResult::Success);
+    ASSERT_STREQ(loaded.server.host, "custom.host.com");
+    ASSERT_EQ(loaded.server.port, 54321);
+
+    std::remove(path);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 

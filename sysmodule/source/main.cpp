@@ -19,6 +19,7 @@ extern "C" {
 }
 
 #include "ldn/ldn_mitm_service.hpp"
+#include "config/config.hpp"
 
 namespace ams {
 
@@ -224,6 +225,9 @@ namespace ams {
 
             // Mount SD card for configuration
             R_ABORT_UNLESS(fs::MountSdCard("sdmc"));
+
+            // Ensure config file exists (create with defaults if not)
+            ryu_ldn::config::ensure_config_exists(ryu_ldn::config::CONFIG_PATH);
 
             // Initialize network services
             R_ABORT_UNLESS(nifmInitialize(NifmServiceType_Admin));
