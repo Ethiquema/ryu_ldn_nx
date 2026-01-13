@@ -104,14 +104,14 @@ docker-compose run --rm build
 docker-compose run --rm overlay
 
 # Create package structure
-mkdir -p release/atmosphere/contents/4200000000000020
+mkdir -p release/atmosphere/contents/4200000000000010
 mkdir -p release/switch/.overlays
 mkdir -p release/config/ryu_ldn_nx
 
 # Copy files
-cp sysmodule/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000020/exefs.nsp
-cp sysmodule/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000020/main.npdm
-cp sysmodule/res/*.json release/atmosphere/contents/4200000000000020/
+cp sysmodule/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
+cp sysmodule/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000010/main.npdm
+cp sysmodule/res/*.json release/atmosphere/contents/4200000000000010/
 cp overlay/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
 
 # Create config

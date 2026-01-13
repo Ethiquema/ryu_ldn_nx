@@ -1,8 +1,8 @@
 {
     "name": "ryu_ldn_nx",
-    "program_id": "0x4200000000000020",
-    "program_id_range_min": "0x4200000000000020",
-    "program_id_range_max": "0x4200000000000020",
+    "program_id": "0x4200000000000010",
+    "program_id_range_min": "0x4200000000000010",
+    "program_id_range_max": "0x4200000000000010",
     "main_thread_stack_size": "0x20000",
     "main_thread_priority": 42,
     "default_cpu_id": 3,

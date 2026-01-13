@@ -152,17 +152,17 @@ jobs:
       - name: Prepare SD card structure
         run: |
           # Create SD card directory structure
-          mkdir -p release/atmosphere/contents/4200000000000020
+          mkdir -p release/atmosphere/contents/4200000000000010
           mkdir -p release/switch/.overlays
           mkdir -p release/config/ryu_ldn_nx
 
           # Copy sysmodule files
-          cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000020/exefs.nsp
-          cp sysmodule-artifacts/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000020/main.npdm
+          cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
+          cp sysmodule-artifacts/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000010/main.npdm
 
           # Copy toolbox.json and app.json
-          cp sysmodule-artifacts/res/toolbox.json release/atmosphere/contents/4200000000000020/ || true
-          cp sysmodule-artifacts/res/app.json release/atmosphere/contents/4200000000000020/ || true
+          cp sysmodule-artifacts/res/toolbox.json release/atmosphere/contents/4200000000000010/ || true
+          cp sysmodule-artifacts/res/app.json release/atmosphere/contents/4200000000000010/ || true
 
           # Copy overlay
           cp overlay-artifacts/ryu_ldn_nx_overlay.ovl release/switch/.overlays/

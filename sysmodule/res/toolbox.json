@@ -1,5 +1,5 @@
 {
     "name": "ryu_ldn_nx",
-    "tid": "0x4200000000000020",
+    "tid": "0x4200000000000010",
     "requires_reboot": true
 }

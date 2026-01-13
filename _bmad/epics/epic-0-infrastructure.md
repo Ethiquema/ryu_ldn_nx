@@ -74,7 +74,7 @@ Créer la structure de base du sysmodule basée sur ldn_mitm, avec Makefile fonc
 1. Copier structure de base depuis ldn_mitm
 2. Adapter Makefile pour ryu_ldn_nx
 3. Créer `main.cpp` minimal (juste entry point)
-4. Configurer `app.json` (title_id: 0x4200000000000020)
+4. Configurer `app.json` (title_id: 0x4200000000000010)
 5. Vérifier compilation produit `ryu_ldn_nx.nso`
 
 #### Tests

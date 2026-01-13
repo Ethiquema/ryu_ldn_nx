@@ -37,7 +37,7 @@ Just install, connect to WiFi, and play!
 2. Extract the ZIP to your SD card root
 3. The files should be placed in:
    ```
-   /atmosphere/contents/4200000000000020/
+   /atmosphere/contents/4200000000000010/
    ```
 4. Reboot your Switch
 5. Launch any game with local multiplayer - it will automatically use online mode!
