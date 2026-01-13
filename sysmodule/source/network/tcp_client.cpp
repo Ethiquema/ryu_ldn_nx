@@ -28,6 +28,7 @@
  */
 
 #include "tcp_client.hpp"
+#include "../debug/log.hpp"
 #include <cstring>
 
 namespace ryu_ldn::network {
@@ -99,8 +100,11 @@ TcpClient& TcpClient::operator=(TcpClient&& other) noexcept {
  * The receive buffer is reset to ensure clean state.
  */
 ClientResult TcpClient::connect(const char* host, uint16_t port, uint32_t timeout_ms) {
+    LOG_VERBOSE("TcpClient::connect(%s, %u, %u)", host, port, timeout_ms);
+
     // Check if already connected
     if (m_socket.is_connected()) {
+        LOG_WARN("TcpClient already connected");
         return ClientResult::AlreadyConnected;
     }
 
@@ -108,6 +112,7 @@ ClientResult TcpClient::connect(const char* host, uint16_t port, uint32_t timeou
     SocketResult result = m_socket.connect(host, port, timeout_ms);
 
     if (result != SocketResult::Success) {
+        LOG_VERBOSE("Socket connect failed: %s", socket_result_to_string(result));
         return socket_to_client_result(result);
     }
 
@@ -117,6 +122,7 @@ ClientResult TcpClient::connect(const char* host, uint16_t port, uint32_t timeou
     // Enable TCP_NODELAY by default for lower latency
     m_socket.set_nodelay(true);
 
+    LOG_VERBOSE("TcpClient connected successfully");
     return ClientResult::Success;
 }
 
@@ -126,6 +132,7 @@ ClientResult TcpClient::connect(const char* host, uint16_t port, uint32_t timeou
  * Closes socket and resets internal state.
  */
 void TcpClient::disconnect() {
+    LOG_VERBOSE("TcpClient::disconnect()");
     m_socket.close();
     m_recv_buffer.reset();
 }

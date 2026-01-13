@@ -41,6 +41,7 @@
 
 #include "client.hpp"
 #include "socket.hpp"
+#include "../debug/log.hpp"
 #include <cstring>
 
 namespace ryu_ldn {
@@ -308,9 +309,12 @@ ClientOpResult RyuLdnClient::connect() {
  * @return ClientOpResult indicating success or failure
  */
 ClientOpResult RyuLdnClient::connect(const char* host, uint16_t port) {
+    LOG_INFO("Connecting to %s:%u", host ? host : m_config.host, port);
+
     // Check if already connected or connecting
     if (m_state_machine.is_connected() || m_state_machine.is_transitioning()) {
         if (m_state_machine.get_state() != ConnectionState::Backoff) {
+            LOG_WARN("Already connected or connecting");
             return ClientOpResult::AlreadyConnected;
         }
     }
@@ -351,6 +355,8 @@ ClientOpResult RyuLdnClient::connect(const char* host, uint16_t port) {
  * Sends disconnect message (if connected) and closes connection.
  */
 void RyuLdnClient::disconnect() {
+    LOG_INFO("Disconnecting from server");
+
     // Send disconnect message if we're ready
     if (m_state_machine.is_ready()) {
         protocol::DisconnectMessage msg{};
@@ -366,6 +372,8 @@ void RyuLdnClient::disconnect() {
     // Reset reconnection state
     m_reconnect_manager.reset();
     m_handshake_sent = false;
+
+    LOG_VERBOSE("Disconnect complete");
 }
 
 /**
@@ -686,6 +694,8 @@ ClientOpResult RyuLdnClient::send_ping() {
  * Called when state machine enters Connecting or Retrying state.
  */
 void RyuLdnClient::try_connect() {
+    LOG_VERBOSE("Attempting TCP connection to %s:%u", m_config.host, m_config.port);
+
     ClientResult result = m_tcp_client.connect(
         m_config.host,
         m_config.port,
@@ -693,16 +703,19 @@ void RyuLdnClient::try_connect() {
     );
 
     if (result == ClientResult::Success) {
+        LOG_INFO("TCP connection established");
         // Connection successful
         m_state_machine.process_event(ConnectionEvent::ConnectSuccess);
         m_reconnect_manager.reset();
     } else {
+        LOG_WARN("TCP connection failed: %s", client_result_to_string(result));
         // Connection failed
         m_state_machine.process_event(ConnectionEvent::ConnectFailed);
         m_reconnect_manager.record_failure();
 
         // Start backoff if auto-reconnect is enabled
         if (m_config.auto_reconnect) {
+            LOG_VERBOSE("Starting backoff, retry %u", m_reconnect_manager.get_retry_count());
             start_backoff();
         }
     }
@@ -810,6 +823,8 @@ void RyuLdnClient::handle_packet(protocol::PacketId id,
  * @return ClientOpResult indicating success or failure
  */
 ClientOpResult RyuLdnClient::send_initialize() {
+    LOG_VERBOSE("Sending Initialize handshake");
+
     protocol::InitializeMessage msg{};
 
     // Generate a session ID (in real use, this would be a proper UUID)
@@ -822,6 +837,7 @@ ClientOpResult RyuLdnClient::send_initialize() {
 
     ClientResult result = m_tcp_client.send_initialize(msg);
     if (result != ClientResult::Success) {
+        LOG_ERROR("Failed to send Initialize: %s", client_result_to_string(result));
         return ClientOpResult::SendFailed;
     }
 
@@ -903,6 +919,8 @@ bool RyuLdnClient::is_handshake_timeout(uint64_t current_time_ms) const {
 bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
                                                const uint8_t* data,
                                                size_t size) {
+    LOG_VERBOSE("Received handshake response: packet_id=%u", static_cast<uint32_t>(id));
+
     switch (id) {
         case protocol::PacketId::NetworkError: {
             // Server rejected our handshake
@@ -915,9 +933,12 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
                 m_last_error_code = protocol::NetworkErrorCode::InternalError;
             }
 
+            LOG_ERROR("Handshake rejected: error_code=%u", static_cast<uint32_t>(m_last_error_code));
+
             // Check for version mismatch specifically
             if (m_last_error_code == protocol::NetworkErrorCode::VersionMismatch) {
                 // Version mismatch is a fatal error - no point retrying
+                LOG_ERROR("Version mismatch - fatal error");
                 m_state_machine.process_event(ConnectionEvent::FatalError);
             } else {
                 // Other errors might be recoverable
@@ -932,6 +953,7 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
         case protocol::PacketId::SyncNetwork: {
             // Server accepted our initialization
             // SyncNetwork contains NetworkInfo with our assigned session info
+            LOG_INFO("Handshake successful - ready");
             m_last_error_code = protocol::NetworkErrorCode::None;
             m_state_machine.process_event(ConnectionEvent::HandshakeSuccess);
             return true;
@@ -940,6 +962,7 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
         case protocol::PacketId::Ping: {
             // Some server implementations send Ping as acknowledgment
             // Consider this a successful handshake
+            LOG_INFO("Handshake successful (ping ack) - ready");
             m_last_error_code = protocol::NetworkErrorCode::None;
             m_state_machine.process_event(ConnectionEvent::HandshakeSuccess);
             return true;
@@ -947,6 +970,7 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
 
         case protocol::PacketId::Disconnect: {
             // Server disconnected us during handshake
+            LOG_WARN("Server disconnected during handshake");
             m_last_error_code = protocol::NetworkErrorCode::ConnectionRejected;
             m_state_machine.process_event(ConnectionEvent::HandshakeFailed);
             if (m_config.auto_reconnect) {
@@ -958,6 +982,7 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
         default:
             // Unexpected packet during handshake
             // Could be out-of-order delivery, just ignore and keep waiting
+            LOG_VERBOSE("Unexpected packet during handshake: %u", static_cast<uint32_t>(id));
             // Pass to user callback if set
             if (m_packet_callback != nullptr) {
                 m_packet_callback(id, data, size);

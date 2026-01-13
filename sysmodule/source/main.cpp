@@ -20,6 +20,7 @@ extern "C" {
 
 #include "ldn/ldn_mitm_service.hpp"
 #include "config/config.hpp"
+#include "debug/log.hpp"
 
 namespace ams {
 
@@ -229,6 +230,17 @@ namespace ams {
             // Ensure config file exists (create with defaults if not)
             ryu_ldn::config::ensure_config_exists(ryu_ldn::config::CONFIG_PATH);
 
+            // Load configuration
+            ryu_ldn::config::Config config = ryu_ldn::config::get_default_config();
+            ryu_ldn::config::load_config(ryu_ldn::config::CONFIG_PATH, config);
+
+            // Initialize logger with debug settings
+            ryu_ldn::debug::g_logger.init(config.debug, ryu_ldn::config::LOG_PATH);
+            LOG_INFO("ryu_ldn_nx sysmodule starting");
+            LOG_INFO("Config loaded from %s", ryu_ldn::config::CONFIG_PATH);
+            LOG_VERBOSE("Server: %s:%u, TLS: %s", config.server.host, config.server.port,
+                        config.server.use_tls ? "enabled" : "disabled");
+
             // Initialize network services
             R_ABORT_UNLESS(nifmInitialize(NifmServiceType_Admin));
             R_ABORT_UNLESS(bsdInitialize(&LibnxBsdInitConfig,
@@ -238,6 +250,8 @@ namespace ams {
         }
 
         void FinalizeSystemModule() {
+            LOG_INFO("ryu_ldn_nx sysmodule shutting down");
+            ryu_ldn::debug::g_logger.flush();
             socketExit();
             bsdExit();
             nifmExit();
@@ -266,9 +280,11 @@ namespace ams {
 
     void Main() {
         // Register ldn:u MITM service
+        LOG_INFO("Registering ldn:u MITM service");
         constexpr sm::ServiceName MitmServiceName = sm::ServiceName::Encode("ldn:u");
         R_ABORT_UNLESS((mitm::g_server_manager.RegisterMitmServer<
             mitm::ldn::LdnMitMService>(0, MitmServiceName)));
+        LOG_INFO("MITM service registered successfully");
 
         // Create main processing thread
         R_ABORT_UNLESS(os::CreateThread(

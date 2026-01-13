@@ -21,6 +21,7 @@ endif
 TEST_SOURCES := \
 	protocol_tests.cpp \
 	config_tests.cpp \
+	log_tests.cpp \
 	socket_tests.cpp \
 	tcp_client_tests.cpp \
 	connection_state_tests.cpp \
@@ -36,6 +37,7 @@ TEST_SOURCES := \
 # Implementation sources needed for tests
 IMPL_SOURCES := \
 	../sysmodule/source/config/config.cpp \
+	../sysmodule/source/debug/log.cpp \
 	../sysmodule/source/network/socket.cpp \
 	../sysmodule/source/network/tcp_client.cpp \
 	../sysmodule/source/network/connection_state.cpp \
@@ -48,6 +50,7 @@ IMPL_OBJECTS := $(notdir $(IMPL_SOURCES:.cpp=.o))
 # Targets
 TARGET_PROTOCOL := run_protocol_tests
 TARGET_CONFIG := run_config_tests
+TARGET_LOG := run_log_tests
 TARGET_SOCKET := run_socket_tests
 TARGET_TCP_CLIENT := run_tcp_client_tests
 TARGET_CONNECTION_STATE := run_connection_state_tests
@@ -64,9 +67,9 @@ TARGET_ALL := run_all_tests
 #---------------------------------------------------------------------------------
 # Build rules
 #---------------------------------------------------------------------------------
-.PHONY: all clean test test-protocol test-config test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay coverage
+.PHONY: all clean test test-protocol test-config test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay coverage
 
-all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
 
 # Protocol tests (header-only, no impl needed)
 $(TARGET_PROTOCOL): protocol_tests.o
@@ -76,12 +79,16 @@ $(TARGET_PROTOCOL): protocol_tests.o
 $(TARGET_CONFIG): config_tests.o config.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+# Log tests (needs log.cpp and config.cpp impl)
+$(TARGET_LOG): log_tests.o log.o config.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Socket tests (needs socket.cpp impl)
 $(TARGET_SOCKET): socket_tests.o socket.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
-# TCP Client tests (needs socket.cpp and tcp_client.cpp)
-$(TARGET_TCP_CLIENT): tcp_client_tests.o tcp_client.o socket.o
+# TCP Client tests (needs socket.cpp, tcp_client.cpp, and log.cpp for logging)
+$(TARGET_TCP_CLIENT): tcp_client_tests.o tcp_client.o socket.o log.o config.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Connection State tests (needs connection_state.cpp)
@@ -92,8 +99,8 @@ $(TARGET_CONNECTION_STATE): connection_state_tests.o connection_state.o
 $(TARGET_RECONNECT): reconnect_tests.o reconnect.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
-# Client tests (needs all network modules)
-$(TARGET_CLIENT): client_tests.o client.o tcp_client.o socket.o connection_state.o reconnect.o config.o
+# Client tests (needs all network modules and log.cpp for logging)
+$(TARGET_CLIENT): client_tests.o client.o tcp_client.o socket.o connection_state.o reconnect.o config.o log.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # LDN Types tests (header-only, no impl needed)
@@ -128,6 +135,9 @@ $(TARGET_OVERLAY): overlay_tests.o
 config.o: ../sysmodule/source/config/config.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+log.o: ../sysmodule/source/debug/log.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 socket.o: ../sysmodule/source/network/socket.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
@@ -144,12 +154,15 @@ client.o: ../sysmodule/source/network/client.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Run all tests
-test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
 	@echo "=== Running Protocol Tests ==="
 	./$(TARGET_PROTOCOL)
 	@echo ""
 	@echo "=== Running Config Tests ==="
 	./$(TARGET_CONFIG)
+	@echo ""
+	@echo "=== Running Log Tests ==="
+	./$(TARGET_LOG)
 	@echo ""
 	@echo "=== Running Socket Tests ==="
 	./$(TARGET_SOCKET)
@@ -190,6 +203,9 @@ test-protocol: $(TARGET_PROTOCOL)
 test-config: $(TARGET_CONFIG)
 	./$(TARGET_CONFIG)
 
+test-log: $(TARGET_LOG)
+	./$(TARGET_LOG)
+
 test-socket: $(TARGET_SOCKET)
 	./$(TARGET_SOCKET)
 
@@ -229,7 +245,7 @@ coverage: clean
 	@echo "Coverage report generated"
 
 clean:
-	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
+	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY)
 	rm -f *.gcno *.gcda *.gcov
 
 #---------------------------------------------------------------------------------
@@ -244,6 +260,14 @@ config_tests.o: config_tests.cpp \
 	../sysmodule/source/config/config.hpp
 
 config.o: ../sysmodule/source/config/config.cpp \
+	../sysmodule/source/config/config.hpp
+
+log_tests.o: log_tests.cpp \
+	../sysmodule/source/debug/log.hpp \
+	../sysmodule/source/config/config.hpp
+
+log.o: ../sysmodule/source/debug/log.cpp \
+	../sysmodule/source/debug/log.hpp \
 	../sysmodule/source/config/config.hpp
 
 socket_tests.o: socket_tests.cpp \

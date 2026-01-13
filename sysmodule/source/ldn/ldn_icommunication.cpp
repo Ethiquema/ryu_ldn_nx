@@ -7,6 +7,7 @@
  */
 
 #include "ldn_icommunication.hpp"
+#include "../debug/log.hpp"
 #include <arpa/inet.h>
 
 namespace ams::mitm::ldn {
@@ -41,21 +42,28 @@ ICommunicationService::~ICommunicationService() {
 
 Result ICommunicationService::ConnectToServer() {
     if (m_server_connected) {
+        LOG_VERBOSE("Already connected to server");
         R_SUCCEED();
     }
+
+    LOG_INFO("Connecting to RyuLdn server...");
 
     // Attempt connection
     auto result = m_server_client.connect();
     if (result != ryu_ldn::network::ClientOpResult::Success) {
+        LOG_ERROR("Server connection failed: %s",
+                  ryu_ldn::network::client_op_result_to_string(result));
         R_RETURN(MAKERESULT(0x10, 2)); // Connection failed
     }
 
     m_server_connected = true;
+    LOG_INFO("Connected to RyuLdn server successfully");
     R_SUCCEED();
 }
 
 void ICommunicationService::DisconnectFromServer() {
     if (m_server_connected) {
+        LOG_INFO("Disconnecting from RyuLdn server");
         m_server_client.disconnect();
         m_server_connected = false;
     }
@@ -72,6 +80,7 @@ bool ICommunicationService::IsServerConnected() const {
 Result ICommunicationService::Initialize(const ams::sf::ClientProcessId& client_process_id) {
     // Store client process ID for tracking
     m_client_process_id = client_process_id.GetValue().value;
+    LOG_INFO("LDN Initialize called by process 0x%lx", m_client_process_id);
 
     // Transition to Initialized state
     auto result = m_state_machine.Initialize();
@@ -80,8 +89,7 @@ Result ICommunicationService::Initialize(const ams::sf::ClientProcessId& client_
     // Reset disconnect reason on fresh initialization
     m_disconnect_reason = DisconnectReason::None;
 
-    // TODO: Initialize connection to RyuLdn server
-
+    LOG_VERBOSE("LDN Initialized successfully");
     R_SUCCEED();
 }
 

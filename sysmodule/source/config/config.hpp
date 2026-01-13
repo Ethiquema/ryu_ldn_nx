@@ -107,6 +107,13 @@ constexpr const char* CONFIG_PATH = "sdmc:/config/ryu_ldn_nx/config.ini";
  */
 constexpr const char* CONFIG_DIR = "sdmc:/config/ryu_ldn_nx";
 
+/**
+ * @brief Log file path on SD card
+ *
+ * Debug logs are written here when log_to_file is enabled.
+ */
+constexpr const char* LOG_PATH = "sdmc:/config/ryu_ldn_nx/ryu_ldn_nx.log";
+
 // -----------------------------------------------------------------------------
 // Default Values - Server
 // -----------------------------------------------------------------------------
