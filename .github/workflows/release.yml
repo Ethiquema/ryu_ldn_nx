@@ -44,6 +44,8 @@ jobs:
 
     outputs:
       version: ${{ steps.version.outputs.version }}
+      warnings: ${{ steps.build.outputs.warnings }}
+      errors: ${{ steps.build.outputs.errors }}
 
     steps:
       - name: Checkout
@@ -87,9 +89,39 @@ jobs:
           make nx_release -j$(nproc)
 
       - name: Build sysmodule
+        id: build
         run: |
           cd sysmodule
-          make -j$(nproc) VERSION="${{ steps.version.outputs.version }}"
+          # Capture build output
+          make -j$(nproc) VERSION="${{ steps.version.outputs.version }}" 2>&1 | tee build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          # Extract warnings and errors
+          WARNINGS=$(grep -E "warning:" build.log | grep -v "Atmosphere-libs" | sort -u || true)
+          ERRORS=$(grep -E "error:" build.log | sort -u || true)
+
+          # Save to files for artifact upload
+          echo "$WARNINGS" > warnings.txt
+          echo "$ERRORS" > errors.txt
+
+          # Count
+          WARN_COUNT=$(echo "$WARNINGS" | grep -c "warning:" || echo "0")
+          ERR_COUNT=$(echo "$ERRORS" | grep -c "error:" || echo "0")
+
+          echo "warnings_count=${WARN_COUNT}" >> $GITHUB_OUTPUT
+          echo "errors_count=${ERR_COUNT}" >> $GITHUB_OUTPUT
+
+          exit $BUILD_STATUS
+
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sysmodule-build-logs
+          path: |
+            sysmodule/build.log
+            sysmodule/warnings.txt
+            sysmodule/errors.txt
 
       - name: Upload sysmodule artifact
         uses: actions/upload-artifact@v4
@@ -111,13 +143,15 @@ jobs:
     container:
       image: devkitpro/devkita64:latest
 
+    outputs:
+      warnings: ${{ steps.build.outputs.warnings }}
+      errors: ${{ steps.build.outputs.errors }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install libtesla
-        run: |
-          git clone --depth=1 https://github.com/WerWolv/libtesla.git /opt/libtesla
+        with:
+          submodules: recursive
 
       - name: Get version
         id: version
@@ -130,15 +164,47 @@ jobs:
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Build overlay
+        id: build
         run: |
           cd overlay
-          make -j$(nproc) LIBTESLA=/opt/libtesla VERSION="${{ steps.version.outputs.version }}"
+          # Capture build output
+          make -j$(nproc) VERSION="${{ steps.version.outputs.version }}" 2>&1 | tee build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          # Extract warnings and errors (exclude libultrahand internal warnings)
+          WARNINGS=$(grep -E "warning:" build.log | grep -v "libultrahand" | sort -u || true)
+          ERRORS=$(grep -E "error:" build.log | sort -u || true)
+
+          # Save to files
+          echo "$WARNINGS" > warnings.txt
+          echo "$ERRORS" > errors.txt
+
+          # Count
+          WARN_COUNT=$(echo "$WARNINGS" | grep -c "warning:" || echo "0")
+          ERR_COUNT=$(echo "$ERRORS" | grep -c "error:" || echo "0")
+
+          echo "warnings_count=${WARN_COUNT}" >> $GITHUB_OUTPUT
+          echo "errors_count=${ERR_COUNT}" >> $GITHUB_OUTPUT
+
+          exit $BUILD_STATUS
+
+      - name: Upload build logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: overlay-build-logs
+          path: |
+            overlay/build.log
+            overlay/warnings.txt
+            overlay/errors.txt
 
       - name: Upload overlay artifact
         uses: actions/upload-artifact@v4
         with:
           name: overlay
-          path: overlay/ryu_ldn_nx_overlay.ovl
+          path: |
+            overlay/ryu_ldn_nx_overlay.ovl
+            overlay/ryu_ldn_nx_overlay.elf
 
   create-release:
     name: Create Release
@@ -163,6 +229,18 @@ jobs:
           name: overlay
           path: overlay-artifacts
 
+      - name: Download sysmodule build logs
+        uses: actions/download-artifact@v4
+        with:
+          name: sysmodule-build-logs
+          path: sysmodule-logs
+
+      - name: Download overlay build logs
+        uses: actions/download-artifact@v4
+        with:
+          name: overlay-build-logs
+          path: overlay-logs
+
       - name: Get version
         id: version
         run: |
@@ -175,24 +253,15 @@ jobs:
 
       - name: Prepare SD card structure
         run: |
-          # Create SD card directory structure
           mkdir -p release/atmosphere/contents/4200000000000010
           mkdir -p release/switch/.overlays
 
-          # Copy sysmodule files
           cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
           cp sysmodule-artifacts/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000010/main.npdm
-
-          # Copy toolbox.json and app.json
           cp sysmodule-artifacts/res/toolbox.json release/atmosphere/contents/4200000000000010/ || true
           cp sysmodule-artifacts/res/app.json release/atmosphere/contents/4200000000000010/ || true
-
-          # Copy overlay
           cp overlay-artifacts/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
 
-          # Config will be generated on first boot by the sysmodule
-
-          # List contents for verification
           echo "=== Release contents ==="
           find release -type f
 
@@ -201,14 +270,15 @@ jobs:
           cd release
           zip -r ../ryu_ldn_nx-${{ steps.version.outputs.version }}.zip .
 
-      - name: Generate changelog
+      - name: Generate changelog with collapsible sections
         id: changelog
         run: |
-          # Get previous tag
+          VERSION="${{ steps.version.outputs.version }}"
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
-          cat > CHANGELOG_RELEASE.md << EOF
-          ## ryu_ldn_nx ${{ steps.version.outputs.version }}
+          # Start release notes
+          cat > CHANGELOG_RELEASE.md << 'HEADER'
+          ## ryu_ldn_nx $VERSION
 
           Nintendo Switch LDN sysmodule for online local multiplayer with Ryujinx servers.
 
@@ -217,18 +287,73 @@ jobs:
           1. Extract the ZIP to the root of your SD card
           2. Reboot your Switch
           3. The sysmodule will start automatically
+          4. Use Tesla Menu (L+Down+R3) to access the overlay
 
-          ### Changes
+          HEADER
 
-          EOF
+          # Replace $VERSION placeholder
+          sed -i "s/\$VERSION/${VERSION}/g" CHANGELOG_RELEASE.md
+
+          # === CHANGELOG SECTION ===
+          echo "<details>" >> CHANGELOG_RELEASE.md
+          echo "<summary><strong>📋 Changelog</strong></summary>" >> CHANGELOG_RELEASE.md
+          echo "" >> CHANGELOG_RELEASE.md
 
           if [ -n "$PREV_TAG" ]; then
-            echo "Changes since ${PREV_TAG}:" >> CHANGELOG_RELEASE.md
+            echo "Changes since \`${PREV_TAG}\`:" >> CHANGELOG_RELEASE.md
             echo "" >> CHANGELOG_RELEASE.md
             git log ${PREV_TAG}..HEAD --pretty=format:"- %s" >> CHANGELOG_RELEASE.md
           else
             echo "- Initial release" >> CHANGELOG_RELEASE.md
           fi
+
+          echo "" >> CHANGELOG_RELEASE.md
+          echo "</details>" >> CHANGELOG_RELEASE.md
+          echo "" >> CHANGELOG_RELEASE.md
+
+          # === WARNINGS SECTION ===
+          # Combine warnings from both builds
+          cat sysmodule-logs/warnings.txt overlay-logs/warnings.txt 2>/dev/null | grep -v "^$" | sort -u > all_warnings.txt || true
+          WARN_COUNT=$(grep -c "warning:" all_warnings.txt 2>/dev/null || echo "0")
+
+          echo "<details>" >> CHANGELOG_RELEASE.md
+          echo "<summary><strong>⚠️ Compiler Warnings (${WARN_COUNT})</strong></summary>" >> CHANGELOG_RELEASE.md
+          echo "" >> CHANGELOG_RELEASE.md
+
+          if [ "$WARN_COUNT" -gt "0" ]; then
+            echo '```' >> CHANGELOG_RELEASE.md
+            cat all_warnings.txt >> CHANGELOG_RELEASE.md
+            echo '```' >> CHANGELOG_RELEASE.md
+          else
+            echo "_No warnings_" >> CHANGELOG_RELEASE.md
+          fi
+
+          echo "" >> CHANGELOG_RELEASE.md
+          echo "</details>" >> CHANGELOG_RELEASE.md
+          echo "" >> CHANGELOG_RELEASE.md
+
+          # === ERRORS SECTION ===
+          cat sysmodule-logs/errors.txt overlay-logs/errors.txt 2>/dev/null | grep -v "^$" | sort -u > all_errors.txt || true
+          ERR_COUNT=$(grep -c "error:" all_errors.txt 2>/dev/null || echo "0")
+
+          echo "<details>" >> CHANGELOG_RELEASE.md
+          echo "<summary><strong>❌ Compiler Errors (${ERR_COUNT})</strong></summary>" >> CHANGELOG_RELEASE.md
+          echo "" >> CHANGELOG_RELEASE.md
+
+          if [ "$ERR_COUNT" -gt "0" ]; then
+            echo '```' >> CHANGELOG_RELEASE.md
+            cat all_errors.txt >> CHANGELOG_RELEASE.md
+            echo '```' >> CHANGELOG_RELEASE.md
+          else
+            echo "_No errors_" >> CHANGELOG_RELEASE.md
+          fi
+
+          echo "" >> CHANGELOG_RELEASE.md
+          echo "</details>" >> CHANGELOG_RELEASE.md
+
+          # Show generated changelog
+          echo "=== Generated Release Notes ==="
+          cat CHANGELOG_RELEASE.md
 
       - name: Upload release ZIP as artifact
         uses: actions/upload-artifact@v4
@@ -236,11 +361,13 @@ jobs:
           name: ryu_ldn_nx-${{ steps.version.outputs.version }}
           path: ryu_ldn_nx-${{ steps.version.outputs.version }}.zip
 
-      - name: Upload debug ELF as artifact
+      - name: Upload debug ELFs as artifact
         uses: actions/upload-artifact@v4
         with:
           name: ryu_ldn_nx-${{ steps.version.outputs.version }}-debug
-          path: sysmodule-artifacts/ryu_ldn_nx.elf
+          path: |
+            sysmodule-artifacts/ryu_ldn_nx.elf
+            overlay-artifacts/ryu_ldn_nx_overlay.elf
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -252,4 +379,4 @@ jobs:
           files: |
             ryu_ldn_nx-${{ steps.version.outputs.version }}.zip
             sysmodule-artifacts/ryu_ldn_nx.elf
-          generate_release_notes: true
+            overlay-artifacts/ryu_ldn_nx_overlay.elf
