@@ -1,5 +1,6 @@
 #---------------------------------------------------------------------------------
 # ryu_ldn_nx Tesla Overlay Makefile
+# Using libultrahand (extended libtesla with libultra)
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
@@ -33,20 +34,43 @@ INCLUDES    := include
 NO_ICON     := 1
 
 #---------------------------------------------------------------------------------
-# libtesla - Tesla Menu Overlay Framework
-# Use local submodule by default
+# libultrahand - Extended Tesla Menu Overlay Framework
+# Includes libtesla + libultra with additional features
 #---------------------------------------------------------------------------------
-LIBTESLA ?= $(TOPDIR)/libtesla
+# Include libultrahand sources and headers
+SOURCES  += libultrahand/common \
+            libultrahand/libultra/source
+INCLUDES += libultrahand/common \
+            libultrahand/libultra/include \
+            libultrahand/libtesla/include
+
+#---------------------------------------------------------------------------------
+# Logging support (optional)
+# Enable with: make LOGGING=1
+#---------------------------------------------------------------------------------
+ifeq ($(LOGGING),1)
+CFLAGS += -DUSING_LOGGING_DIRECTIVE=1
+endif
 
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 ARCH    := -march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS  := -g -Wall -O2 -ffunction-sections \
+#---------------------------------------------------------------------------------
+# Debug build support
+# Usage: make DEBUG=1
+#---------------------------------------------------------------------------------
+ifeq ($(DEBUG),1)
+OPTFLAGS := -Og -DDEBUG
+else
+OPTFLAGS := -O2
+endif
+
+CFLAGS  := -g -Wall $(OPTFLAGS) -ffunction-sections \
            $(ARCH) $(DEFINES) $(VERSION_DEFINES)
 
-CFLAGS  += $(INCLUDE) -D__SWITCH__ -I$(LIBTESLA)/include
+CFLAGS  += $(INCLUDE) -D__SWITCH__
 
 CXXFLAGS := $(CFLAGS) -fno-exceptions -std=c++20
 
@@ -101,9 +125,9 @@ export OFILES_SRC   := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 export OFILES       := $(OFILES_BIN) $(OFILES_SRC)
 export HFILES_BIN   := $(addsuffix .h,$(subst .,_,$(BINFILES)))
 
-export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
+export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(TOPDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-                   -I$(CURDIR)/$(BUILD)
+                   -I$(TOPDIR)/$(BUILD)
 
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
