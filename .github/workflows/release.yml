@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential g++
+
+      - name: Run tests
+        run: |
+          cd tests
+          make clean
+          make test
+
+  build-sysmodule:
+    name: Build Sysmodule
+    runs-on: ubuntu-latest
+    needs: test
+
+    container:
+      image: devkitpro/devkita64:latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Building version: ${VERSION}"
+
+      - name: Build sysmodule
+        run: |
+          cd sysmodule
+          make -j$(nproc) VERSION="${{ steps.version.outputs.version }}"
+
+      - name: Upload sysmodule artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sysmodule
+          path: |
+            sysmodule/ryu_ldn_nx.nsp
+            sysmodule/ryu_ldn_nx.nso
+            sysmodule/ryu_ldn_nx.npdm
+            sysmodule/ryu_ldn_nx.elf
+            sysmodule/res/toolbox.json
+            sysmodule/res/app.json
+
+  build-overlay:
+    name: Build Overlay
+    runs-on: ubuntu-latest
+    needs: test
+
+    container:
+      image: devkitpro/devkita64:latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install libtesla
+        run: |
+          git clone --depth=1 https://github.com/WerWolv/libtesla.git /opt/libtesla
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build overlay
+        run: |
+          cd overlay
+          make -j$(nproc) LIBTESLA=/opt/libtesla VERSION="${{ steps.version.outputs.version }}"
+
+      - name: Upload overlay artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlay
+          path: overlay/ryu_ldn_nx_overlay.ovl
+
+  create-release:
+    name: Create Release
+    needs: [build-sysmodule, build-overlay]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download sysmodule artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: sysmodule
+          path: sysmodule-artifacts
+
+      - name: Download overlay artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: overlay
+          path: overlay-artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Prepare SD card structure
+        run: |
+          # Create SD card directory structure
+          mkdir -p release/atmosphere/contents/4200000000000020
+          mkdir -p release/switch/.overlays
+          mkdir -p release/config/ryu_ldn_nx
+
+          # Copy sysmodule files
+          cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000020/exefs.nsp
+          cp sysmodule-artifacts/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000020/main.npdm
+
+          # Copy toolbox.json and app.json
+          cp sysmodule-artifacts/res/toolbox.json release/atmosphere/contents/4200000000000020/ || true
+          cp sysmodule-artifacts/res/app.json release/atmosphere/contents/4200000000000020/ || true
+
+          # Copy overlay
+          cp overlay-artifacts/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
+
+          # Create default config
+          cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
+          ; ryu_ldn_nx Configuration
+          ; https://github.com/ryu_ldn_nx/ryu_ldn_nx
+
+          [server]
+          ; Server address for ryu_ldn multiplayer
+          host = ldn.ryujinx.app
+          port = 30456
+
+          [settings]
+          ; Enable debug logging (0 = off, 1 = on)
+          debug = 0
+          EOF
+
+          # List contents for verification
+          echo "=== Release contents ==="
+          find release -type f
+
+      - name: Create ZIP archive
+        run: |
+          cd release
+          zip -r ../ryu_ldn_nx-${{ steps.version.outputs.version }}.zip .
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          cat > CHANGELOG_RELEASE.md << EOF
+          ## ryu_ldn_nx ${{ steps.version.outputs.version }}
+
+          Nintendo Switch LDN sysmodule for online local multiplayer with Ryujinx servers.
+
+          ### Installation
+
+          1. Extract the ZIP to the root of your SD card
+          2. Reboot your Switch
+          3. The sysmodule will start automatically
+
+          ### Changes
+
+          EOF
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "Changes since ${PREV_TAG}:" >> CHANGELOG_RELEASE.md
+            echo "" >> CHANGELOG_RELEASE.md
+            git log ${PREV_TAG}..HEAD --pretty=format:"- %s" >> CHANGELOG_RELEASE.md
+          else
+            echo "- Initial release" >> CHANGELOG_RELEASE.md
+          fi
+
+      - name: Upload release ZIP as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryu_ldn_nx-${{ steps.version.outputs.version }}
+          path: ryu_ldn_nx-${{ steps.version.outputs.version }}.zip
+
+      - name: Upload debug ELF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ryu_ldn_nx-${{ steps.version.outputs.version }}-debug
+          path: sysmodule-artifacts/ryu_ldn_nx.elf
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ryu_ldn_nx ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG_RELEASE.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            ryu_ldn_nx-${{ steps.version.outputs.version }}.zip
+            sysmodule-artifacts/ryu_ldn_nx.elf
+          generate_release_notes: true

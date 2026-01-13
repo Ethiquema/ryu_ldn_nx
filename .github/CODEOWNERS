@@ -1,0 +1,17 @@
+# CODEOWNERS for ryu_ldn_nx
+# These owners will be requested for review when PRs touch these paths
+
+# Default owners for everything
+* @ryubing/ryu-ldn-nx-maintainers
+
+# Sysmodule core
+/sysmodule/ @ryubing/ryu-ldn-nx-maintainers
+
+# Build system
+/Makefile @ryubing/ryu-ldn-nx-maintainers
+/.devcontainer/ @ryubing/ryu-ldn-nx-maintainers
+/.github/workflows/ @ryubing/ryu-ldn-nx-maintainers
+
+# Documentation
+/*.md @ryubing/ryu-ldn-nx-maintainers
+/docs/ @ryubing/ryu-ldn-nx-maintainers

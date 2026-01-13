@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussions
+    url: https://github.com/ryubing/ryu_ldn_nx/discussions
+    about: Ask questions and discuss with the community
+  - name: ryu_ldn Server Issues
+    url: https://git.ryujinx.app/ryubing/ldn/issues
+    about: For issues with the ryu_ldn server, not the Switch sysmodule

@@ -1,0 +1,124 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for ryu_ldn_nx
+---
+
+# Troubleshooting
+
+This page covers common issues and their solutions.
+
+## Connection Issues
+
+### "Disconnected" Status
+
+**Symptoms:** Overlay shows "Disconnected", games can't find other players
+
+**Solutions:**
+1. Check your WiFi connection is working
+2. Try visiting a website to confirm internet access
+3. Verify server address in `config/ryu_ldn_nx/config.ini`
+4. The server might be down - check community channels
+
+### "Error" Status
+
+**Symptoms:** Overlay shows "Error" in red
+
+**Solutions:**
+1. Force reconnect via the overlay
+2. Check server address is correct
+3. Restart the game
+4. Reboot your Switch
+
+### High Latency
+
+**Symptoms:** Games feel laggy, overlay shows high RTT
+
+**Solutions:**
+1. Move closer to your WiFi router
+2. Use 5GHz WiFi if available
+3. Reduce network congestion (pause downloads, etc.)
+4. The server might be geographically far - check for closer servers
+
+## Game Issues
+
+### Game Doesn't Find Other Players
+
+**Symptoms:** Scan shows no networks, or can't join
+
+**Solutions:**
+1. Make sure all players are using ryu_ldn_nx
+2. Verify all players are on the same server
+3. Check overlay shows "Ready" status
+4. Try having a different person host
+
+### Disconnected During Game
+
+**Symptoms:** Players suddenly disappear from session
+
+**Solutions:**
+1. Check WiFi stability
+2. ryu_ldn_nx will attempt automatic reconnection
+3. If reconnection fails, restart the game session
+
+### Game Crashes
+
+**Symptoms:** Game freezes or closes unexpectedly
+
+**Solutions:**
+1. Make sure you have the latest ryu_ldn_nx version
+2. Update your game to the latest version
+3. Report the issue with game name and version
+
+## Installation Issues
+
+### Sysmodule Not Loading
+
+**Symptoms:** Overlay says "ryu_ldn_nx not loaded"
+
+**Solutions:**
+1. Verify file structure:
+   ```
+   atmosphere/contents/4200000000000020/exefs.nsp
+   atmosphere/contents/4200000000000020/main.npdm
+   ```
+2. Make sure Atmosphere is up to date
+3. Reboot completely (not just sleep mode)
+
+### Overlay Not Appearing
+
+**Symptoms:** Tesla menu doesn't show ryu_ldn_nx
+
+**Solutions:**
+1. Verify overlay file exists:
+   ```
+   switch/.overlays/ryu_ldn_nx_overlay.ovl
+   ```
+2. Make sure Tesla Menu (nx-ovlloader) is installed
+3. Try reinstalling Tesla Menu
+
+### Config Not Applied
+
+**Symptoms:** Changes to config.ini don't take effect
+
+**Solutions:**
+1. Make sure you saved the file
+2. Check file is in correct location:
+   ```
+   config/ryu_ldn_nx/config.ini
+   ```
+3. Use "Force Reconnect" in overlay
+4. Or reboot your Switch
+
+## Getting Help
+
+If your issue isn't covered here:
+
+1. Check [GitHub Issues](https://github.com/Ethiquema/ryu_ldn_nx/issues) for similar problems
+2. Enable debug mode and collect logs
+3. Open a new issue with:
+   - Your Switch firmware version
+   - Atmosphere version
+   - ryu_ldn_nx version
+   - Game name and version
+   - Steps to reproduce
+   - Debug logs if available

@@ -1,0 +1,106 @@
+---
+title: Using the Overlay
+description: How to use the Tesla overlay for ryu_ldn_nx
+---
+
+# Using the Overlay
+
+ryu_ldn_nx includes a Tesla overlay that lets you monitor connection status and change settings without leaving your game.
+
+## Requirements
+
+- **Tesla Menu** (nx-ovlloader) must be installed
+- The overlay file must be in `switch/.overlays/`
+
+## Opening the Overlay
+
+1. Hold **L + DPad Down + Right Stick Click** simultaneously
+2. Tesla Menu will appear
+3. Select **ryu_ldn_nx** from the list
+
+## Interface
+
+The overlay displays three sections:
+
+### Status
+
+| Item | Description |
+|------|-------------|
+| **Server Status** | Connection state (Disconnected, Connecting, Connected, Ready, Error) |
+| **LDN State** | Current LDN state (None, Initialized, Station, etc.) |
+| **Session** | Current session info (player count, host/client) |
+| **Latency** | Round-trip time to server in milliseconds |
+
+### Server
+
+| Item | Description |
+|------|-------------|
+| **Server** | Current server address and port |
+| **Force Reconnect** | Press A to disconnect and reconnect to the server |
+
+### Settings
+
+| Item | Description |
+|------|-------------|
+| **Debug Logging** | Toggle debug output on/off |
+
+## Status Colors
+
+The server status uses color coding:
+
+- **Green** - Connected and ready
+- **Yellow** - Connecting or handshaking
+- **Gray** - Disconnected
+- **Red** - Error state
+
+## Automatic Updates
+
+The overlay updates automatically every second while open. You can also:
+
+- Press **R** to force an immediate refresh
+- Status updates in real-time as you play
+
+## Common Actions
+
+### Check Connection Before Playing
+
+1. Open overlay before starting a game
+2. Verify status shows "Ready" (green)
+3. Close overlay and start your game
+
+### Reconnect After Network Issue
+
+1. Open overlay
+2. If status shows "Disconnected" or "Error"
+3. Select "Force Reconnect" and press A
+4. Wait for status to become "Ready"
+
+### Monitor During Gameplay
+
+1. Open overlay during gameplay
+2. Check "Session" for player count
+3. Check "Latency" for connection quality
+4. Close overlay to continue playing
+
+## Troubleshooting
+
+### Overlay Not Appearing
+
+- Make sure Tesla Menu is installed correctly
+- Check that `ryu_ldn_nx_overlay.ovl` is in `switch/.overlays/`
+- Try reinstalling Tesla Menu
+
+### "ryu_ldn_nx not loaded"
+
+This appears when the sysmodule isn't running:
+
+- Verify sysmodule files are in the correct location
+- Reboot your Switch
+- Check Atmosphere is working properly
+
+### Status Stuck on "Connecting"
+
+- Check your WiFi connection
+- Verify the server is online
+- Try "Force Reconnect"
+- Check server address in config.ini

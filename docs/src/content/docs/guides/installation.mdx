@@ -1,0 +1,97 @@
+---
+title: Installation
+description: How to install ryu_ldn_nx on your Nintendo Switch
+---
+
+# Installation
+
+This guide explains how to install ryu_ldn_nx on your Nintendo Switch.
+
+## Requirements
+
+Before installing, make sure you have:
+
+- **Nintendo Switch** with custom firmware (CFW)
+- **Atmosphere** 1.0.0 or newer
+- **WiFi connection** to the internet
+- **Tesla Menu** (optional, for overlay)
+
+## Download
+
+Download the latest release from GitHub:
+
+[Download ryu_ldn_nx](https://github.com/Ethiquema/ryu_ldn_nx/releases/latest)
+
+## Installation Steps
+
+### 1. Extract to SD Card
+
+1. Turn off your Switch
+2. Remove the SD card and insert it into your computer
+3. Extract the ZIP file to the root of your SD card
+4. The file structure should look like:
+
+```
+SD Card/
+├── atmosphere/
+│   └── contents/
+│       └── 4200000000000020/
+│           ├── exefs.nsp
+│           ├── main.npdm
+│           └── toolbox.json
+├── switch/
+│   └── .overlays/
+│       └── ryu_ldn_nx_overlay.ovl
+└── config/
+    └── ryu_ldn_nx/
+        └── config.ini
+```
+
+### 2. Insert SD Card and Boot
+
+1. Insert the SD card back into your Switch
+2. Boot into Atmosphere CFW
+3. The sysmodule will start automatically
+
+### 3. Verify Installation
+
+To verify the sysmodule is running:
+
+1. Open Tesla Menu (L + DPad Down + Right Stick)
+2. Select "ryu_ldn_nx" from the overlay list
+3. You should see the connection status
+
+## Updating
+
+To update ryu_ldn_nx:
+
+1. Download the new version
+2. Extract to SD card (overwrite existing files)
+3. Reboot your Switch
+
+## Uninstalling
+
+To remove ryu_ldn_nx:
+
+1. Delete `atmosphere/contents/4200000000000020/`
+2. Delete `switch/.overlays/ryu_ldn_nx_overlay.ovl`
+3. Delete `config/ryu_ldn_nx/` (optional, keeps settings)
+
+## Troubleshooting
+
+### Sysmodule not loading
+
+- Make sure Atmosphere is up to date
+- Check that files are in the correct locations
+- Try rebooting into CFW again
+
+### Games not connecting
+
+- Check your WiFi connection
+- Verify the server address in config.ini
+- See [Troubleshooting](/ryu_ldn_nx/guides/troubleshooting) for more help
+
+## Next Steps
+
+- [Configuration](/ryu_ldn_nx/guides/configuration) - Customize settings
+- [Using the Overlay](/ryu_ldn_nx/guides/overlay) - Monitor your connection

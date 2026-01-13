@@ -1,0 +1,10 @@
+# BMAD BMM Configuration for ryu_ldn_nx
+# This file configures the BMAD agents for this project
+
+user_name: Ethiquema
+communication_language: French
+output_folder: _bmad
+
+# Project info
+project_name: ryu_ldn_nx
+project_description: Nintendo Switch LDN sysmodule for online local multiplayer

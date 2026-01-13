@@ -1,0 +1,133 @@
+---
+title: IPC Commands
+description: Reference for ryu_ldn_nx IPC commands
+---
+
+# IPC Commands
+
+This page documents the IPC commands used by ryu_ldn_nx.
+
+## Standard LDN Commands
+
+These are the standard Nintendo LDN IPC commands that ryu_ldn_nx intercepts:
+
+### Service: ldn:u
+
+| Cmd | Name | Description |
+|-----|------|-------------|
+| 0 | CreateUserLocalCommunicationService | Creates a communication session |
+
+### ICommunicationInterface
+
+| Cmd | Name | Description |
+|-----|------|-------------|
+| 0 | GetState | Get current LDN state |
+| 100 | AttachStateChangeEvent | Get event handle for state changes |
+| 200 | GetNetworkInfo | Get current network information |
+| 201 | GetIpv4Address | Get local IPv4 address |
+| 202 | GetDisconnectReason | Get reason for last disconnect |
+| 203 | GetSecurityParameter | Get security configuration |
+| 204 | GetNetworkConfig | Get network configuration |
+| 300 | OpenAccessPoint | Open as network host |
+| 301 | CloseAccessPoint | Close host mode |
+| 302 | CreateNetwork | Create a new network |
+| 303 | CreateNetworkPrivate | Create private network |
+| 304 | DestroyNetwork | Destroy current network |
+| 400 | OpenStation | Open as client |
+| 401 | CloseStation | Close client mode |
+| 402 | Connect | Connect to a network |
+| 403 | ConnectPrivate | Connect to private network |
+| 404 | Disconnect | Disconnect from network |
+| 500 | SetAdvertiseData | Set advertisement data |
+| 600 | Scan | Scan for networks |
+| 601 | ScanPrivate | Scan for private networks |
+
+## Custom Config Commands
+
+ryu_ldn_nx adds custom IPC commands for overlay communication.
+These are obtained via command 65000 on the MITM service.
+
+### LdnConfigService
+
+| Cmd | Name | Parameters | Returns | Description |
+|-----|------|------------|---------|-------------|
+| 65001 | GetVersion | - | char[32] | Sysmodule version string |
+| 65002 | GetConnectionStatus | - | u32 | Server connection state |
+| 65003 | GetLdnState | - | u32 | Current LDN state |
+| 65004 | GetSessionInfo | - | SessionInfo | Current session information |
+| 65005 | GetServerAddress | - | ServerAddress | Configured server address |
+| 65006 | SetServerAddress | ServerAddress | - | Change server address |
+| 65007 | GetDebugEnabled | - | u32 | Debug logging state |
+| 65008 | SetDebugEnabled | u32 | - | Enable/disable debug |
+| 65009 | ForceReconnect | - | - | Force server reconnection |
+| 65010 | GetLastRtt | - | u32 | Last RTT in milliseconds |
+
+## Data Structures
+
+### ConnectionStatus (enum u32)
+
+| Value | Name | Description |
+|-------|------|-------------|
+| 0 | Disconnected | Not connected to server |
+| 1 | Connecting | Connection in progress |
+| 2 | Connected | TCP connected, handshake pending |
+| 3 | Ready | Fully connected and operational |
+| 4 | Error | Connection error occurred |
+
+### LdnState (enum u32)
+
+| Value | Name | Description |
+|-------|------|-------------|
+| 0 | None | Not initialized |
+| 1 | Initialized | Service initialized |
+| 2 | AccessPoint | Host mode opened |
+| 3 | AccessPointCreated | Network created |
+| 4 | Station | Client mode opened |
+| 5 | StationConnected | Connected to network |
+| 6 | Error | Error state |
+
+### SessionInfo (struct, 72 bytes)
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| 0x00 | u8 | node_count | Players in session |
+| 0x01 | u8 | node_count_max | Maximum players |
+| 0x02 | u8 | local_node_id | Our node ID |
+| 0x03 | u8 | is_host | 1 if hosting |
+| 0x04 | u32 | session_duration_ms | Session duration |
+| 0x08 | char[64] | game_name | Game name |
+
+### ServerAddress (struct, 68 bytes)
+
+| Offset | Type | Name | Description |
+|--------|------|------|-------------|
+| 0x00 | char[64] | host | Server hostname |
+| 0x40 | u16 | port | Server port |
+| 0x42 | u16 | padding | Reserved |
+
+## Usage Example (C)
+
+```c
+// Get config service from ldn:u MITM
+Service ldnService;
+smGetService(&ldnService, "ldn:u");
+
+RyuLdnConfigService configService;
+serviceDispatch(&ldnService, 65000,
+    .out_num_objects = 1,
+    .out_objects = &configService.s,
+);
+
+// Get version
+char version[32];
+serviceDispatchOut(&configService.s, 65001, version);
+printf("Version: %s\n", version);
+
+// Get connection status
+u32 status;
+serviceDispatchOut(&configService.s, 65002, &status);
+printf("Status: %u\n", status);
+
+// Force reconnect
+serviceDispatch(&configService.s, 65009);
+```

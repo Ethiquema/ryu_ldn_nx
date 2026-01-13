@@ -1,0 +1,57 @@
+---
+title: Introduction
+description: What is ryu_ldn_nx and how does it work
+---
+
+# Introduction
+
+**ryu_ldn_nx** is a Nintendo Switch sysmodule that enables online local multiplayer (LDN) gaming by connecting to Ryujinx LDN servers.
+
+## What is LDN?
+
+LDN (Local Wireless Communication) is Nintendo's protocol for local multiplayer on the Switch. Games like Mario Kart 8 Deluxe, Super Smash Bros. Ultimate, and Monster Hunter Rise use LDN for "local play" features.
+
+Normally, LDN requires players to be physically close to each other. **ryu_ldn_nx** intercepts LDN calls and routes them through an online server, allowing you to play "local" multiplayer games with friends anywhere in the world.
+
+## How it Works
+
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────────┐
+│   Game      │────▶│ ryu_ldn_nx   │────▶│  Ryujinx LDN    │
+│ (MK8 etc.)  │◀────│  sysmodule   │◀────│    Server       │
+└─────────────┘      └──────────────┘      └─────────────────┘
+                           │
+                    ┌──────┴───────┐
+                    │ Tesla Overlay│
+                    │  (status UI) │
+                    └──────────────┘
+```
+
+1. **Game calls LDN services** - When a game tries to create or join a local network
+2. **Sysmodule intercepts** - ryu_ldn_nx captures these calls via Atmosphere MITM
+3. **Routes to server** - Requests are converted to RyuLdn protocol and sent to the server
+4. **Server coordinates** - The server matches players and relays game data
+5. **Game plays normally** - From the game's perspective, it's just local play
+
+## Features
+
+- **Transparent operation** - Games work without modification
+- **Tesla overlay** - See connection status and configure settings
+- **Auto-reconnect** - Handles network interruptions gracefully
+- **Low latency** - Optimized for real-time gameplay
+
+## Compatibility
+
+ryu_ldn_nx works with games that use Nintendo's LDN service, including:
+
+- Mario Kart 8 Deluxe
+- Super Smash Bros. Ultimate
+- Monster Hunter Rise
+- Animal Crossing: New Horizons
+- And many more...
+
+## Next Steps
+
+- [Installation Guide](/ryu_ldn_nx/guides/installation) - Get started
+- [Configuration](/ryu_ldn_nx/guides/configuration) - Customize settings
+- [Using the Overlay](/ryu_ldn_nx/guides/overlay) - Monitor connections

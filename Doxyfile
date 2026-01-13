@@ -1,0 +1,38 @@
+# Doxyfile for ryu_ldn_nx
+# Generates XML output for Starlight documentation
+
+PROJECT_NAME           = "ryu_ldn_nx"
+PROJECT_NUMBER         = "0.1.0"
+PROJECT_BRIEF          = "Nintendo Switch LDN sysmodule for online local multiplayer"
+OUTPUT_DIRECTORY       = docs/doxygen-xml
+
+# Build options
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+# Warnings
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+
+# Input
+INPUT                  = sysmodule/source overlay/source
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.hpp *.cpp *.h *.c
+RECURSIVE              = YES
+EXCLUDE                = sysmodule/Atmosphere-libs sysmodule/build
+
+# Output - XML only for Starlight integration
+GENERATE_HTML          = NO
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_OUTPUT             = .
+XML_PROGRAMLISTING     = NO
+
+# Preprocessor
+ENABLE_PREPROCESSING   = YES
+PREDEFINED             = __SWITCH__ AMS_UNUSED(x)=
+
+# No graphs needed for XML
+HAVE_DOT               = NO

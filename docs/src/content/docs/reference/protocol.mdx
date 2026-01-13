@@ -1,0 +1,201 @@
+---
+title: RyuLdn Protocol
+description: Reference for the RyuLdn network protocol
+---
+
+# RyuLdn Protocol
+
+This page documents the RyuLdn network protocol used to communicate with the server.
+
+## Overview
+
+RyuLdn is a binary protocol over TCP. All multi-byte integers are little-endian.
+
+## Packet Structure
+
+```
+┌─────────────────────────────────────────┐
+│ Header (4 bytes)                        │
+├─────────────────────────────────────────┤
+│ Magic (2 bytes): 0x524C ("RL")          │
+│ Type (1 byte): PacketType enum          │
+│ Reserved (1 byte): 0x00                 │
+├─────────────────────────────────────────┤
+│ Payload (variable)                      │
+│ Structure depends on packet type        │
+└─────────────────────────────────────────┘
+```
+
+## Packet Types
+
+| Value | Name | Direction | Description |
+|-------|------|-----------|-------------|
+| 0x01 | Passphrase | C→S | Authentication |
+| 0x02 | Connected | S→C | Connection confirmed |
+| 0x03 | SyncNetwork | S→C | Network state sync |
+| 0x04 | Disconnect | Both | Disconnection notice |
+| 0x10 | Scan | C→S | Request network scan |
+| 0x11 | ScanResponse | S→C | Scan results |
+| 0x20 | CreateAccessPoint | C→S | Create network |
+| 0x21 | CreateAccessPointResponse | S→C | Create result |
+| 0x30 | Connect | C→S | Join network |
+| 0x31 | ConnectResponse | S→C | Join result |
+| 0x40 | SetAcceptPolicy | C→S | Set join policy |
+| 0x50 | SetAdvertiseData | C→S | Update advertisement |
+| 0x60 | Reject | C→S | Reject a connection |
+| 0x70 | ProxyData | Both | Game data relay |
+| 0x80 | ProxyDataBroadcast | Both | Broadcast data |
+
+## Authentication Flow
+
+```
+Client                                Server
+  │                                      │
+  │──── Passphrase ─────────────────────▶│
+  │     (game_id, ssid, etc.)            │
+  │                                      │
+  │◀──── Connected ──────────────────────│
+  │      (assigned node_id)              │
+```
+
+## Packet Definitions
+
+### Passphrase (0x01)
+
+Sent by client after TCP connection.
+
+```cpp
+struct PassphrasePacket {
+    u32 magic;          // "RL" + type + reserved
+    u64 game_id;        // Title ID
+    u8 ssid[32];        // Network SSID
+    u8 passphrase[32];  // Network passphrase
+};
+```
+
+### Connected (0x02)
+
+Sent by server to confirm connection.
+
+```cpp
+struct ConnectedPacket {
+    u32 magic;
+    u8 node_id;         // Assigned node ID (0-7)
+};
+```
+
+### SyncNetwork (0x03)
+
+Sent by server when network state changes.
+
+```cpp
+struct SyncNetworkPacket {
+    u32 magic;
+    NetworkInfo network_info;  // Full network state
+};
+```
+
+### Scan (0x10)
+
+Request to scan for available networks.
+
+```cpp
+struct ScanPacket {
+    u32 magic;
+    ScanFilter filter;  // Optional filter criteria
+};
+```
+
+### ScanResponse (0x11)
+
+Contains discovered networks.
+
+```cpp
+struct ScanResponsePacket {
+    u32 magic;
+    u16 network_count;
+    NetworkInfo networks[];  // Variable length
+};
+```
+
+### CreateAccessPoint (0x20)
+
+Request to create a new network (host).
+
+```cpp
+struct CreateAccessPointPacket {
+    u32 magic;
+    SecurityConfig security;
+    UserConfig user;
+    NetworkConfig network;
+};
+```
+
+### Connect (0x30)
+
+Request to join an existing network.
+
+```cpp
+struct ConnectPacket {
+    u32 magic;
+    u8 network_id[16];   // Network to join
+    ConnectData data;    // Connection data
+};
+```
+
+### ProxyData (0x70)
+
+Game data relay between nodes.
+
+```cpp
+struct ProxyDataPacket {
+    u32 magic;
+    u8 source_node;      // Sender node ID
+    u8 dest_node;        // Destination node ID (0xFF for all)
+    u16 data_size;       // Payload size
+    u8 data[];           // Game data
+};
+```
+
+### ProxyDataBroadcast (0x80)
+
+Broadcast game data to all nodes.
+
+```cpp
+struct ProxyDataBroadcastPacket {
+    u32 magic;
+    u8 source_node;
+    u16 data_size;
+    u8 data[];
+};
+```
+
+## NetworkInfo Structure
+
+```cpp
+struct NetworkInfo {
+    u8 network_id[16];           // Unique network ID
+    Ssid ssid;                   // Network SSID
+    SecurityConfig security;     // Security settings
+    UserConfig host_user;        // Host information
+    u8 node_count;               // Current players
+    u8 node_count_max;           // Maximum players
+    NodeInfo nodes[8];           // Player information
+    u16 advertise_data_size;     // Advertisement size
+    u8 advertise_data[384];      // Game advertisement
+};
+```
+
+## Error Handling
+
+If a malformed packet is received:
+1. Server may send Disconnect packet with reason
+2. Server closes TCP connection
+3. Client should attempt reconnection
+
+Disconnect reasons:
+- 0x01: Protocol error
+- 0x02: Authentication failed
+- 0x03: Network full
+- 0x04: Kicked by host
+- 0x05: Network closed

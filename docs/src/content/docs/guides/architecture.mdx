@@ -1,0 +1,236 @@
+---
+title: Architecture
+description: Technical architecture of ryu_ldn_nx
+---
+
+# Architecture
+
+This document describes the technical architecture of ryu_ldn_nx.
+
+## Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         Nintendo Switch                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐                    ┌──────────────────────┐     │
+│  │    Game     │◀──── IPC ───────▶│   ryu_ldn_nx         │     │
+│  │ (ldn:u API) │                    │   sysmodule          │     │
+│  └─────────────┘                    │                      │     │
+│                                     │  ┌────────────────┐  │     │
+│                                     │  │ LdnMitMService │  │     │
+│                                     │  │ (MITM ldn:u)   │  │     │
+│                                     │  └───────┬────────┘  │     │
+│                                     │          │           │     │
+│                                     │  ┌───────▼────────┐  │     │
+│                                     │  │ NetworkClient  │  │     │
+│                                     │  │ (TCP + RyuLdn) │  │     │
+│                                     │  └───────┬────────┘  │     │
+│                                     └──────────┼───────────┘     │
+│                                                │                 │
+│  ┌─────────────────┐                           │                 │
+│  │  Tesla Overlay  │◀──── IPC ────────────────┤                 │
+│  │ (status/config) │                           │                 │
+│  └─────────────────┘                           │                 │
+│                                                │                 │
+└────────────────────────────────────────────────┼─────────────────┘
+                                                 │
+                                                 ▼ TCP/IP
+                                     ┌───────────────────┐
+                                     │  Ryujinx LDN      │
+                                     │     Server        │
+                                     └───────────────────┘
+```
+
+## Components
+
+### Sysmodule
+
+The main component that runs in the background on the Switch.
+
+#### LdnMitMService
+
+Atmosphere MITM service that intercepts `ldn:u` IPC calls:
+
+- Registers with Service Manager
+- Creates `LdnICommunication` sessions
+- Forwards non-LDN calls to original service
+
+```cpp
+// Key file: sysmodule/source/ldn/ldn_mitm_service.hpp
+class LdnMitMService {
+    Result CreateUserLocalCommunicationService(...);
+    static bool ShouldMitm(...);
+};
+```
+
+#### LdnICommunication
+
+Handles individual game sessions:
+
+- Manages LDN state machine
+- Converts LDN API to network operations
+- Routes game data through server
+
+```cpp
+// Key file: sysmodule/source/ldn/ldn_icommunication.hpp
+class LdnICommunication {
+    // Lifecycle
+    Result Initialize();
+    Result Finalize();
+
+    // Host (Access Point)
+    Result OpenAccessPoint();
+    Result CreateNetwork();
+
+    // Client (Station)
+    Result OpenStation();
+    Result Scan();
+    Result Connect();
+};
+```
+
+#### NetworkClient
+
+Manages TCP connection to the server:
+
+- Connection establishment
+- RyuLdn protocol encoding/decoding
+- Automatic reconnection
+
+```cpp
+// Key file: sysmodule/source/network/client.hpp
+class NetworkClient {
+    Result Connect();
+    Result SendPacket(RyuLdnPacket&);
+    void ProcessIncoming();
+};
+```
+
+#### Protocol
+
+RyuLdn protocol implementation:
+
+- Binary packet format
+- Game data proxy messages
+- Session management messages
+
+```cpp
+// Key file: sysmodule/source/protocol/ryu_protocol.hpp
+namespace ryu_ldn::protocol {
+    void encode_create_access_point(...);
+    void encode_scan(...);
+    void encode_proxy_data(...);
+}
+```
+
+### Tesla Overlay
+
+User interface component:
+
+- Displays connection status
+- Shows session information
+- Allows configuration changes
+
+```cpp
+// Key file: overlay/source/main.cpp
+class RyuLdnOverlay : public tsl::Overlay {
+    void initServices();
+    void exitServices();
+};
+```
+
+#### Overlay IPC
+
+Custom IPC service for overlay communication:
+
+- Commands 65001-65010 on ldn:u MITM
+- Read-only status queries
+- Configuration changes
+
+```cpp
+// Key file: sysmodule/source/ldn/ldn_config_service.hpp
+class LdnConfigService {
+    Result GetVersion(...);
+    Result GetConnectionStatus(...);
+    Result GetSessionInfo(...);
+    Result ForceReconnect();
+};
+```
+
+## Data Flow
+
+### Creating a Network (Host)
+
+```
+Game                    LdnICommunication           NetworkClient           Server
+  │                            │                           │                     │
+  │── Initialize() ──────────▶│                           │                     │
+  │                            │                           │                     │
+  │── OpenAccessPoint() ─────▶│── Connect() ────────────▶│── TCP Connect ────▶│
+  │                            │                           │◀── Connected ──────│
+  │                            │                           │                     │
+  │── CreateNetwork(cfg) ────▶│── SendCreateAP() ───────▶│── CreateAP msg ───▶│
+  │                            │                           │◀── CreateAP OK ────│
+  │◀── Success ───────────────│                           │                     │
+  │                            │                           │                     │
+```
+
+### Joining a Network (Client)
+
+```
+Game                    LdnICommunication           NetworkClient           Server
+  │                            │                           │                     │
+  │── OpenStation() ─────────▶│── Connect() ────────────▶│── TCP Connect ────▶│
+  │                            │                           │◀── Connected ──────│
+  │                            │                           │                     │
+  │── Scan(filter) ──────────▶│── SendScan() ───────────▶│── Scan msg ───────▶│
+  │                            │                           │◀── ScanResult ─────│
+  │◀── Networks[] ────────────│                           │                     │
+  │                            │                           │                     │
+  │── Connect(network) ──────▶│── SendConnect() ────────▶│── Connect msg ────▶│
+  │                            │                           │◀── Connected ──────│
+  │◀── Success ───────────────│                           │                     │
+```
+
+### Game Data Proxy
+
+```
+Game A                  ryu_ldn_nx                 Server                  Game B
+  │                           │                       │                        │
+  │── SendData(B, data) ────▶│── ProxyData(B) ─────▶│── ProxyData(B) ──────▶│
+  │                           │                       │                        │
+  │                           │◀── ProxyData(A) ─────│◀── ProxyData(A) ──────│
+  │◀── RecvData(A, data) ────│                       │                        │
+```
+
+## Threading Model
+
+```
+Main Thread (ServerManager)
+├── IPC request handling
+├── LdnMitMService
+└── LdnICommunication
+
+Network Thread (per session)
+├── TCP socket I/O
+├── Packet processing
+└── Callback invocation
+
+State events signaled cross-thread via os::SystemEvent
+```
+
+## Memory Management
+
+- Fixed-size packet buffers (MTU-based)
+- Ring buffers for proxy data
+- No dynamic allocation in hot paths
+- RAII for resource cleanup
+
+## Error Handling
+
+- Atmosphere Result codes for IPC
+- Automatic reconnection on network errors
+- State machine prevents invalid operations
+- Graceful degradation on server issues

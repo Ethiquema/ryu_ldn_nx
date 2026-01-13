@@ -1,0 +1,97 @@
+---
+title: Configuration
+description: How to configure ryu_ldn_nx settings
+---
+
+# Configuration
+
+ryu_ldn_nx can be configured via a configuration file on your SD card.
+
+## Configuration File
+
+The configuration file is located at:
+
+```
+SD Card/config/ryu_ldn_nx/config.ini
+```
+
+## Default Configuration
+
+```ini
+; ryu_ldn_nx Configuration
+
+[server]
+; Server address for ryu_ldn multiplayer
+host = ldn.ryujinx.app
+port = 30456
+
+[settings]
+; Enable debug logging (0 = off, 1 = on)
+debug = 0
+```
+
+## Options
+
+### Server Section
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `host` | `ldn.ryujinx.app` | Server hostname or IP address |
+| `port` | `30456` | Server port number |
+
+### Settings Section
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `debug` | `0` | Enable debug logging (0=off, 1=on) |
+
+## Custom Servers
+
+To use a different LDN server, change the `host` and `port` values:
+
+```ini
+[server]
+host = my.custom.server.com
+port = 12345
+```
+
+### Self-Hosted Servers
+
+If you're running your own ryu_ldn server:
+
+```ini
+[server]
+host = 192.168.1.100
+port = 30456
+```
+
+## Debug Mode
+
+Enable debug mode to troubleshoot connection issues:
+
+```ini
+[settings]
+debug = 1
+```
+
+Debug logs are written to the system log and can be viewed with tools like:
+- `atmosphere/logs/`
+- NXLink console output
+
+## Applying Changes
+
+After modifying config.ini:
+
+1. Save the file
+2. Use "Force Reconnect" in the Tesla overlay, or
+3. Reboot your Switch
+
+## Overlay Configuration
+
+You can also view and modify some settings through the Tesla overlay:
+
+1. Open Tesla Menu (L + DPad Down + Right Stick)
+2. Select "ryu_ldn_nx"
+3. Toggle debug mode or force reconnect
+
+See [Using the Overlay](/ryu_ldn_nx/guides/overlay) for more details.

@@ -1,0 +1,157 @@
+---
+title: Building from Source
+description: How to build ryu_ldn_nx from source code
+---
+
+# Building from Source
+
+This guide explains how to build ryu_ldn_nx from source.
+
+## Prerequisites
+
+### Using Docker (Recommended)
+
+- Docker
+- Docker Compose
+
+### Native Build
+
+- devkitPro with devkitA64
+- libnx
+- Atmosphere-libs (submodule)
+- libtesla (for overlay)
+
+## Docker Build
+
+The easiest way to build is using Docker:
+
+```bash
+# Clone the repository
+git clone --recursive https://github.com/Ethiquema/ryu_ldn_nx.git
+cd ryu_ldn_nx
+
+# Build sysmodule
+docker-compose run --rm build
+
+# Build overlay
+docker-compose run --rm overlay
+
+# Run tests
+docker-compose run --rm test
+```
+
+### Build Outputs
+
+After building:
+
+- Sysmodule: `sysmodule/ryu_ldn_nx.nsp`
+- Overlay: `overlay/ryu_ldn_nx_overlay.ovl`
+- Debug symbols: `sysmodule/ryu_ldn_nx.elf`
+
+## Native Build
+
+If you prefer building natively:
+
+### 1. Install devkitPro
+
+Follow the [devkitPro getting started guide](https://devkitpro.org/wiki/Getting_Started).
+
+```bash
+# Install required packages
+dkp-pacman -S switch-dev libnx
+```
+
+### 2. Clone Repository
+
+```bash
+git clone --recursive https://github.com/Ethiquema/ryu_ldn_nx.git
+cd ryu_ldn_nx
+```
+
+### 3. Build Sysmodule
+
+```bash
+cd sysmodule
+make -j$(nproc)
+```
+
+### 4. Build Overlay
+
+```bash
+# Install libtesla
+git clone https://github.com/WerWolv/libtesla.git /opt/libtesla
+
+cd overlay
+make LIBTESLA=/opt/libtesla
+```
+
+## VS Code Dev Container
+
+For the best development experience:
+
+1. Install VS Code and the "Dev Containers" extension
+2. Open the repository folder
+3. Click "Reopen in Container"
+4. Use the integrated terminal to build
+
+## Creating a Release Package
+
+To create a release-ready ZIP:
+
+```bash
+# Build everything
+docker-compose run --rm build
+docker-compose run --rm overlay
+
+# Create package structure
+mkdir -p release/atmosphere/contents/4200000000000020
+mkdir -p release/switch/.overlays
+mkdir -p release/config/ryu_ldn_nx
+
+# Copy files
+cp sysmodule/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000020/exefs.nsp
+cp sysmodule/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000020/main.npdm
+cp sysmodule/res/*.json release/atmosphere/contents/4200000000000020/
+cp overlay/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
+
+# Create config
+cat > release/config/ryu_ldn_nx/config.ini << 'EOF'
+[server]
+host = ldn.ryujinx.app
+port = 30456
+[settings]
+debug = 0
+EOF
+
+# Create ZIP
+cd release && zip -r ../ryu_ldn_nx.zip .
+```
+
+## Troubleshooting Build Issues
+
+### Submodules not initialized
+
+```bash
+git submodule update --init --recursive
+```
+
+### Missing libnx
+
+```bash
+dkp-pacman -S libnx
+```
+
+### Atmosphere-libs errors
+
+Make sure you have the correct version:
+```bash
+cd sysmodule/Atmosphere-libs
+git checkout <required-version>
+```
+
+### libtesla not found
+
+Set the LIBTESLA environment variable:
+```bash
+export LIBTESLA=/path/to/libtesla
+```

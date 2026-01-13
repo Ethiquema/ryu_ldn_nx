@@ -1,0 +1,84 @@
+; ryu_ldn_nx Configuration File
+; Copy this file to config.ini to use custom settings
+; All values shown are defaults - uncomment and modify as needed
+
+;------------------------------------------------------------------------------
+; SERVER SETTINGS
+; Configure connection to the ryu_ldn server
+;------------------------------------------------------------------------------
+[server]
+; Server hostname or IP address
+; Default: ldn.ryujinx.app (official Ryujinx LDN server)
+;host = ldn.ryujinx.app
+
+; Server port
+; Default: 30456
+;port = 30456
+
+; Use TLS/SSL for server connection (recommended)
+; 0 = disabled, 1 = enabled
+;use_tls = 1
+
+;------------------------------------------------------------------------------
+; NETWORK SETTINGS
+; Configure network behavior and timeouts
+;------------------------------------------------------------------------------
+[network]
+; Connection timeout in milliseconds
+; How long to wait when connecting to server
+; Default: 5000 (5 seconds)
+;connect_timeout = 5000
+
+; Ping interval in milliseconds
+; How often to send keepalive packets to maintain connection
+; Default: 10000 (10 seconds)
+;ping_interval = 10000
+
+; Reconnect delay in milliseconds
+; How long to wait before attempting reconnection after disconnect
+; Default: 3000 (3 seconds)
+;reconnect_delay = 3000
+
+; Maximum reconnection attempts before giving up
+; 0 = infinite retries
+; Default: 5
+;max_reconnect_attempts = 5
+
+;------------------------------------------------------------------------------
+; LDN SETTINGS
+; Configure Local Wireless emulation behavior
+;------------------------------------------------------------------------------
+[ldn]
+; Enable ryu_ldn_nx functionality
+; 0 = disabled (use normal LDN), 1 = enabled (route through server)
+; Default: 1
+;enabled = 1
+
+; Passphrase for private rooms (optional)
+; Leave empty for public matchmaking
+; Max 64 characters
+;passphrase =
+
+; Preferred network interface
+; Leave empty for automatic selection
+;interface =
+
+;------------------------------------------------------------------------------
+; DEBUG SETTINGS
+; For development and troubleshooting
+;------------------------------------------------------------------------------
+[debug]
+; Enable debug logging
+; 0 = disabled, 1 = enabled
+; Default: 0
+;enabled = 0
+
+; Debug log level (when debug is enabled)
+; 0 = errors only, 1 = warnings, 2 = info, 3 = verbose
+; Default: 1
+;level = 1
+
+; Log to file (in addition to console)
+; 0 = disabled, 1 = enabled
+; Log file location: /config/ryu_ldn_nx/ryu_ldn_nx.log
+;log_to_file = 0

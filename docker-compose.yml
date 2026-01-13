@@ -1,0 +1,36 @@
+services:
+  build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/sysmodule
+    command: sh -c "make clean && make"
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/tests
+    command: sh -c "make clean && make test"
+
+  overlay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/overlay
+    command: sh -c "make clean && make"
+
+  # Build all targets
+  all:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    command: sh -c "cd /workspace/sysmodule && make clean && make && cd /workspace/overlay && make clean && make"

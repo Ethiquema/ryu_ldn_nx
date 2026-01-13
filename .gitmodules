@@ -1,0 +1,6 @@
+[submodule "sysmodule/Atmosphere-libs"]
+	path = sysmodule/Atmosphere-libs
+	url = https://github.com/Atmosphere-NX/Atmosphere-libs.git
+[submodule "overlay/libtesla"]
+	path = overlay/libtesla
+	url = https://github.com/WerWolv/libtesla.git

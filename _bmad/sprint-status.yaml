@@ -1,0 +1,226 @@
+# BMM Sprint Status Tracking
+# Generated: 2026-01-12
+# Project: ryu_ldn_nx - Port de ryu_ldn vers Nintendo Switch native
+
+project:
+  name: "ryu_ldn_nx"
+  description: "Port de ryu_ldn pour fonctionner nativement sur Nintendo Switch comme sysmodule Atmosphere"
+  type: greenfield
+  scope: medium-complex
+  flow: structured
+  languages:
+    - C
+    - C++
+  license: GPLv3
+  contributions: DCO
+
+# Sources du projet
+sources:
+  nintendo_clients_wiki: "https://github.com/kinnay/NintendoClients/wiki"
+  switchbrew_docs: "https://switchbrew.org/wiki/Main_Page"
+  switchbrew_hardware: "https://switchbrew.org/wiki/Hardware"
+  ryujinx_source: "https://git.ryujinx.app/ryubing/ryujinx"
+  ldn_server: "https://git.ryujinx.app/ryubing/ldn"
+  ldn_mitm_original: "https://github.com/spacemeowx2/ldn_mitm"
+
+# Phase actuelle
+phase:
+  current: execution
+  status: in_progress
+
+# Phases complétées
+discovery:
+  status: completed
+  product_brief: docs/product-brief.md
+  codebase_analysis: docs/codebase-analysis.md
+  research_notes: docs/research-notes.md
+
+solutioning:
+  status: completed
+  architecture: docs/architecture.md
+
+planning:
+  status: completed
+  epics_created: 6
+  stories_created: 42
+  estimated_sprints: 7-8
+
+# Epics
+epics:
+  - id: 0
+    name: "Infrastructure Projet"
+    priority: P0
+    status: completed
+    stories_completed: 6
+    stories_total: 6
+    file: docs/epics/epic-0-infrastructure.md
+
+  - id: 1
+    name: "Protocole RyuLdn"
+    priority: P0
+    status: completed
+    stories_completed: 6
+    stories_total: 6
+    depends_on: [0]
+    file: docs/epics/epic-1-protocol.md
+
+  - id: 2
+    name: "Client Réseau"
+    priority: P0
+    status: completed
+    stories_completed: 8
+    stories_total: 8
+    depends_on: [0, 1]
+    file: _bmad/epics/epic-2-network-client.md
+
+  - id: 3
+    name: "Service LDN (MITM IPC)"
+    priority: P0
+    status: completed
+    stories_completed: 9
+    stories_total: 9
+    depends_on: [0, 1, 2]
+    file: _bmad/epics/epic-3-ldn-service.md
+
+  - id: 4
+    name: "Tesla Overlay"
+    priority: P2
+    status: completed
+    stories_completed: 6
+    stories_total: 6
+    depends_on: [0, 3]
+    file: _bmad/epics/epic-4-tesla-overlay.md
+
+  - id: 5
+    name: "Documentation & Release"
+    priority: P1
+    status: in_progress
+    stories_completed: 4
+    stories_total: 7
+    depends_on: [0, 1, 2, 3, 4]
+    file: _bmad/epics/epic-5-docs-release.md
+
+# Execution en cours
+execution:
+  current_epic: 5
+  current_story: "5.5"
+  stories_completed:
+    # Epic 0 - Infrastructure
+    - "0.1: Dev Container Docker"
+    - "0.2: Structure projet sysmodule"
+    - "0.3: Fichiers open source"
+    - "0.4: Templates GitHub"
+    - "0.5: CI/CD Build de base"
+    - "0.6: Configuration exemple"
+    # Epic 1 - Protocole
+    - "1.1: Structures de données de base"
+    - "1.2: Structures de messages"
+    - "1.3: Encodeur de paquets"
+    - "1.4: Décodeur de paquets"
+    - "1.5: Gestionnaire de buffer"
+    - "1.6: Tests protocole"
+    # Epic 2 - Client Réseau
+    - "2.1: Configuration Manager"
+    - "2.2: Socket TCP de base"
+    - "2.3: Client TCP avec protocole"
+    - "2.4: Machine à états connexion"
+    - "2.5: Reconnexion automatique"
+    - "2.6: Client RyuLdn complet"
+    - "2.7: Tests unitaires réseau"
+    - "2.8: Tests intégration réseau"
+    # Epic 3 - Service LDN
+    - "3.1: Types LDN Nintendo"
+    - "3.2: Machine à états LDN"
+    - "3.3: Service MITM de base"
+    - "3.4: Gestion des scans"
+    - "3.5: Création réseau (Host)"
+    - "3.6: Connexion réseau (Client)"
+    - "3.7: Proxy de données"
+    - "3.8: Gestion des erreurs LDN"
+    - "3.9: Tests intégration LDN"
+    # Epic 4 - Tesla Overlay
+    - "4.1: Structure overlay Tesla"
+    - "4.2: Menu principal"
+    - "4.3: Configuration serveur"
+    - "4.4: Affichage statut"
+    - "4.5: Actions connexion"
+    - "4.6: Build overlay"
+    # Epic 5 - Documentation (partiel)
+    - "5.1: Site Starlight"
+    - "5.2: Documentation API (Doxygen)"
+    - "5.3: Guides utilisateur"
+    - "5.4: GitHub Actions docs"
+
+next_actions:
+  - "Story 5.5: README final et badges"
+  - "Story 5.6: CHANGELOG et releases"
+  - "Story 5.7: Tests E2E release"
+
+# Fichiers principaux du projet
+files_created:
+  # Infrastructure
+  - "Dockerfile"
+  - "docker-compose.yml"
+  - ".gitignore"
+  - "README.md"
+  - "LICENSE"
+  - "CONTRIBUTING.md"
+  - "CODE_OF_CONDUCT.md"
+  - "SECURITY.md"
+  - "CHANGELOG.md"
+  # GitHub
+  - ".github/ISSUE_TEMPLATE/*"
+  - ".github/PULL_REQUEST_TEMPLATE.md"
+  - ".github/CODEOWNERS"
+  - ".github/workflows/build.yml"
+  - ".github/workflows/docs.yml"
+  - ".github/workflows/release.yml"
+  # Sysmodule
+  - "sysmodule/Makefile"
+  - "sysmodule/source/main.cpp"
+  - "sysmodule/source/config/config.hpp"
+  - "sysmodule/source/config/config.cpp"
+  - "sysmodule/source/protocol/*.hpp"
+  - "sysmodule/source/network/*.hpp"
+  - "sysmodule/source/network/*.cpp"
+  - "sysmodule/source/ldn/*.hpp"
+  - "sysmodule/source/ldn/*.cpp"
+  # Overlay
+  - "overlay/Makefile"
+  - "overlay/source/main.cpp"
+  # Tests
+  - "tests/Makefile"
+  - "tests/*_tests.cpp"
+  # Documentation
+  - "docs/astro.config.mjs"
+  - "docs/package.json"
+  - "docs/scripts/generate-api-docs.mjs"
+  - "docs/Doxyfile"
+  - "docs/src/content/docs/**/*.mdx"
+  # Config
+  - "config/ryu_ldn_nx/config.ini.example"
+
+# Critères MVP
+mvp_criteria:
+  - "Sysmodule s'installe sur Switch"
+  - "Connexion au serveur ryu_ldn réussit"
+  - "Mario Kart 8 Deluxe peut créer une partie"
+  - "Mario Kart 8 Deluxe peut rejoindre une partie"
+  - "Session stable pendant 1 heure"
+
+# Workflows suggérés
+suggested_workflows:
+  - "/dev-story - Implémenter la prochaine story"
+  - "/workflow-status - Voir statut actuel"
+
+# Notes
+notes: |
+  Phase Execution démarrée le 2026-01-12.
+  Epic 0 (Infrastructure) COMPLETE - 6/6 stories.
+  Epic 1 (Protocole) COMPLETE - 6/6 stories - 28 tests.
+  Epic 2 (Client Réseau) COMPLETE - 8/8 stories - 198 tests.
+  Epic 3 (Service LDN) COMPLETE - 9/9 stories - 156 tests.
+  Epic 4 (Tesla Overlay) COMPLETE - 6/6 stories - overlay.ovl compilé.
+  Epic 5 (Documentation) EN COURS - 4/7 stories.
+  Total: 369 tests unitaires passent.
+  Builds: sysmodule.nsp, overlay.ovl, documentation Starlight.

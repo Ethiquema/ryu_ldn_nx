@@ -1,0 +1,30 @@
+/* Custom styles for ryu_ldn_nx documentation */
+
+:root {
+  --sl-color-accent-low: #1a365d;
+  --sl-color-accent: #3182ce;
+  --sl-color-accent-high: #63b3ed;
+}
+
+/* API documentation styling */
+.api-class {
+  border-left: 4px solid var(--sl-color-accent);
+  padding-left: 1rem;
+  margin: 1rem 0;
+}
+
+.api-function {
+  background: var(--sl-color-gray-6);
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  margin: 0.5rem 0;
+}
+
+.api-param {
+  color: var(--sl-color-accent-high);
+}
+
+/* Code blocks */
+pre code {
+  font-size: 0.875rem;
+}

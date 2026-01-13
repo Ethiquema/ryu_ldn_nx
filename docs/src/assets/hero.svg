@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Network/Connection icon representing LDN -->
+  <circle cx="100" cy="100" r="80" stroke="#3182ce" stroke-width="4" fill="none"/>
+  <circle cx="100" cy="100" r="50" stroke="#3182ce" stroke-width="3" fill="none"/>
+  <circle cx="100" cy="100" r="20" stroke="#3182ce" stroke-width="2" fill="#3182ce"/>
+
+  <!-- Connection nodes -->
+  <circle cx="100" cy="30" r="12" fill="#63b3ed"/>
+  <circle cx="160" cy="70" r="12" fill="#63b3ed"/>
+  <circle cx="160" cy="130" r="12" fill="#63b3ed"/>
+  <circle cx="100" cy="170" r="12" fill="#63b3ed"/>
+  <circle cx="40" cy="130" r="12" fill="#63b3ed"/>
+  <circle cx="40" cy="70" r="12" fill="#63b3ed"/>
+
+  <!-- Connection lines -->
+  <line x1="100" y1="42" x2="100" y2="80" stroke="#3182ce" stroke-width="2"/>
+  <line x1="148" y1="70" x2="120" y2="90" stroke="#3182ce" stroke-width="2"/>
+  <line x1="148" y1="130" x2="120" y2="110" stroke="#3182ce" stroke-width="2"/>
+  <line x1="100" y1="158" x2="100" y2="120" stroke="#3182ce" stroke-width="2"/>
+  <line x1="52" y1="130" x2="80" y2="110" stroke="#3182ce" stroke-width="2"/>
+  <line x1="52" y1="70" x2="80" y2="90" stroke="#3182ce" stroke-width="2"/>
+</svg>

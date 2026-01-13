@@ -1,0 +1,181 @@
+---
+title: Contributing
+description: How to contribute to ryu_ldn_nx development
+---
+
+# Contributing
+
+Thank you for your interest in contributing to ryu_ldn_nx! This guide will help you get started.
+
+## Ways to Contribute
+
+- **Bug Reports** - Found an issue? Let us know!
+- **Feature Requests** - Have an idea? We'd love to hear it!
+- **Code** - Submit pull requests with fixes or features
+- **Documentation** - Help improve these docs
+- **Testing** - Test on different games and configurations
+
+## Development Setup
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Git
+- VS Code (recommended)
+
+### Getting Started
+
+1. **Fork the repository**
+   ```bash
+   git clone https://github.com/YOUR-USERNAME/ryu_ldn_nx.git
+   cd ryu_ldn_nx
+   ```
+
+2. **Open in VS Code with Dev Container**
+   - Install the "Dev Containers" extension
+   - Open the folder in VS Code
+   - Click "Reopen in Container" when prompted
+
+3. **Or use Docker directly**
+   ```bash
+   # Build sysmodule
+   docker-compose run --rm build
+
+   # Run tests
+   docker-compose run --rm test
+
+   # Build overlay
+   docker-compose run --rm overlay
+   ```
+
+## Code Structure
+
+```
+ryu_ldn_nx/
+├── sysmodule/          # Main sysmodule code
+│   └── source/
+│       ├── config/     # Configuration parsing
+│       ├── network/    # Network client
+│       ├── protocol/   # RyuLdn protocol
+│       └── ldn/        # LDN MITM service
+├── overlay/            # Tesla overlay
+├── tests/              # Unit tests
+└── docs/               # This documentation
+```
+
+## Coding Standards
+
+### C++ Style
+
+- Use C++20 features where appropriate
+- Follow existing code style
+- Use Doxygen comments for public APIs
+- Keep functions focused and small
+
+### Naming Conventions
+
+- Classes: `PascalCase`
+- Functions: `PascalCase` (matching Atmosphere style)
+- Variables: `snake_case`
+- Member variables: `m_snake_case`
+- Constants: `UPPER_SNAKE_CASE`
+
+### Example
+
+```cpp
+/**
+ * @brief Process incoming network data
+ *
+ * @param data Raw data buffer
+ * @param size Size in bytes
+ * @return Result Success or error code
+ */
+Result NetworkClient::ProcessData(const u8* data, size_t size) {
+    if (data == nullptr || size == 0) {
+        R_THROW(ResultInvalidArgument());
+    }
+
+    // Process the data...
+
+    R_SUCCEED();
+}
+```
+
+## Testing
+
+### Running Tests
+
+```bash
+docker-compose run --rm test
+```
+
+### Writing Tests
+
+Tests use a simple assertion framework. Add tests to `tests/` directory:
+
+```cpp
+void test_my_feature() {
+    // Arrange
+    MyClass instance;
+
+    // Act
+    auto result = instance.DoSomething();
+
+    // Assert
+    ASSERT_TRUE(result == expected);
+}
+```
+
+## Pull Request Process
+
+1. **Create a branch**
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+
+2. **Make your changes**
+   - Write code
+   - Add tests
+   - Update documentation
+
+3. **Test locally**
+   ```bash
+   docker-compose run --rm test
+   docker-compose run --rm build
+   ```
+
+4. **Commit with sign-off**
+   ```bash
+   git commit -s -m "Add my feature"
+   ```
+
+5. **Push and create PR**
+   ```bash
+   git push origin feature/my-feature
+   ```
+
+6. **Describe your changes**
+   - What does this PR do?
+   - How was it tested?
+   - Any breaking changes?
+
+## DCO Sign-Off
+
+We require a Developer Certificate of Origin (DCO) sign-off on commits.
+This certifies that you wrote or have the right to submit the code.
+
+Add `-s` to your commit command:
+```bash
+git commit -s -m "Your commit message"
+```
+
+This adds a line like:
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+## Getting Help
+
+- Open an issue for questions
+- Check existing issues and PRs
+- Read the [Architecture](/ryu_ldn_nx/guides/architecture) guide
