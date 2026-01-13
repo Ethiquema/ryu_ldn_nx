@@ -126,16 +126,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install libtesla
-        run: |
-          git clone --depth=1 https://github.com/WerWolv/libtesla.git /opt/libtesla
+        with:
+          submodules: recursive
 
       - name: Build overlay
         run: |
           cd overlay
-          make -j$(nproc) LIBTESLA=/opt/libtesla
-          make dist LIBTESLA=/opt/libtesla
+          make -j$(nproc)
+          make dist
 
       - name: Upload overlay ZIP
         uses: actions/upload-artifact@v4
