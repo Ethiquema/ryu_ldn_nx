@@ -115,21 +115,44 @@ void FormatTimeout(u32 timeout_ms, char* buf, size_t bufSize) {
 }
 
 /**
- * @brief Format passphrase for display (masked)
+ * @brief Format passphrase for display
+ *
+ * Shows only the hex part (without "Ryujinx-" prefix) or "(not set)".
  */
-void FormatPassphraseMasked(const char* passphrase, char* buf, size_t bufSize) {
+void FormatPassphraseDisplay(const char* passphrase, char* buf, size_t bufSize) {
     if (passphrase == nullptr || passphrase[0] == '\0') {
         snprintf(buf, bufSize, "(not set)");
+    } else if (strlen(passphrase) == 16 && strncmp(passphrase, "Ryujinx-", 8) == 0) {
+        // Show only the hex part
+        snprintf(buf, bufSize, "%s", passphrase + 8);
     } else {
-        size_t len = strlen(passphrase);
-        if (len <= 4) {
-            snprintf(buf, bufSize, "****");
-        } else {
-            snprintf(buf, bufSize, "%c%c****%c%c",
-                     passphrase[0], passphrase[1],
-                     passphrase[len-2], passphrase[len-1]);
-        }
+        snprintf(buf, bufSize, "(invalid)");
     }
+}
+
+/**
+ * @brief Generate a random passphrase (overlay-side)
+ *
+ * Generates format: Ryujinx-[0-9a-f]{8}
+ */
+void GenerateRandomPassphraseOverlay(char* out, size_t out_size) {
+    if (out == nullptr || out_size < 17) {
+        if (out != nullptr && out_size > 0) out[0] = '\0';
+        return;
+    }
+
+    static bool seeded = false;
+    if (!seeded) {
+        srand(static_cast<unsigned>(time(nullptr)));
+        seeded = true;
+    }
+
+    const char* hex_chars = "0123456789abcdef";
+    strcpy(out, "Ryujinx-");
+    for (int i = 0; i < 8; i++) {
+        out[8 + i] = hex_chars[rand() % 16];
+    }
+    out[16] = '\0';
 }
 
 // Forward declarations for submenus
@@ -137,6 +160,226 @@ class ServerSettingsGui;
 class NetworkSettingsGui;
 class LdnSettingsGui;
 class DebugSettingsGui;
+class HexKeyboardGui;
+
+//=============================================================================
+// Hex Keyboard GUI
+//=============================================================================
+
+/**
+ * @brief Hexadecimal keyboard for passphrase input
+ *
+ * Displays a 4x4 grid of hex characters (0-9, a-f) for entering
+ * the 8-character hex suffix of the passphrase.
+ *
+ * The "Ryujinx-" prefix is automatically added when saving.
+ *
+ * Controls:
+ * - D-Pad: Navigate between keys
+ * - A: Press selected key / confirm
+ * - B: Backspace / cancel
+ * - X: Clear all
+ * - +: Confirm and save
+ */
+class HexKeyboardGui : public tsl::Gui {
+public:
+    HexKeyboardGui() : m_cursorX(0), m_cursorY(0), m_inputLen(0) {
+        memset(m_input, 0, sizeof(m_input));
+
+        // Load current passphrase (extract hex part only)
+        char current[64];
+        if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, current))) {
+            if (strlen(current) == 16 && strncmp(current, "Ryujinx-", 8) == 0) {
+                strncpy(m_input, current + 8, 8);
+                m_inputLen = 8;
+            }
+        }
+    }
+
+    virtual tsl::elm::Element* createUI() override {
+        auto frame = new tsl::elm::OverlayFrame("Edit Passphrase", "Hex only (0-9, a-f)");
+        auto list = new tsl::elm::List();
+
+        // Instructions
+        list->addItem(new tsl::elm::CategoryHeader("Enter 8 hex characters"));
+
+        // Current input display
+        m_inputDisplay = new tsl::elm::ListItem("Passphrase");
+        UpdateInputDisplay();
+        list->addItem(m_inputDisplay);
+
+        list->addItem(new tsl::elm::CategoryHeader("Keyboard"));
+
+        // Display keyboard hint
+        auto hintItem = new tsl::elm::ListItem("Use D-Pad + A to type");
+        hintItem->setValue("[B]=Back [X]=Clear");
+        list->addItem(hintItem);
+
+        // Show keyboard layout as text (Tesla doesn't support custom grid drawing easily)
+        auto row1 = new tsl::elm::ListItem("Row 1");
+        row1->setValue("0 1 2 3");
+        list->addItem(row1);
+
+        auto row2 = new tsl::elm::ListItem("Row 2");
+        row2->setValue("4 5 6 7");
+        list->addItem(row2);
+
+        auto row3 = new tsl::elm::ListItem("Row 3");
+        row3->setValue("8 9 a b");
+        list->addItem(row3);
+
+        auto row4 = new tsl::elm::ListItem("Row 4");
+        row4->setValue("c d e f");
+        list->addItem(row4);
+
+        // Selected key indicator
+        m_selectedKeyItem = new tsl::elm::ListItem("Selected");
+        UpdateSelectedKeyDisplay();
+        list->addItem(m_selectedKeyItem);
+
+        list->addItem(new tsl::elm::CategoryHeader("Actions"));
+
+        // Confirm button
+        auto confirmItem = new tsl::elm::ListItem("Save Passphrase");
+        confirmItem->setValue("[+] or press here");
+        list->addItem(confirmItem);
+
+        // Clear button
+        auto clearItem = new tsl::elm::ListItem("Clear Passphrase");
+        clearItem->setValue("Set to empty");
+        list->addItem(clearItem);
+
+        frame->setContent(list);
+        return frame;
+    }
+
+    virtual bool handleInput(u64 keysDown, u64 keysHeld, const HidTouchState &touchPos,
+                             HidAnalogStickState joyStickPosLeft,
+                             HidAnalogStickState joyStickPosRight) override {
+        // D-Pad navigation
+        if (keysDown & HidNpadButton_Up) {
+            m_cursorY = (m_cursorY + 3) % 4;
+            UpdateSelectedKeyDisplay();
+            return true;
+        }
+        if (keysDown & HidNpadButton_Down) {
+            m_cursorY = (m_cursorY + 1) % 4;
+            UpdateSelectedKeyDisplay();
+            return true;
+        }
+        if (keysDown & HidNpadButton_Left) {
+            m_cursorX = (m_cursorX + 3) % 4;
+            UpdateSelectedKeyDisplay();
+            return true;
+        }
+        if (keysDown & HidNpadButton_Right) {
+            m_cursorX = (m_cursorX + 1) % 4;
+            UpdateSelectedKeyDisplay();
+            return true;
+        }
+
+        // A = Type selected character
+        if (keysDown & HidNpadButton_A) {
+            if (m_inputLen < 8) {
+                m_input[m_inputLen++] = GetSelectedChar();
+                m_input[m_inputLen] = '\0';
+                UpdateInputDisplay();
+            }
+            return true;
+        }
+
+        // B = Backspace
+        if (keysDown & HidNpadButton_B) {
+            if (m_inputLen > 0) {
+                m_input[--m_inputLen] = '\0';
+                UpdateInputDisplay();
+                return true;
+            }
+            // If empty, go back
+            tsl::goBack();
+            return true;
+        }
+
+        // X = Clear all
+        if (keysDown & HidNpadButton_X) {
+            m_inputLen = 0;
+            m_input[0] = '\0';
+            UpdateInputDisplay();
+            return true;
+        }
+
+        // + = Save and exit
+        if (keysDown & HidNpadButton_Plus) {
+            SavePassphrase();
+            tsl::goBack();
+            return true;
+        }
+
+        // Y = Generate random
+        if (keysDown & HidNpadButton_Y) {
+            GenerateRandom();
+            return true;
+        }
+
+        return false;
+    }
+
+private:
+    int m_cursorX;
+    int m_cursorY;
+    char m_input[16];
+    int m_inputLen;
+    tsl::elm::ListItem* m_inputDisplay = nullptr;
+    tsl::elm::ListItem* m_selectedKeyItem = nullptr;
+
+    char GetSelectedChar() {
+        const char* hex = "0123456789abcdef";
+        return hex[m_cursorY * 4 + m_cursorX];
+    }
+
+    void UpdateSelectedKeyDisplay() {
+        if (m_selectedKeyItem) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "'%c' (row %d, col %d)", GetSelectedChar(), m_cursorY + 1, m_cursorX + 1);
+            m_selectedKeyItem->setValue(buf);
+        }
+    }
+
+    void UpdateInputDisplay() {
+        if (m_inputDisplay) {
+            if (m_inputLen == 0) {
+                m_inputDisplay->setValue("(empty)");
+            } else {
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%s (%d/8)", m_input, m_inputLen);
+                m_inputDisplay->setValue(buf);
+            }
+        }
+    }
+
+    void SavePassphrase() {
+        if (m_inputLen == 0) {
+            // Clear passphrase
+            ryuLdnSetPassphrase(&g_configService, "");
+        } else if (m_inputLen == 8) {
+            // Build full passphrase with prefix
+            char full[32];
+            snprintf(full, sizeof(full), "Ryujinx-%s", m_input);
+            ryuLdnSetPassphrase(&g_configService, full);
+        }
+        // If not 8 chars, don't save (invalid)
+    }
+
+    void GenerateRandom() {
+        const char* hex = "0123456789abcdef";
+        for (int i = 0; i < 8; i++) {
+            m_input[i] = hex[rand() % 16];
+        }
+        m_input[8] = '\0';
+        m_inputLen = 8;
+        UpdateInputDisplay();
+    }
+};
 
 //=============================================================================
 // Custom List Items
@@ -547,13 +790,16 @@ public:
  *
  * Submenu for configuring LDN (Local Network) settings:
  * - LDN Enabled: Master toggle for the LDN MITM functionality
- * - Passphrase: Room passphrase for matchmaking (displayed masked for privacy)
+ * - Passphrase: Room passphrase for matchmaking (hex keyboard editor)
+ * - Generate Random: Creates a random 8-char hex passphrase
+ * - Clear Passphrase: Removes the passphrase (matches all rooms)
  *
  * When LDN is disabled, the sysmodule will not intercept LDN calls
  * and games will use normal local wireless (if available).
  *
  * The passphrase is used to match players - only players with the
  * same passphrase can see and join each other's sessions.
+ * Format: Ryujinx-[0-9a-f]{8} (prefix is hidden in UI)
  */
 class LdnSettingsGui : public tsl::Gui {
 public:
@@ -578,15 +824,58 @@ public:
         });
         list->addItem(ldnItem);
 
-        // Passphrase display (masked for privacy, edit via config.ini)
-        auto passphraseItem = new tsl::elm::ListItem("Passphrase");
+        list->addItem(new tsl::elm::CategoryHeader("Passphrase"));
+
+        // Current passphrase display (shows hex part only)
+        auto passphraseItem = new tsl::elm::ListItem("Current");
         char passphrase[64];
         if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, passphrase))) {
-            char masked[32];
-            FormatPassphraseMasked(passphrase, masked, sizeof(masked));
-            passphraseItem->setValue(masked);
+            char display[32];
+            FormatPassphraseDisplay(passphrase, display, sizeof(display));
+            passphraseItem->setValue(display);
         }
         list->addItem(passphraseItem);
+
+        // Edit passphrase button (opens hex keyboard)
+        auto editItem = new tsl::elm::ListItem("Edit Passphrase");
+        editItem->setValue(">");
+        editItem->setClickListener([](u64 keys) {
+            if (keys & HidNpadButton_A) {
+                tsl::changeTo<HexKeyboardGui>();
+                return true;
+            }
+            return false;
+        });
+        list->addItem(editItem);
+
+        // Generate random passphrase button
+        auto randomItem = new tsl::elm::ListItem("Generate Random");
+        randomItem->setValue("Press A");
+        randomItem->setClickListener([this](u64 keys) {
+            if (keys & HidNpadButton_A) {
+                char newPass[32];
+                GenerateRandomPassphraseOverlay(newPass, sizeof(newPass));
+                ryuLdnSetPassphrase(&g_configService, newPass);
+                // Refresh the GUI
+                tsl::changeTo<LdnSettingsGui>();
+                return true;
+            }
+            return false;
+        });
+        list->addItem(randomItem);
+
+        // Clear passphrase button
+        auto clearItem = new tsl::elm::ListItem("Clear Passphrase");
+        clearItem->setValue("Match all rooms");
+        clearItem->setClickListener([](u64 keys) {
+            if (keys & HidNpadButton_A) {
+                ryuLdnSetPassphrase(&g_configService, "");
+                tsl::changeTo<LdnSettingsGui>();
+                return true;
+            }
+            return false;
+        });
+        list->addItem(clearItem);
 
         frame->setContent(list);
         return frame;

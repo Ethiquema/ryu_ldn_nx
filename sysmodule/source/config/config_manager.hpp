@@ -37,6 +37,28 @@
 namespace ryu_ldn::config {
 
 /**
+ * @brief Validate passphrase format
+ *
+ * Passphrase must match the regex: Ryujinx-[0-9a-f]{8}
+ * Empty passphrase (nullptr or "") is also valid (no filtering).
+ *
+ * @param passphrase Passphrase to validate
+ * @return true if valid or empty, false otherwise
+ */
+bool IsValidPassphrase(const char* passphrase);
+
+/**
+ * @brief Generate a random passphrase
+ *
+ * Generates a passphrase in format: Ryujinx-[0-9a-f]{8}
+ * Uses random hex digits for the 8-character suffix.
+ *
+ * @param out Output buffer (at least 17 bytes for null terminator)
+ * @param out_size Size of output buffer
+ */
+void GenerateRandomPassphrase(char* out, size_t out_size);
+
+/**
  * @brief Callback type for configuration change notifications
  *
  * @param section Changed section ("server", "network", "ldn", "debug")
@@ -194,9 +216,13 @@ public:
     /**
      * @brief Set passphrase
      *
-     * @param passphrase New passphrase (max 64 chars, empty = no passphrase)
+     * Passphrase must match format: Ryujinx-[0-9a-f]{8}
+     * Empty or nullptr clears the passphrase (allowed).
+     *
+     * @param passphrase New passphrase
+     * @return true if set successfully, false if invalid format
      */
-    void SetPassphrase(const char* passphrase);
+    bool SetPassphrase(const char* passphrase);
 
     /**
      * @brief Get network interface name

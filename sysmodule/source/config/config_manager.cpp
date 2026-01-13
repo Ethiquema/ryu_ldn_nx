@@ -8,8 +8,77 @@
 
 #include "config_manager.hpp"
 #include <cstring>
+#include <cstdlib>
+#include <ctime>
 
 namespace ryu_ldn::config {
+
+// =============================================================================
+// Passphrase Validation
+// =============================================================================
+
+bool IsValidPassphrase(const char* passphrase) {
+    // Empty passphrase is valid (no filtering)
+    if (passphrase == nullptr || passphrase[0] == '\0') {
+        return true;
+    }
+
+    // Must match: Ryujinx-[0-9a-f]{8}
+    // Total length: 8 (prefix) + 8 (hex) = 16 chars
+    const char* prefix = "Ryujinx-";
+    constexpr size_t prefix_len = 8;
+    constexpr size_t hex_len = 8;
+    constexpr size_t total_len = prefix_len + hex_len;
+
+    // Check length
+    size_t len = std::strlen(passphrase);
+    if (len != total_len) {
+        return false;
+    }
+
+    // Check prefix
+    if (std::strncmp(passphrase, prefix, prefix_len) != 0) {
+        return false;
+    }
+
+    // Check hex part (lowercase only)
+    for (size_t i = prefix_len; i < total_len; i++) {
+        char c = passphrase[i];
+        bool is_digit = (c >= '0' && c <= '9');
+        bool is_hex_lower = (c >= 'a' && c <= 'f');
+        if (!is_digit && !is_hex_lower) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void GenerateRandomPassphrase(char* out, size_t out_size) {
+    if (out == nullptr || out_size < 17) {
+        if (out != nullptr && out_size > 0) {
+            out[0] = '\0';
+        }
+        return;
+    }
+
+    static bool seeded = false;
+    if (!seeded) {
+        std::srand(static_cast<unsigned>(std::time(nullptr)));
+        seeded = true;
+    }
+
+    const char* hex_chars = "0123456789abcdef";
+
+    // Copy prefix
+    std::strcpy(out, "Ryujinx-");
+
+    // Generate 8 random hex chars
+    for (int i = 0; i < 8; i++) {
+        out[8 + i] = hex_chars[std::rand() % 16];
+    }
+    out[16] = '\0';
+}
 
 // =============================================================================
 // Singleton Instance
@@ -146,8 +215,13 @@ void ConfigManager::SetLdnEnabled(bool enabled) {
     NotifyChange("ldn");
 }
 
-void ConfigManager::SetPassphrase(const char* passphrase) {
-    if (passphrase == nullptr) {
+bool ConfigManager::SetPassphrase(const char* passphrase) {
+    // Validate format: empty or Ryujinx-[0-9a-f]{8}
+    if (!IsValidPassphrase(passphrase)) {
+        return false;
+    }
+
+    if (passphrase == nullptr || passphrase[0] == '\0') {
         m_config.ldn.passphrase[0] = '\0';
     } else {
         std::strncpy(m_config.ldn.passphrase, passphrase, MAX_PASSPHRASE_LENGTH);
@@ -155,6 +229,7 @@ void ConfigManager::SetPassphrase(const char* passphrase) {
     }
     m_dirty = true;
     NotifyChange("ldn");
+    return true;
 }
 
 void ConfigManager::SetInterfaceName(const char* name) {

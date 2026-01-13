@@ -104,7 +104,7 @@ static void create_test_config_file() {
         fprintf(f, "\n");
         fprintf(f, "[ldn]\n");
         fprintf(f, "enabled = 1\n");
-        fprintf(f, "passphrase = testpass123\n");
+        fprintf(f, "passphrase = \n");
         fprintf(f, "\n");
         fprintf(f, "[debug]\n");
         fprintf(f, "enabled = 1\n");
@@ -274,26 +274,156 @@ TEST(get_default_passphrase) {
     ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
 }
 
-TEST(set_passphrase) {
+TEST(set_passphrase_valid) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetPassphrase("mysecretpass");
-    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "mysecretpass");
+    // Valid format: Ryujinx-[0-9a-f]{8}
+    bool result = ConfigManager::Instance().SetPassphrase("Ryujinx-abcd1234");
+    ASSERT_TRUE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "Ryujinx-abcd1234");
+}
+
+TEST(set_passphrase_invalid_rejected) {
+    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
+    ConfigManager::Instance().SetPassphrase("");  // Clear first
+    // Invalid passphrase should be rejected
+    bool result = ConfigManager::Instance().SetPassphrase("mysecretpass");
+    ASSERT_FALSE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");  // Unchanged
 }
 
 TEST(set_passphrase_empty) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetPassphrase("something");
+    ConfigManager::Instance().SetPassphrase("Ryujinx-12345678");
     ConfigManager::Instance().SetPassphrase("");
     ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
 }
 
-TEST(set_passphrase_truncates_long) {
+TEST(set_passphrase_truncates_long_rejected) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
+    ConfigManager::Instance().SetPassphrase("");  // Clear first
+    // Invalid passphrase (too long) should be rejected
     char long_pass[128];
     memset(long_pass, 'x', 127);
     long_pass[127] = '\0';
-    ConfigManager::Instance().SetPassphrase(long_pass);
-    ASSERT_TRUE(strlen(ConfigManager::Instance().GetPassphrase()) <= MAX_PASSPHRASE_LENGTH);
+    bool result = ConfigManager::Instance().SetPassphrase(long_pass);
+    ASSERT_FALSE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");  // Unchanged
+}
+
+// ============================================================================
+// Passphrase Validation Tests (format: Ryujinx-[0-9a-f]{8})
+// ============================================================================
+
+TEST(is_valid_passphrase_correct_format) {
+    ASSERT_TRUE(IsValidPassphrase("Ryujinx-12345678"));
+    ASSERT_TRUE(IsValidPassphrase("Ryujinx-abcdef01"));
+    ASSERT_TRUE(IsValidPassphrase("Ryujinx-00000000"));
+    ASSERT_TRUE(IsValidPassphrase("Ryujinx-ffffffff"));
+    ASSERT_TRUE(IsValidPassphrase("Ryujinx-a1b2c3d4"));
+}
+
+TEST(is_valid_passphrase_empty_is_valid) {
+    // Empty passphrase is allowed (means no passphrase filtering)
+    ASSERT_TRUE(IsValidPassphrase(""));
+    ASSERT_TRUE(IsValidPassphrase(nullptr));
+}
+
+TEST(is_valid_passphrase_wrong_prefix) {
+    ASSERT_FALSE(IsValidPassphrase("ryujinx-12345678"));  // lowercase
+    ASSERT_FALSE(IsValidPassphrase("RYUJINX-12345678"));  // uppercase
+    ASSERT_FALSE(IsValidPassphrase("Ryuginx-12345678"));  // typo
+    ASSERT_FALSE(IsValidPassphrase("Switch-12345678"));   // wrong prefix
+    ASSERT_FALSE(IsValidPassphrase("12345678"));          // no prefix
+}
+
+TEST(is_valid_passphrase_wrong_hex_length) {
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-1234567"));   // 7 chars
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-123456789")); // 9 chars
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-"));          // 0 chars
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-1234"));      // 4 chars
+}
+
+TEST(is_valid_passphrase_invalid_hex_chars) {
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-1234567g")); // 'g' not hex
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-ABCDEF01")); // uppercase hex
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-1234 678")); // space
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-1234-678")); // extra dash
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx-!@#$%^&*")); // special chars
+}
+
+TEST(is_valid_passphrase_missing_dash) {
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx12345678"));
+    ASSERT_FALSE(IsValidPassphrase("Ryujinx 12345678"));
+}
+
+TEST(set_passphrase_rejects_invalid) {
+    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
+    ConfigManager::Instance().SetPassphrase("");  // Clear first
+
+    // Try to set invalid passphrase - should be rejected
+    bool result = ConfigManager::Instance().SetPassphrase("invalid");
+    ASSERT_FALSE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
+
+    // Try valid passphrase - should succeed
+    result = ConfigManager::Instance().SetPassphrase("Ryujinx-12345678");
+    ASSERT_TRUE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "Ryujinx-12345678");
+}
+
+TEST(set_passphrase_allows_empty) {
+    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
+    ConfigManager::Instance().SetPassphrase("Ryujinx-12345678");
+
+    // Empty should be allowed (clears passphrase)
+    bool result = ConfigManager::Instance().SetPassphrase("");
+    ASSERT_TRUE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
+
+    // nullptr should also be allowed
+    ConfigManager::Instance().SetPassphrase("Ryujinx-abcdef01");
+    result = ConfigManager::Instance().SetPassphrase(nullptr);
+    ASSERT_TRUE(result);
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
+}
+
+// ============================================================================
+// Random Passphrase Generation Tests
+// ============================================================================
+
+TEST(generate_random_passphrase_format) {
+    char passphrase[32];
+    GenerateRandomPassphrase(passphrase, sizeof(passphrase));
+
+    // Must match format Ryujinx-[0-9a-f]{8}
+    ASSERT_TRUE(IsValidPassphrase(passphrase));
+    ASSERT_TRUE(strlen(passphrase) == 16);  // "Ryujinx-" (8) + hex (8)
+
+    // Check prefix
+    ASSERT_TRUE(strncmp(passphrase, "Ryujinx-", 8) == 0);
+}
+
+TEST(generate_random_passphrase_varies) {
+    char p1[32], p2[32], p3[32];
+    GenerateRandomPassphrase(p1, sizeof(p1));
+    GenerateRandomPassphrase(p2, sizeof(p2));
+    GenerateRandomPassphrase(p3, sizeof(p3));
+
+    // Very unlikely all three are identical
+    bool all_same = (strcmp(p1, p2) == 0) && (strcmp(p2, p3) == 0);
+    ASSERT_FALSE(all_same);
+}
+
+TEST(generate_random_passphrase_only_lowercase_hex) {
+    char passphrase[32];
+    GenerateRandomPassphrase(passphrase, sizeof(passphrase));
+
+    // Check hex part (chars 8-15)
+    for (int i = 8; i < 16; i++) {
+        char c = passphrase[i];
+        bool valid = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        ASSERT_TRUE(valid);
+    }
 }
 
 TEST(get_default_interface_name) {
@@ -443,7 +573,8 @@ TEST(change_callback_invoked_on_ldn_change) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
     ConfigManager::Instance().SetChangeCallback(test_change_callback);
 
-    ConfigManager::Instance().SetPassphrase("newpass");
+    // Use valid passphrase format
+    ConfigManager::Instance().SetPassphrase("Ryujinx-aabbccdd");
 
     ASSERT_TRUE(g_change_callback_count > 0);
     ASSERT_STREQ(g_last_changed_section, "ldn");
@@ -507,7 +638,7 @@ TEST(load_ldn_settings_from_file) {
     ConfigManager::Instance().Initialize(g_test_config_path);
 
     ASSERT_TRUE(ConfigManager::Instance().GetLdnEnabled());
-    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "testpass123");
+    ASSERT_STREQ(ConfigManager::Instance().GetPassphrase(), "");
 
     remove_test_config_file();
 }
