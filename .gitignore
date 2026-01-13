@@ -98,7 +98,7 @@ docs/src/content/docs/api/*.mdx
 # Test build outputs
 tests/build/
 tests/*.o
-tests/test_runner
+tests/run_*
 tests/*.exe
 
 # Coverage reports
