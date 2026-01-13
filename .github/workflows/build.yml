@@ -55,7 +55,21 @@ jobs:
         with:
           key: ${{ runner.os }}-ccache
 
+      - name: Get Atmosphere-libs commit hash
+        id: atmosphere-hash
+        run: |
+          cd sysmodule/Atmosphere-libs
+          echo "hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache libstratosphere
+        id: cache-libstratosphere
+        uses: actions/cache@v4
+        with:
+          path: sysmodule/Atmosphere-libs/libstratosphere/lib
+          key: libstratosphere-${{ steps.atmosphere-hash.outputs.hash }}
+
       - name: Build libstratosphere
+        if: steps.cache-libstratosphere.outputs.cache-hit != 'true'
         run: |
           cd sysmodule/Atmosphere-libs/libstratosphere
           make nx_release -j$(nproc)
