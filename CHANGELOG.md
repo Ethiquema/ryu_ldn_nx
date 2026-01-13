@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 #### Infrastructure (Epic 0)
-- Dev container with devkitPro toolchain
 - Docker Compose for build/test/overlay
 - GitHub Actions CI/CD workflows (build, test, release, docs)
 - Atmosphere-libs submodule integration

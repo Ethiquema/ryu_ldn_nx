@@ -106,7 +106,7 @@ execution:
   current_story: "5.5"
   stories_completed:
     # Epic 0 - Infrastructure
-    - "0.1: Dev Container Docker"
+    - "0.1: Docker Build Environment"
     - "0.2: Structure projet sysmodule"
     - "0.3: Fichiers open source"
     - "0.4: Templates GitHub"

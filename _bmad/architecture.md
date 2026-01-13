@@ -535,10 +535,6 @@ ryu_ldn_nx/
 │       ├── release.yml            # Auto-release sur tag
 │       └── docs.yml               # Déploiement Starlight
 │
-├── .devcontainer/
-│   ├── Dockerfile
-│   └── devcontainer.json
-│
 ├── docs/
 │   ├── product-brief.md
 │   ├── architecture.md            # Ce document

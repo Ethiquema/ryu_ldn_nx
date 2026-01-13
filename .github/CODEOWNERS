@@ -9,7 +9,8 @@
 
 # Build system
 /Makefile @ryubing/ryu-ldn-nx-maintainers
-/.devcontainer/ @ryubing/ryu-ldn-nx-maintainers
+/Dockerfile @ryubing/ryu-ldn-nx-maintainers
+/docker-compose.yml @ryubing/ryu-ldn-nx-maintainers
 /.github/workflows/ @ryubing/ryu-ldn-nx-maintainers
 
 # Documentation

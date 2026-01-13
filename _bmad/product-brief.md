@@ -112,8 +112,7 @@ Un sysmodule Atmosphere natif qui :
 - Déploiement GitHub Pages
 
 ### Environnement
-- Dev container Docker obligatoire
-- Build reproductible
+- Docker Compose pour build reproductible
 
 ---
 

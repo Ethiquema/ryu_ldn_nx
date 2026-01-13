@@ -15,7 +15,7 @@
 │                                                                  │
 │  Sprint 1    ┌──────────────────────┐                           │
 │              │ Epic 0: Infrastructure│                          │
-│              │ (Dev container, CI/CD)│                          │
+│              │ (Docker, CI/CD)       │                          │
 │              └──────────┬───────────┘                           │
 │                         │                                        │
 │  Sprint 2    ┌──────────▼───────────┐                           │

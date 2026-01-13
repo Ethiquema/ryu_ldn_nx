@@ -28,7 +28,7 @@ Describe how you tested your changes:
 - [ ] Tested on Nintendo Switch with Atmosphere
 - [ ] Tested connection to ryu_ldn server
 - [ ] Tested with game: [game name]
-- [ ] Compiled successfully in dev container
+- [ ] Compiled successfully with Docker
 
 ## Checklist
 

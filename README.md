@@ -75,23 +75,24 @@ Any game that supports Nintendo's Local Wireless (LDN) multiplayer should work, 
 
 ### Building from Source
 
-#### Using Dev Container (Recommended)
+#### Using Docker (Recommended)
 
-1. Install [Docker](https://www.docker.com/) and [VS Code](https://code.visualstudio.com/)
-2. Install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
-3. Clone the repository:
-   ```bash
-   git clone https://github.com/Ethiquema/ryu_ldn_nx.git
-   cd ryu_ldn_nx
-   ```
-4. Open in VS Code and click "Reopen in Container" when prompted
-5. Build:
-   ```bash
-   cd sysmodule
-   make
-   ```
+```bash
+# Clone the repository
+git clone --recursive https://github.com/Ethiquema/ryu_ldn_nx.git
+cd ryu_ldn_nx
 
-#### Manual Setup
+# Build sysmodule
+docker-compose run --rm build
+
+# Build overlay
+docker-compose run --rm overlay
+
+# Run tests
+docker-compose run --rm test
+```
+
+#### Native Build
 
 Requirements:
 - [devkitPro](https://devkitpro.org/wiki/Getting_Started) with devkitA64
@@ -118,13 +119,13 @@ make
 
 ```
 ryu_ldn_nx/
-├── .devcontainer/       # Docker dev environment
 ├── sysmodule/           # Main sysmodule source
 │   ├── source/          # C++ source files
 │   ├── res/             # Resources (app.json)
 │   └── Makefile
-├── overlay/             # Tesla overlay (coming soon)
+├── overlay/             # Tesla overlay
 ├── docs/                # Documentation
+├── tests/               # Unit tests
 └── config/              # Example configuration
 ```
 

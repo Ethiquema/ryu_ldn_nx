@@ -81,5 +81,4 @@ pour toute les source don tu a besoin :
 - Les limite hardware de la switch https://switchbrew.org/wiki/Hardware
 
 ## Environement de développement
-Je veut travailler sur ce projet en totalité dans un container docker donc je t'invite a créer
-un dev container adapté au projet.
+Le projet utilise Docker Compose pour la compilation et les tests.

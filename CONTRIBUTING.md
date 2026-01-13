@@ -29,17 +29,26 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ## Development Setup
 
-### Using Dev Container (Recommended)
+### Using Docker (Recommended)
 
-1. Install [Docker](https://www.docker.com/) and [VS Code](https://code.visualstudio.com/)
-2. Install the [Remote - Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) extension
-3. Open the project in VS Code
-4. Click "Reopen in Container" when prompted
-5. Wait for the container to build
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/Ethiquema/ryu_ldn_nx.git
+cd ryu_ldn_nx
 
-### Manual Setup
+# Build sysmodule
+docker-compose run --rm build
 
-See the [README.md](README.md) for manual setup instructions.
+# Run tests
+docker-compose run --rm test
+
+# Build overlay
+docker-compose run --rm overlay
+```
+
+### Native Build
+
+See the [README.md](README.md) for native setup instructions.
 
 ## Making Changes
 
@@ -184,7 +193,9 @@ make
 
 ### Running Tests
 
-(Test infrastructure to be added)
+```bash
+docker-compose run --rm test
+```
 
 ### Testing on Hardware
 

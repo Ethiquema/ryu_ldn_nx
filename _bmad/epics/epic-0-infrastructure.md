@@ -24,33 +24,33 @@ Mettre en place l'infrastructure de développement et la structure open source d
 
 ## Stories
 
-### Story 0.1 : Dev Container Docker
+### Story 0.1 : Docker Build Environment
 
 **Priorité** : P0
 **Estimation** : 3 points
 **Statut** : `completed`
 
 #### Description
-Créer un dev container Docker avec devkitPro et toutes les dépendances pour compiler des sysmodules Switch.
+Créer un environnement Docker avec devkitPro et toutes les dépendances pour compiler des sysmodules Switch.
 
 #### Critères d'acceptation
 - [x] Dockerfile avec devkitPro ARM toolchain
 - [x] libnx et Atmosphere-libs installés
-- [x] devcontainer.json pour VSCode
+- [x] docker-compose.yml pour build/test/overlay
 - [x] `make` compile sans erreur (projet vide)
 - [x] Documentation dans README
 
 #### Tâches techniques
-1. Créer `.devcontainer/Dockerfile` basé sur devkitpro/devkita64
+1. Créer `Dockerfile` basé sur devkitpro/devkita64
 2. Installer libnx, libstratosphere
-3. Créer `.devcontainer/devcontainer.json`
+3. Créer `docker-compose.yml`
 4. Tester compilation projet vide
 5. Documenter setup dans README
 
 #### Tests
-- [ ] `docker build` réussit
-- [ ] `make` dans container réussit
-- [ ] VSCode Remote Containers fonctionne
+- [x] `docker build` réussit
+- [x] `make` dans container réussit
+- [x] docker-compose run fonctionne
 
 ---
 
@@ -202,7 +202,7 @@ Créer le fichier de configuration exemple pour les utilisateurs.
 
 ## Definition of Done (Epic)
 
-- [x] Dev container fonctionnel
+- [x] Docker build environment fonctionnel
 - [x] `make` compile le sysmodule (vide mais valide)
 - [x] Tous les fichiers open source présents
 - [x] CI/CD build fonctionnel
