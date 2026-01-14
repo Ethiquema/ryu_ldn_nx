@@ -8,6 +8,7 @@
 
 #include "ldn_icommunication.hpp"
 #include "ldn_shared_state.hpp"
+#include "../config/config_ipc_service.hpp"
 #include "../debug/log.hpp"
 #include <arpa/inet.h>
 
@@ -26,7 +27,7 @@ ICommunicationService::ICommunicationService()
     , m_disconnect_reason(DisconnectReason::None)
     , m_ipv4_address(0)
     , m_subnet_mask(0)
-    , m_server_client()
+    , m_server_client(ryu_ldn::network::RyuLdnClientConfig(ryu_ldn::ipc::g_config))
     , m_server_connected(false)
 {
     // State machine handles event creation internally
