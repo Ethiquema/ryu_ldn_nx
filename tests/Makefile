@@ -36,7 +36,8 @@ TEST_SOURCES := \
 	overlay_tests.cpp \
 	ipc_config_tests.cpp \
 	config_ipc_service_tests.cpp \
-	shared_state_tests.cpp
+	shared_state_tests.cpp \
+	ldn_packet_dispatcher_tests.cpp
 
 # Implementation sources needed for tests
 IMPL_SOURCES := \
@@ -71,14 +72,15 @@ TARGET_OVERLAY := run_overlay_tests
 TARGET_IPC_CONFIG := run_ipc_config_tests
 TARGET_CONFIG_IPC_SERVICE := run_config_ipc_service_tests
 TARGET_SHARED_STATE := run_shared_state_tests
+TARGET_PACKET_DISPATCHER := run_packet_dispatcher_tests
 TARGET_ALL := run_all_tests
 
 #---------------------------------------------------------------------------------
 # Build rules
 #---------------------------------------------------------------------------------
-.PHONY: all clean test test-protocol test-config test-config-manager test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay test-ipc-config test-config-ipc-service test-shared-state coverage
+.PHONY: all clean test test-protocol test-config test-config-manager test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay test-ipc-config test-config-ipc-service test-shared-state test-packet-dispatcher coverage
 
-all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE)
+all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER)
 
 # Protocol tests (header-only, no impl needed)
 $(TARGET_PROTOCOL): protocol_tests.o
@@ -152,6 +154,10 @@ $(TARGET_CONFIG_IPC_SERVICE): config_ipc_service_tests.o
 $(TARGET_SHARED_STATE): shared_state_tests.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+# Packet Dispatcher tests (needs ldn_packet_dispatcher.cpp)
+$(TARGET_PACKET_DISPATCHER): ldn_packet_dispatcher_tests.o ldn_packet_dispatcher.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Compile test sources
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -181,8 +187,11 @@ reconnect.o: ../sysmodule/source/network/reconnect.cpp
 client.o: ../sysmodule/source/network/client.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
+ldn_packet_dispatcher.o: ../sysmodule/source/ldn/ldn_packet_dispatcher.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 # Run all tests
-test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE)
+test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER)
 	@echo "=== Running Protocol Tests ==="
 	./$(TARGET_PROTOCOL)
 	@echo ""
@@ -236,6 +245,9 @@ test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG)
 	@echo ""
 	@echo "=== Running SharedState Tests ==="
 	./$(TARGET_SHARED_STATE)
+	@echo ""
+	@echo "=== Running Packet Dispatcher Tests ==="
+	./$(TARGET_PACKET_DISPATCHER)
 
 test-protocol: $(TARGET_PROTOCOL)
 	./$(TARGET_PROTOCOL)
@@ -291,13 +303,16 @@ test-config-ipc-service: $(TARGET_CONFIG_IPC_SERVICE)
 test-shared-state: $(TARGET_SHARED_STATE)
 	./$(TARGET_SHARED_STATE)
 
+test-packet-dispatcher: $(TARGET_PACKET_DISPATCHER)
+	./$(TARGET_PACKET_DISPATCHER)
+
 coverage: clean
 	$(MAKE) COVERAGE=1 test
 	gcov $(TEST_SOURCES)
 	@echo "Coverage report generated"
 
 clean:
-	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE)
+	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER)
 	rm -f *.gcno *.gcda *.gcov
 
 #---------------------------------------------------------------------------------
