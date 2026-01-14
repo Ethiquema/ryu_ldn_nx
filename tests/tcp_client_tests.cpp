@@ -282,7 +282,7 @@ TEST(send_disconnect_not_connected) {
     TcpClient client;
 
     DisconnectMessage msg{};
-    msg.disconnect_reason = 1;
+    msg.disconnect_ip = 0xC0A80101;  // 192.168.1.1
     ClientResult result = client.send_disconnect(msg);
 
     ASSERT_EQ(result, ClientResult::NotConnected);
@@ -353,8 +353,12 @@ TEST(send_proxy_data_not_connected) {
     TcpClient client;
 
     ProxyDataHeader header{};
-    header.destination_node_id = 1;
-    header.source_node_id = 0;
+    header.info.source_ipv4 = 0xC0A80101;   // 192.168.1.1
+    header.info.source_port = 12345;
+    header.info.dest_ipv4 = 0xC0A80102;     // 192.168.1.2
+    header.info.dest_port = 54321;
+    header.info.protocol = ProtocolType::Udp;
+    header.data_length = 3;
     uint8_t data[] = {0xAA, 0xBB, 0xCC};
 
     ClientResult result = client.send_proxy_data(header, data, sizeof(data));

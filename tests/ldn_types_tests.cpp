@@ -127,7 +127,7 @@ TEST(protocol_network_config_size) {
 }
 
 TEST(protocol_scan_filter_full_size) {
-    ASSERT_EQ(sizeof(ryu_ldn::protocol::ScanFilterFull), 93u);
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ScanFilterFull), 0x60u);  // 96 bytes with Pack=8 alignment
 }
 
 TEST(protocol_connect_request_size) {
@@ -443,16 +443,21 @@ TEST(network_info_complete_structure) {
 // ============================================================================
 
 TEST(proxy_data_header_size) {
-    ASSERT_EQ(sizeof(ryu_ldn::protocol::ProxyDataHeader), 8u);
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ProxyDataHeader), 0x14u);  // 20 bytes
 }
 
 TEST(proxy_data_header_fields) {
     ryu_ldn::protocol::ProxyDataHeader header{};
-    header.destination_node_id = 1;
-    header.source_node_id = 0;
+    header.info.source_ipv4 = 0xC0A80101;   // 192.168.1.1
+    header.info.source_port = 12345;
+    header.info.dest_ipv4 = 0xC0A80102;     // 192.168.1.2
+    header.info.dest_port = 54321;
+    header.info.protocol = ryu_ldn::protocol::ProtocolType::Udp;
+    header.data_length = 100;
 
-    ASSERT_EQ(header.destination_node_id, 1u);
-    ASSERT_EQ(header.source_node_id, 0u);
+    ASSERT_EQ(header.info.source_ipv4, 0xC0A80101u);
+    ASSERT_EQ(header.info.dest_ipv4, 0xC0A80102u);
+    ASSERT_EQ(header.data_length, 100u);
 }
 
 // ============================================================================

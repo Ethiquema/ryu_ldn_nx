@@ -132,7 +132,7 @@ TEST(structure_sizes) {
     ASSERT_EQ(sizeof(InitializeMessage), 0x16);  // 22 bytes
     ASSERT_EQ(sizeof(PassphraseMessage), 0x80);  // 128 bytes
     ASSERT_EQ(sizeof(PingMessage), 2);
-    ASSERT_EQ(sizeof(DisconnectMessage), 6);
+    ASSERT_EQ(sizeof(DisconnectMessage), 4);     // 4 bytes (DisconnectIP only)
 
     // Request structures
     ASSERT_EQ(sizeof(SecurityConfig), 0x44);
@@ -140,8 +140,17 @@ TEST(structure_sizes) {
     ASSERT_EQ(sizeof(NetworkConfig), 0x20);
     ASSERT_EQ(sizeof(RyuNetworkConfig), 0x28);
     ASSERT_EQ(sizeof(CreateAccessPointRequest), 0xBC);
-    ASSERT_EQ(sizeof(ScanFilterFull), 93);  // 93 bytes (not aligned)
+    ASSERT_EQ(sizeof(ScanFilterFull), 0x60);     // 96 bytes (Pack=8 alignment)
     ASSERT_EQ(sizeof(ConnectRequest), 0x4FC);
+    ASSERT_EQ(sizeof(RejectRequest), 8);         // 8 bytes (NodeId + DisconnectReason)
+
+    // Proxy structures
+    ASSERT_EQ(sizeof(ProxyInfo), 0x10);          // 16 bytes
+    ASSERT_EQ(sizeof(ProxyConfig), 8);           // 8 bytes (ip + subnetmask)
+    ASSERT_EQ(sizeof(ProxyDataHeader), 0x14);    // 20 bytes (ProxyInfo + DataLength)
+    ASSERT_EQ(sizeof(ProxyConnectRequest), 0x10);  // 16 bytes (ProxyInfo)
+    ASSERT_EQ(sizeof(ProxyConnectResponse), 0x10); // 16 bytes (ProxyInfo)
+    ASSERT_EQ(sizeof(ProxyDisconnectMessage), 0x14); // 20 bytes (ProxyInfo + reason)
 }
 
 TEST(protocol_constants) {
@@ -240,13 +249,15 @@ TEST(encode_disconnect_packet) {
     uint8_t buffer[64];
     size_t out_size = 0;
 
+    // Disconnect message now contains IP address of disconnecting client
+    uint32_t disconnect_ip = 0xC0A80101;  // 192.168.1.1
     EncodeResult result = encode_disconnect(buffer, sizeof(buffer),
-                                            DisconnectReason::User, out_size);
+                                            disconnect_ip, out_size);
 
     ASSERT_EQ(result, EncodeResult::Success);
 
     DisconnectMessage* msg = reinterpret_cast<DisconnectMessage*>(buffer + sizeof(LdnHeader));
-    ASSERT_EQ(msg->disconnect_reason, static_cast<uint32_t>(DisconnectReason::User));
+    ASSERT_EQ(msg->disconnect_ip, disconnect_ip);
 }
 
 // ============================================================================
@@ -405,9 +416,10 @@ TEST(roundtrip_disconnect) {
     uint8_t buffer[64];
     size_t encoded_size = 0;
 
-    // Encode
+    // Encode with IP address (new format)
+    uint32_t disconnect_ip = 0x0A000001;  // 10.0.0.1
     EncodeResult enc_result = encode_disconnect(buffer, sizeof(buffer),
-                                                DisconnectReason::Rejected, encoded_size);
+                                                disconnect_ip, encoded_size);
     ASSERT_EQ(enc_result, EncodeResult::Success);
 
     // Decode
@@ -416,7 +428,7 @@ TEST(roundtrip_disconnect) {
     DecodeResult dec_result = decode_disconnect(buffer, encoded_size, header, msg);
 
     ASSERT_EQ(dec_result, DecodeResult::Success);
-    ASSERT_EQ(msg.disconnect_reason, static_cast<uint32_t>(DisconnectReason::Rejected));
+    ASSERT_EQ(msg.disconnect_ip, disconnect_ip);
 }
 
 TEST(roundtrip_initialize) {
