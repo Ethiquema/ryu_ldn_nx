@@ -239,12 +239,13 @@ inline EncodeResult encode_ping(uint8_t* buffer, size_t buffer_size,
 
 /**
  * @brief Encode Disconnect message
+ *
+ * @param disconnect_ip IP address of disconnecting client (0 = self)
  */
 inline EncodeResult encode_disconnect(uint8_t* buffer, size_t buffer_size,
-                                      DisconnectReason reason, size_t& out_size) {
+                                      uint32_t disconnect_ip, size_t& out_size) {
     DisconnectMessage msg{};
-    msg.disconnect_reason = static_cast<uint32_t>(reason);
-    msg.reserved = 0;
+    msg.disconnect_ip = disconnect_ip;
     return encode(buffer, buffer_size, PacketId::Disconnect, msg, out_size);
 }
 
@@ -296,14 +297,18 @@ inline EncodeResult encode_set_advertise_data(uint8_t* buffer, size_t buffer_siz
 
 /**
  * @brief Encode ProxyData packet
+ *
+ * @param info Proxy connection info (source/dest addressing)
+ * @param data Payload data to send
+ * @param data_size Size of payload
  */
 inline EncodeResult encode_proxy_data(uint8_t* buffer, size_t buffer_size,
-                                      uint32_t dest_node, uint32_t src_node,
+                                      const ProxyInfo& info,
                                       const uint8_t* data, size_t data_size,
                                       size_t& out_size) {
     ProxyDataHeader header{};
-    header.destination_node_id = dest_node;
-    header.source_node_id = src_node;
+    header.info = info;
+    header.data_length = static_cast<uint32_t>(data_size);
     return encode_with_data(buffer, buffer_size, PacketId::ProxyData,
                             header, data, data_size, out_size);
 }

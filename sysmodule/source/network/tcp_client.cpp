@@ -360,8 +360,7 @@ ClientResult TcpClient::send_proxy_data(const protocol::ProxyDataHeader& header,
     size_t encoded_size = 0;
     protocol::EncodeResult encode_result = protocol::encode_proxy_data(
         m_send_buffer, sizeof(m_send_buffer),
-        header.destination_node_id, header.source_node_id,
-        data, data_size, encoded_size);
+        header.info, data, data_size, encoded_size);
 
     if (encode_result != protocol::EncodeResult::Success) {
         return ClientResult::EncodingError;
