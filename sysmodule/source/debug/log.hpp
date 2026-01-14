@@ -288,7 +288,9 @@ private:
     bool m_log_to_file = false;
     char m_log_path[256] = {0};
     LogBuffer m_buffer;
-    void* m_file = nullptr;  // FILE* (avoiding include)
+    void* m_file = nullptr;  // FILE* on PC, unused on Switch
+    bool m_file_open = false;
+    size_t m_file_offset = 0;
 };
 
 // =============================================================================

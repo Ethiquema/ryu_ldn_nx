@@ -1,6 +1,10 @@
 /**
  * @file log.cpp
  * @brief Debug Logging System Implementation
+ *
+ * On Nintendo Switch (Atmosphere), uses ams::fs API for safe SD card access
+ * at boot. The standard library fopen/fclose causes kernel panic when called
+ * before the filesystem is fully ready.
  */
 
 #include "log.hpp"
@@ -9,6 +13,10 @@
 #include <cstring>
 #include <cstdarg>
 
+#ifdef __SWITCH__
+#include <stratosphere.hpp>
+#endif
+
 namespace ryu_ldn::debug {
 
 // =============================================================================
@@ -16,6 +24,11 @@ namespace ryu_ldn::debug {
 // =============================================================================
 
 Logger g_logger;
+
+#ifdef __SWITCH__
+// File handle stored here to avoid exposing ams::fs types in header
+static ams::fs::FileHandle s_log_file_handle;
+#endif
 
 // =============================================================================
 // Helper Functions
@@ -37,13 +50,8 @@ void safe_strcpy(char* dest, const char* src, size_t max_len) {
 
 /**
  * @brief Get a simple timestamp string
- *
- * For Switch sysmodule, we use a simple counter or tick-based timestamp
- * since we don't have easy access to wall clock time.
  */
 void get_timestamp(char* buffer, size_t buffer_size) {
-    // Simple format: just use a static counter for now
-    // In production, this could use os::Tick or similar
     static uint32_t s_log_counter = 0;
     snprintf(buffer, buffer_size, "%06u", s_log_counter++);
 }
@@ -156,10 +164,17 @@ void LogBuffer::clear() {
 // =============================================================================
 
 Logger::~Logger() {
+#ifdef __SWITCH__
+    if (m_file_open) {
+        ams::fs::CloseFile(s_log_file_handle);
+        m_file_open = false;
+    }
+#else
     if (m_file != nullptr) {
         std::fclose(static_cast<FILE*>(m_file));
         m_file = nullptr;
     }
+#endif
 }
 
 void Logger::init(const config::DebugConfig& config, const char* log_path) {
@@ -178,6 +193,54 @@ void Logger::init(const config::DebugConfig& config, const char* log_path) {
 
     // Open log file if enabled
     if (m_enabled && m_log_to_file) {
+#ifdef __SWITCH__
+        // Close existing file if open
+        if (m_file_open) {
+            ams::fs::CloseFile(s_log_file_handle);
+            m_file_open = false;
+        }
+
+        // Ensure parent directory exists
+        char dir_path[256];
+        safe_strcpy(dir_path, m_log_path, sizeof(dir_path) - 1);
+        char* last_slash = std::strrchr(dir_path, '/');
+        if (last_slash) {
+            *last_slash = '\0';
+            ams::fs::EnsureDirectory(dir_path);
+        }
+
+        // Check if file exists
+        ams::fs::DirectoryEntryType entry_type;
+        bool file_exists = R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, m_log_path));
+
+        if (!file_exists) {
+            // Create new file
+            if (R_SUCCEEDED(ams::fs::CreateFile(m_log_path, 0))) {
+                file_exists = true;
+            }
+        }
+
+        // Open file for append
+        if (file_exists) {
+            if (R_SUCCEEDED(ams::fs::OpenFile(&s_log_file_handle, m_log_path,
+                            ams::fs::OpenMode_Write | ams::fs::OpenMode_AllowAppend))) {
+                m_file_open = true;
+
+                // Get current file size for append offset
+                s64 file_size;
+                if (R_SUCCEEDED(ams::fs::GetFileSize(&file_size, s_log_file_handle))) {
+                    m_file_offset = static_cast<size_t>(file_size);
+                }
+
+                // Write header
+                const char* header = "\n=== ryu_ldn_nx Log Started ===\n";
+                size_t header_len = std::strlen(header);
+                ams::fs::WriteFile(s_log_file_handle, m_file_offset, header, header_len,
+                                   ams::fs::WriteOption::Flush);
+                m_file_offset += header_len;
+            }
+        }
+#else
         // Close existing file if open
         if (m_file != nullptr) {
             std::fclose(static_cast<FILE*>(m_file));
@@ -187,11 +250,11 @@ void Logger::init(const config::DebugConfig& config, const char* log_path) {
         m_file = std::fopen(m_log_path, "a");
 
         if (m_file != nullptr) {
-            // Write header
             std::fprintf(static_cast<FILE*>(m_file),
                          "\n=== ryu_ldn_nx Log Started ===\n");
             std::fflush(static_cast<FILE*>(m_file));
         }
+#endif
     }
 
     // Log initialization
@@ -226,9 +289,15 @@ void Logger::log_v(LogLevel level, const char* format, va_list args) {
 }
 
 void Logger::flush() {
+#ifdef __SWITCH__
+    if (m_file_open) {
+        ams::fs::FlushFile(s_log_file_handle);
+    }
+#else
     if (m_file != nullptr) {
         std::fflush(static_cast<FILE*>(m_file));
     }
+#endif
 }
 
 void Logger::output_message(const char* message) {
@@ -239,11 +308,24 @@ void Logger::output_message(const char* message) {
     std::printf("%s\n", message);
 
     // Output to file if enabled
+#ifdef __SWITCH__
+    if (m_log_to_file && m_file_open) {
+        size_t msg_len = std::strlen(message);
+        char line[MAX_LOG_MESSAGE_LENGTH + 2];
+        std::memcpy(line, message, msg_len);
+        line[msg_len] = '\n';
+        line[msg_len + 1] = '\0';
+
+        ams::fs::WriteFile(s_log_file_handle, m_file_offset, line, msg_len + 1,
+                           ams::fs::WriteOption::Flush);
+        m_file_offset += msg_len + 1;
+    }
+#else
     if (m_log_to_file && m_file != nullptr) {
         std::fprintf(static_cast<FILE*>(m_file), "%s\n", message);
-        // Flush after each message to ensure it's written in case of crash
         std::fflush(static_cast<FILE*>(m_file));
     }
+#endif
 }
 
 } // namespace ryu_ldn::debug
