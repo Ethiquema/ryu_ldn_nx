@@ -117,15 +117,10 @@ SocketResult socket_init() {
         return SocketResult::Success;
     }
 
-#ifdef __SWITCH__
-    // Initialize libnx socket service with default settings
-    // This allocates ~128KB of transfer memory for socket buffers
-    Result rc = socketInitializeDefault();
-    if (R_FAILED(rc)) {
-        // Common failure: network not connected, or out of memory
-        return SocketResult::NotInitialized;
-    }
-#endif
+    // Note: On Switch, sockets are initialized in main.cpp via socketInitialize()
+    // before any MITM services are created. We don't call socketInitializeDefault()
+    // here because it would fail (sockets already initialized) or conflict with
+    // the existing initialization.
 
     s_initialized = true;
     return SocketResult::Success;
@@ -134,24 +129,16 @@ SocketResult socket_init() {
 /**
  * @brief Shutdown the socket subsystem
  *
- * Releases resources allocated by socket_init(). On Switch, this frees
- * the transfer memory and closes the socket service handle.
+ * Marks the socket subsystem as uninitialized.
  *
- * @warning All sockets should be closed before calling this function.
- *          Behavior is undefined if sockets are still in use.
+ * @note On Switch, socket cleanup is handled by main.cpp via socketExit().
+ *       This function only resets the internal state flag.
  *
  * @note Safe to call even if not initialized (no-op)
  */
 void socket_exit() {
-    if (!s_initialized) {
-        return;
-    }
-
-#ifdef __SWITCH__
-    // Cleanup libnx socket service
-    socketExit();
-#endif
-
+    // Note: On Switch, socketExit() is called in main.cpp's FinalizeSystemModule()
+    // We only reset our internal state flag here.
     s_initialized = false;
 }
 
