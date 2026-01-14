@@ -115,11 +115,11 @@ all: $(BUILD)
 dist: all
 	@echo "Creating SD card structure..."
 	@rm -rf dist
-	@mkdir -p dist/atmosphere/contents/$(TITLE_ID)
+	@mkdir -p dist/atmosphere/contents/$(TITLE_ID)/flags
 	@cp $(TARGET).nsp dist/atmosphere/contents/$(TITLE_ID)/exefs.nsp 2>/dev/null || true
 	@cp $(TARGET).npdm dist/atmosphere/contents/$(TITLE_ID)/main.npdm 2>/dev/null || true
 	@cp res/toolbox.json dist/atmosphere/contents/$(TITLE_ID)/ 2>/dev/null || true
-	@cp res/app.json dist/atmosphere/contents/$(TITLE_ID)/ 2>/dev/null || true
+	@touch dist/atmosphere/contents/$(TITLE_ID)/flags/boot2.flag
 	@echo "Creating ZIP..."
 	@cd dist && zip -r ../$(TARGET)-sysmodule.zip .
 	@echo "Created $(TARGET)-sysmodule.zip"

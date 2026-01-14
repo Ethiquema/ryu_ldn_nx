@@ -253,13 +253,13 @@ jobs:
 
       - name: Prepare SD card structure
         run: |
-          mkdir -p release/atmosphere/contents/4200000000000010
+          mkdir -p release/atmosphere/contents/4200000000000010/flags
           mkdir -p release/switch/.overlays
 
           cp sysmodule-artifacts/ryu_ldn_nx.nsp release/atmosphere/contents/4200000000000010/exefs.nsp
           cp sysmodule-artifacts/ryu_ldn_nx.npdm release/atmosphere/contents/4200000000000010/main.npdm
           cp sysmodule-artifacts/res/toolbox.json release/atmosphere/contents/4200000000000010/ || true
-          cp sysmodule-artifacts/res/app.json release/atmosphere/contents/4200000000000010/ || true
+          touch release/atmosphere/contents/4200000000000010/flags/boot2.flag
           cp overlay-artifacts/ryu_ldn_nx_overlay.ovl release/switch/.overlays/
 
           echo "=== Release contents ==="
