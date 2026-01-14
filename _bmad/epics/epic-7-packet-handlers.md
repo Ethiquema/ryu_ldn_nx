@@ -55,12 +55,12 @@ Implémenter la réception et le traitement des paquets serveur dans le sysmodul
 
 ## Objectifs
 
-- [ ] Packet reception loop avec callback
-- [ ] Handlers pour tous les paquets serveur (16 types)
-- [ ] P2P proxy data forwarding fonctionnel
-- [ ] Synchronisation NetworkInfo correcte
-- [ ] Tests unitaires pour chaque handler
-- [ ] Documentation complète
+- [x] Packet reception loop avec callback
+- [x] Handlers pour tous les paquets serveur (16 types)
+- [x] P2P proxy data forwarding fonctionnel
+- [x] Synchronisation NetworkInfo correcte
+- [x] Tests unitaires pour chaque handler (80 tests)
+- [x] Documentation complète
 
 ---
 
@@ -70,24 +70,24 @@ Implémenter la réception et le traitement des paquets serveur dans le sysmodul
 
 **Priorité** : P0
 **Estimation** : 3 points
-**Statut** : `pending`
+**Statut** : `done`
 **Dépendances** : Epic 2
 
 #### Description
 Mettre en place l'infrastructure de réception des paquets : callback, dispatcher, et boucle de mise à jour.
 
 #### Critères d'acceptation
-- [ ] `set_packet_callback()` configuré dans ICommunicationService
-- [ ] Thread/Timer pour appeler `m_server_client.update()` périodiquement
-- [ ] PacketDispatcher qui route les paquets vers les handlers appropriés
-- [ ] Logging des paquets reçus (debug mode)
+- [x] `set_packet_callback()` configuré dans ICommunicationService
+- [x] Thread/Timer pour appeler `m_server_client.update()` périodiquement
+- [x] PacketDispatcher qui route les paquets vers les handlers appropriés
+- [x] Logging des paquets reçus (debug mode)
 
 #### Tâches techniques
-1. ⬜ Créer `ldn_packet_dispatcher.hpp/cpp`
-2. ⬜ Ajouter callback dans ICommunicationService::ConnectToServer()
-3. ⬜ Implémenter boucle update() (thread ou timer)
-4. ⬜ Ajouter enum pour tous les PacketId gérés
-5. ⬜ Tests unitaires pour le dispatcher
+1. ✅ Créer `ldn_packet_dispatcher.hpp/cpp`
+2. ✅ Ajouter callback dans ICommunicationService::ConnectToServer()
+3. ✅ Implémenter boucle update() (thread ou timer)
+4. ✅ Ajouter enum pour tous les PacketId gérés
+5. ✅ Tests unitaires pour le dispatcher (23 tests)
 
 #### Fichiers créés/modifiés
 - `sysmodule/source/ldn/ldn_packet_dispatcher.hpp` (nouveau)
@@ -101,18 +101,18 @@ Mettre en place l'infrastructure de réception des paquets : callback, dispatche
 
 **Priorité** : P0
 **Estimation** : 3 points
-**Statut** : `pending`
+**Statut** : `done`
 **Dépendances** : Story 7.1
 
 #### Description
 Implémenter les handlers pour les paquets de session : confirmation de connexion, synchronisation réseau, et erreurs.
 
 #### Critères d'acceptation
-- [ ] HandleInitialize() - Stocker session ID et MAC assignés
-- [ ] HandleConnected() - Confirmer connexion, stocker NetworkInfo
-- [ ] HandleSyncNetwork() - Mettre à jour état réseau (joueurs join/leave)
-- [ ] HandleNetworkError() - Traiter erreurs serveur, signaler au jeu
-- [ ] HandlePing() - Echo ping serveur (requester == 0)
+- [x] HandleInitialize() - Stocker session ID et MAC assignés
+- [x] HandleConnected() - Confirmer connexion, stocker NetworkInfo
+- [x] HandleSyncNetwork() - Mettre à jour état réseau (joueurs join/leave)
+- [x] HandleNetworkError() - Traiter erreurs serveur, signaler au jeu
+- [x] HandlePing() - Echo ping serveur (requester == 0)
 
 #### Handlers détaillés
 
@@ -165,16 +165,16 @@ void HandlePing(const PingMessage& msg) {
 ```
 
 #### Tâches techniques
-1. ⬜ Implémenter HandleInitialize()
-2. ⬜ Implémenter HandleConnected()
-3. ⬜ Implémenter HandleSyncNetwork()
-4. ⬜ Implémenter HandleNetworkError()
-5. ⬜ Implémenter HandlePing()
-6. ⬜ Tests unitaires pour chaque handler
+1. ✅ Implémenter HandleInitialize()
+2. ✅ Implémenter HandleConnected()
+3. ✅ Implémenter HandleSyncNetwork()
+4. ✅ Implémenter HandleNetworkError()
+5. ✅ Implémenter HandlePing()
+6. ✅ Tests unitaires pour chaque handler (25 tests)
 
 #### Fichiers modifiés
-- `sysmodule/source/ldn/ldn_packet_dispatcher.cpp`
-- `sysmodule/source/ldn/ldn_icommunication.cpp`
+- `sysmodule/source/ldn/ldn_session_handler.hpp` (nouveau)
+- `sysmodule/source/ldn/ldn_session_handler.cpp` (nouveau)
 - `tests/ldn_session_handler_tests.cpp` (nouveau)
 
 ---
@@ -183,17 +183,17 @@ void HandlePing(const PingMessage& msg) {
 
 **Priorité** : P0
 **Estimation** : 2 points
-**Statut** : `pending`
+**Statut** : `done`
 **Dépendances** : Story 7.1
 
 #### Description
 Implémenter les handlers pour la découverte de réseaux : résultats de scan.
 
 #### Critères d'acceptation
-- [ ] HandleScanReply() - Ajouter réseau à la liste des réseaux disponibles
-- [ ] HandleScanReplyEnd() - Signaler fin de scan au jeu
-- [ ] Buffer pour stocker les réseaux trouvés (max 24)
-- [ ] Thread-safe access aux résultats de scan
+- [x] HandleScanReply() - Ajouter réseau à la liste des réseaux disponibles
+- [x] HandleScanReplyEnd() - Signaler fin de scan au jeu
+- [x] Buffer pour stocker les réseaux trouvés (max 24)
+- [x] Thread-safe access aux résultats de scan
 
 #### Handlers détaillés
 
@@ -215,17 +215,16 @@ void HandleScanReplyEnd() {
 ```
 
 #### Tâches techniques
-1. ⬜ Implémenter HandleScanReply()
-2. ⬜ Implémenter HandleScanReplyEnd()
-3. ⬜ Ajouter m_scan_results vector avec mutex
-4. ⬜ Modifier Scan() pour attendre les résultats
-5. ⬜ Tests unitaires
+1. ✅ Implémenter HandleScanReply()
+2. ✅ Implémenter HandleScanReplyEnd()
+3. ✅ Ajouter m_scan_results vector avec mutex
+4. ✅ Modifier Scan() pour attendre les résultats
+5. ✅ Tests unitaires (intégrés dans session_handler_tests)
 
 #### Fichiers modifiés
-- `sysmodule/source/ldn/ldn_packet_dispatcher.cpp`
-- `sysmodule/source/ldn/ldn_icommunication.hpp` (ajouter scan_results)
-- `sysmodule/source/ldn/ldn_icommunication.cpp`
-- `tests/ldn_discovery_handler_tests.cpp` (nouveau)
+- `sysmodule/source/ldn/ldn_session_handler.hpp`
+- `sysmodule/source/ldn/ldn_session_handler.cpp`
+- `tests/ldn_session_handler_tests.cpp`
 
 ---
 
