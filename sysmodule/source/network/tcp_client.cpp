@@ -433,6 +433,80 @@ ClientResult TcpClient::send_proxy_data(const protocol::ProxyDataHeader& header,
     return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
 }
 
+/**
+ * @brief Send SetAcceptPolicy request
+ */
+ClientResult TcpClient::send_set_accept_policy(const protocol::SetAcceptPolicyRequest& request) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    size_t encoded_size = 0;
+    protocol::EncodeResult encode_result = protocol::encode(
+        m_send_buffer, sizeof(m_send_buffer),
+        protocol::PacketId::SetAcceptPolicy, request, encoded_size);
+
+    if (encode_result != protocol::EncodeResult::Success) {
+        return ClientResult::EncodingError;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send SetAdvertiseData request
+ */
+ClientResult TcpClient::send_set_advertise_data(const uint8_t* data, size_t size) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    // Limit to max advertise data size (384 bytes as per protocol)
+    if (size > 384) {
+        size = 384;
+    }
+
+    // Build header manually for variable-size payload
+    protocol::LdnHeader header{};
+    header.magic = protocol::PROTOCOL_MAGIC;
+    header.version = protocol::PROTOCOL_VERSION;
+    header.type = static_cast<uint8_t>(protocol::PacketId::SetAdvertiseData);
+    header.data_size = static_cast<int32_t>(size);
+
+    // Encode header
+    std::memcpy(m_send_buffer, &header, sizeof(header));
+    // Append data
+    if (data && size > 0) {
+        std::memcpy(m_send_buffer + sizeof(header), data, size);
+    }
+
+    size_t total_size = sizeof(header) + size;
+    SocketResult send_result = m_socket.send_all(m_send_buffer, total_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send Reject request
+ */
+ClientResult TcpClient::send_reject(const protocol::RejectRequest& request) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    size_t encoded_size = 0;
+    protocol::EncodeResult encode_result = protocol::encode(
+        m_send_buffer, sizeof(m_send_buffer),
+        protocol::PacketId::Reject, request, encoded_size);
+
+    if (encode_result != protocol::EncodeResult::Success) {
+        return ClientResult::EncodingError;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
 // =============================================================================
 // Receive Operations
 // =============================================================================

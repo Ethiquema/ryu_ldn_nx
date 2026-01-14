@@ -370,6 +370,37 @@ public:
     ClientResult send_proxy_data(const protocol::ProxyDataHeader& header,
                                   const uint8_t* data, size_t data_size);
 
+    /**
+     * @brief Send SetAcceptPolicy request
+     *
+     * Host-only command to change the accept policy for new connections.
+     *
+     * @param request Accept policy request
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_set_accept_policy(const protocol::SetAcceptPolicyRequest& request);
+
+    /**
+     * @brief Send SetAdvertiseData request
+     *
+     * Host-only command to update the advertise data for the network.
+     *
+     * @param data Advertise data buffer
+     * @param size Size of advertise data (max 384 bytes)
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_set_advertise_data(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Send Reject request
+     *
+     * Host-only command to reject/kick a player from the network.
+     *
+     * @param request Reject request with node ID and reason
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_reject(const protocol::RejectRequest& request);
+
     // =========================================================================
     // Receive Operations
     // =========================================================================
