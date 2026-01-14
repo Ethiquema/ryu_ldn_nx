@@ -36,9 +36,7 @@ enum class InitState {
     Loaded,     ///< Successfully connected
 };
 
-/// Global service handles
-Service g_ldnService;
-RyuLdnConfigService g_configService;
+/// Global state
 InitState g_initState = InitState::Uninit;
 char g_version[32] = "Unknown";
 
@@ -57,22 +55,6 @@ const char* ConnectionStatusToString(RyuLdnConnectionStatus status) {
         case RyuLdnStatus_Ready:        return "Ready";
         case RyuLdnStatus_Error:        return "Error";
         default:                        return "Unknown";
-    }
-}
-
-/**
- * @brief Convert LDN state to string
- */
-const char* LdnStateToString(RyuLdnState state) {
-    switch (state) {
-        case RyuLdnState_None:              return "None";
-        case RyuLdnState_Initialized:       return "Initialized";
-        case RyuLdnState_AccessPoint:       return "Access Point";
-        case RyuLdnState_AccessPointCreated:return "Hosting";
-        case RyuLdnState_Station:           return "Station";
-        case RyuLdnState_StationConnected:  return "Connected";
-        case RyuLdnState_Error:             return "Error";
-        default:                            return "Unknown";
     }
 }
 
@@ -187,12 +169,15 @@ public:
         memset(m_input, 0, sizeof(m_input));
 
         // Load current passphrase (extract hex part only)
-        char current[64];
-        if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, current))) {
-            if (strlen(current) == 16 && strncmp(current, "Ryujinx-", 8) == 0) {
-                memcpy(m_input, current + 8, 8);
-                m_input[8] = '\0';
-                m_inputLen = 8;
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (svc) {
+            char current[64];
+            if (R_SUCCEEDED(ryuLdnGetPassphrase(svc, current))) {
+                if (strlen(current) == 16 && strncmp(current, "Ryujinx-", 8) == 0) {
+                    memcpy(m_input, current + 8, 8);
+                    m_input[8] = '\0';
+                    m_inputLen = 8;
+                }
             }
         }
     }
@@ -359,14 +344,17 @@ private:
     }
 
     void SavePassphrase() {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) return;
+
         if (m_inputLen == 0) {
             // Clear passphrase
-            ryuLdnSetPassphrase(&g_configService, "");
+            ryuLdnSetPassphrase(svc, "");
         } else if (m_inputLen == 8) {
             // Build full passphrase with prefix
             char full[32];
             snprintf(full, sizeof(full), "Ryujinx-%s", m_input);
-            ryuLdnSetPassphrase(&g_configService, full);
+            ryuLdnSetPassphrase(svc, full);
         }
         // If not 8 chars, don't save (invalid)
     }
@@ -403,102 +391,20 @@ public:
             return;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            this->setValue("N/A");
+            return;
+        }
+
         RyuLdnConnectionStatus status;
-        Result rc = ryuLdnGetConnectionStatus(&g_configService, &status);
+        Result rc = ryuLdnGetConnectionStatus(svc, &status);
         if (R_FAILED(rc)) {
             this->setValue("Error");
             return;
         }
 
         this->setValue(ConnectionStatusToString(status));
-    }
-};
-
-/**
- * @brief LDN State display item
- */
-class LdnStateListItem : public tsl::elm::ListItem {
-public:
-    LdnStateListItem() : tsl::elm::ListItem("LDN State") {
-        UpdateState();
-    }
-
-    void UpdateState() {
-        if (g_initState != InitState::Loaded) {
-            this->setValue("N/A");
-            return;
-        }
-
-        RyuLdnState state;
-        Result rc = ryuLdnGetLdnState(&g_configService, &state);
-        if (R_FAILED(rc)) {
-            this->setValue("Error");
-            return;
-        }
-
-        this->setValue(LdnStateToString(state));
-    }
-};
-
-/**
- * @brief Session info display item
- */
-class SessionInfoListItem : public tsl::elm::ListItem {
-public:
-    SessionInfoListItem() : tsl::elm::ListItem("Session") {
-        UpdateInfo();
-    }
-
-    void UpdateInfo() {
-        if (g_initState != InitState::Loaded) {
-            this->setValue("N/A");
-            return;
-        }
-
-        RyuLdnSessionInfo info;
-        Result rc = ryuLdnGetSessionInfo(&g_configService, &info);
-        if (R_FAILED(rc)) {
-            this->setValue("Not in session");
-            return;
-        }
-
-        if (info.node_count == 0) {
-            this->setValue("Not in session");
-        } else {
-            char buf[64];
-            snprintf(buf, sizeof(buf), "%d/%d players (%s)",
-                     info.node_count, info.node_count_max,
-                     info.is_host ? "Host" : "Client");
-            this->setValue(buf);
-        }
-    }
-};
-
-/**
- * @brief Latency display item
- */
-class LatencyListItem : public tsl::elm::ListItem {
-public:
-    LatencyListItem() : tsl::elm::ListItem("Latency") {
-        UpdateLatency();
-    }
-
-    void UpdateLatency() {
-        if (g_initState != InitState::Loaded) {
-            this->setValue("N/A");
-            return;
-        }
-
-        u32 rtt_ms;
-        Result rc = ryuLdnGetLastRtt(&g_configService, &rtt_ms);
-        if (R_FAILED(rc) || rtt_ms == 0) {
-            this->setValue("N/A");
-            return;
-        }
-
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%u ms", rtt_ms);
-        this->setValue(buf);
     }
 };
 
@@ -517,9 +423,15 @@ public:
             return;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            this->setValue("N/A");
+            return;
+        }
+
         char host[64];
         u16 port;
-        Result rc = ryuLdnGetServerAddress(&g_configService, host, &port);
+        Result rc = ryuLdnGetServerAddress(svc, host, &port);
         if (R_FAILED(rc)) {
             this->setValue("Error");
             return;
@@ -541,47 +453,19 @@ public:
             return;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) return;
+
         u32 enabled;
-        Result rc = ryuLdnGetDebugEnabled(&g_configService, &enabled);
+        Result rc = ryuLdnGetDebugEnabled(svc, &enabled);
         if (R_SUCCEEDED(rc)) {
             this->setState(enabled != 0);
         }
 
         this->setStateChangedListener([](bool enabled) {
-            ryuLdnSetDebugEnabled(&g_configService, enabled ? 1 : 0);
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) ryuLdnSetDebugEnabled(svc, enabled ? 1 : 0);
         });
-    }
-};
-
-/**
- * @brief Reconnect button item
- *
- * Provides a button to force the sysmodule to disconnect and reconnect
- * to the configured server. Useful when changing server settings or
- * when the connection is in a bad state.
- *
- * Press A to trigger reconnection. The button shows "Reconnecting..."
- * on success or "Failed" if the IPC call fails.
- */
-class ReconnectListItem : public tsl::elm::ListItem {
-public:
-    ReconnectListItem() : tsl::elm::ListItem("Force Reconnect") {
-        this->setValue("Press A");
-    }
-
-    virtual bool onClick(u64 keys) override {
-        if (keys & HidNpadButton_A) {
-            if (g_initState == InitState::Loaded) {
-                Result rc = ryuLdnForceReconnect(&g_configService);
-                if (R_SUCCEEDED(rc)) {
-                    this->setValue("Reconnecting...");
-                } else {
-                    this->setValue("Failed");
-                }
-            }
-            return true;
-        }
-        return false;
     }
 };
 
@@ -606,12 +490,15 @@ public:
     virtual bool onClick(u64 keys) override {
         if (keys & HidNpadButton_A) {
             if (g_initState == InitState::Loaded) {
-                RyuLdnConfigResult result;
-                Result rc = ryuLdnSaveConfig(&g_configService, &result);
-                if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
-                    this->setValue("Saved!");
-                } else {
-                    this->setValue("Failed");
+                RyuLdnConfigService* svc = ryuLdnGetService();
+                if (svc) {
+                    RyuLdnConfigResult result;
+                    Result rc = ryuLdnSaveConfig(svc, &result);
+                    if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
+                        this->setValue("Saved!");
+                    } else {
+                        this->setValue("Failed");
+                    }
                 }
             }
             return true;
@@ -641,10 +528,146 @@ public:
     virtual bool onClick(u64 keys) override {
         if (keys & HidNpadButton_A) {
             if (g_initState == InitState::Loaded) {
-                RyuLdnConfigResult result;
-                Result rc = ryuLdnReloadConfig(&g_configService, &result);
-                if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
-                    this->setValue("Reloaded!");
+                RyuLdnConfigService* svc = ryuLdnGetService();
+                if (svc) {
+                    RyuLdnConfigResult result;
+                    Result rc = ryuLdnReloadConfig(svc, &result);
+                    if (R_SUCCEEDED(rc) && result == RyuLdnConfigResult_Success) {
+                        this->setValue("Reloaded!");
+                    } else {
+                        this->setValue("Failed");
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+};
+
+//=============================================================================
+// Runtime Info List Items (Epic 6)
+//=============================================================================
+
+/**
+ * @brief LDN State display item
+ *
+ * Shows the current LDN communication state when a game is active.
+ */
+class LdnStateListItem : public tsl::elm::ListItem {
+public:
+    LdnStateListItem() : tsl::elm::ListItem("LDN State") {
+        UpdateState();
+    }
+
+    void UpdateState() {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            this->setValue("N/A");
+            return;
+        }
+
+        RyuLdnState state;
+        Result rc = ryuLdnGetLdnState(svc, &state);
+        if (R_FAILED(rc)) {
+            this->setValue("Error");
+            return;
+        }
+
+        this->setValue(ryuLdnStateToString(state));
+    }
+};
+
+/**
+ * @brief Session info display item
+ *
+ * Shows node count, role (host/client) when in a session.
+ */
+class SessionInfoListItem : public tsl::elm::ListItem {
+public:
+    SessionInfoListItem() : tsl::elm::ListItem("Session") {
+        UpdateInfo();
+    }
+
+    void UpdateInfo() {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            this->setValue("N/A");
+            return;
+        }
+
+        RyuLdnSessionInfo info;
+        Result rc = ryuLdnGetSessionInfo(svc, &info);
+        if (R_FAILED(rc)) {
+            this->setValue("Error");
+            return;
+        }
+
+        if (info.node_count == 0) {
+            this->setValue("Not in session");
+        } else {
+            char buf[48];
+            snprintf(buf, sizeof(buf), "%d/%d (%s)",
+                     info.node_count, info.max_nodes,
+                     info.is_host ? "Host" : "Client");
+            this->setValue(buf);
+        }
+    }
+};
+
+/**
+ * @brief Latency display item
+ *
+ * Shows last measured RTT to server.
+ */
+class LatencyListItem : public tsl::elm::ListItem {
+public:
+    LatencyListItem() : tsl::elm::ListItem("Latency") {
+        UpdateLatency();
+    }
+
+    void UpdateLatency() {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            this->setValue("N/A");
+            return;
+        }
+
+        u32 rtt_ms;
+        Result rc = ryuLdnGetLastRtt(svc, &rtt_ms);
+        if (R_FAILED(rc)) {
+            this->setValue("Error");
+            return;
+        }
+
+        if (rtt_ms == 0) {
+            this->setValue("N/A");
+        } else {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%u ms", rtt_ms);
+            this->setValue(buf);
+        }
+    }
+};
+
+/**
+ * @brief Force Reconnect button item
+ *
+ * Requests the MITM to reconnect to the server.
+ */
+class ForceReconnectListItem : public tsl::elm::ListItem {
+public:
+    ForceReconnectListItem() : tsl::elm::ListItem("Force Reconnect") {
+        this->setValue("Press A");
+    }
+
+    virtual bool onClick(u64 keys) override {
+        if (keys & HidNpadButton_A) {
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) {
+                Result rc = ryuLdnForceReconnect(svc);
+                if (R_SUCCEEDED(rc)) {
+                    this->setValue("Requested!");
                 } else {
                     this->setValue("Failed");
                 }
@@ -666,7 +689,6 @@ public:
  * - Server Address: Displays current host:port (read-only display,
  *   editing requires keyboard which Tesla doesn't support well)
  * - Use TLS: Toggle to enable/disable TLS encryption for server connection
- * - Force Reconnect: Button to reconnect with new settings
  *
  * Changes take effect immediately for toggles. Server address changes
  * require editing config.ini directly and using Reload Config.
@@ -683,11 +705,18 @@ public:
             return frame;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            list->addItem(new tsl::elm::ListItem("Service not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
         // Server address display (read-only - editing text not practical in Tesla)
         auto serverItem = new tsl::elm::ListItem("Server Address");
         char host[64];
         u16 port;
-        if (R_SUCCEEDED(ryuLdnGetServerAddress(&g_configService, host, &port))) {
+        if (R_SUCCEEDED(ryuLdnGetServerAddress(svc, host, &port))) {
             char buf[96];
             snprintf(buf, sizeof(buf), "%s:%u", host, port);
             serverItem->setValue(buf);
@@ -697,16 +726,14 @@ public:
         // TLS encryption toggle
         auto tlsItem = new tsl::elm::ToggleListItem("Use TLS", false);
         u32 useTls;
-        if (R_SUCCEEDED(ryuLdnGetUseTls(&g_configService, &useTls))) {
+        if (R_SUCCEEDED(ryuLdnGetUseTls(svc, &useTls))) {
             tlsItem->setState(useTls != 0);
         }
         tlsItem->setStateChangedListener([](bool enabled) {
-            ryuLdnSetUseTls(&g_configService, enabled ? 1 : 0);
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) ryuLdnSetUseTls(svc, enabled ? 1 : 0);
         });
         list->addItem(tlsItem);
-
-        // Reconnect button to apply changes
-        list->addItem(new ReconnectListItem());
 
         frame->setContent(list);
         return frame;
@@ -719,8 +746,6 @@ public:
  * Submenu for configuring network timing parameters:
  * - Connect Timeout: Time to wait for initial connection (displayed only)
  * - Ping Interval: How often to send keepalive pings (displayed only)
- * - Reconnect Delay: Time to wait between reconnection attempts (displayed only)
- * - Max Reconnect Attempts: Number of retries before giving up (displayed only)
  *
  * These values are displayed for information. Editing numeric values
  * is not practical in Tesla overlay - use config.ini file to change them.
@@ -737,10 +762,17 @@ public:
             return frame;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            list->addItem(new tsl::elm::ListItem("Service not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
         // Connect timeout display
         auto timeoutItem = new tsl::elm::ListItem("Connect Timeout");
         u32 timeout;
-        if (R_SUCCEEDED(ryuLdnGetConnectTimeout(&g_configService, &timeout))) {
+        if (R_SUCCEEDED(ryuLdnGetConnectTimeout(svc, &timeout))) {
             char buf[32];
             FormatTimeout(timeout, buf, sizeof(buf));
             timeoutItem->setValue(buf);
@@ -750,36 +782,12 @@ public:
         // Ping interval display
         auto pingItem = new tsl::elm::ListItem("Ping Interval");
         u32 pingInterval;
-        if (R_SUCCEEDED(ryuLdnGetPingInterval(&g_configService, &pingInterval))) {
+        if (R_SUCCEEDED(ryuLdnGetPingInterval(svc, &pingInterval))) {
             char buf[32];
             FormatTimeout(pingInterval, buf, sizeof(buf));
             pingItem->setValue(buf);
         }
         list->addItem(pingItem);
-
-        // Reconnect delay display
-        auto delayItem = new tsl::elm::ListItem("Reconnect Delay");
-        u32 delay;
-        if (R_SUCCEEDED(ryuLdnGetReconnectDelay(&g_configService, &delay))) {
-            char buf[32];
-            FormatTimeout(delay, buf, sizeof(buf));
-            delayItem->setValue(buf);
-        }
-        list->addItem(delayItem);
-
-        // Max reconnect attempts display
-        auto attemptsItem = new tsl::elm::ListItem("Max Reconnect Attempts");
-        u32 attempts;
-        if (R_SUCCEEDED(ryuLdnGetMaxReconnectAttempts(&g_configService, &attempts))) {
-            char buf[32];
-            if (attempts == 0) {
-                snprintf(buf, sizeof(buf), "Unlimited");
-            } else {
-                snprintf(buf, sizeof(buf), "%u", attempts);
-            }
-            attemptsItem->setValue(buf);
-        }
-        list->addItem(attemptsItem);
 
         frame->setContent(list);
         return frame;
@@ -814,14 +822,22 @@ public:
             return frame;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            list->addItem(new tsl::elm::ListItem("Service not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
         // LDN enabled master toggle
         auto ldnItem = new tsl::elm::ToggleListItem("LDN Enabled", true);
         u32 ldnEnabled;
-        if (R_SUCCEEDED(ryuLdnGetLdnEnabled(&g_configService, &ldnEnabled))) {
+        if (R_SUCCEEDED(ryuLdnGetLdnEnabled(svc, &ldnEnabled))) {
             ldnItem->setState(ldnEnabled != 0);
         }
         ldnItem->setStateChangedListener([](bool enabled) {
-            ryuLdnSetLdnEnabled(&g_configService, enabled ? 1 : 0);
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) ryuLdnSetLdnEnabled(svc, enabled ? 1 : 0);
         });
         list->addItem(ldnItem);
 
@@ -830,7 +846,7 @@ public:
         // Current passphrase display (shows hex part only)
         auto passphraseItem = new tsl::elm::ListItem("Current");
         char passphrase[64];
-        if (R_SUCCEEDED(ryuLdnGetPassphrase(&g_configService, passphrase))) {
+        if (R_SUCCEEDED(ryuLdnGetPassphrase(svc, passphrase))) {
             char display[32];
             FormatPassphraseDisplay(passphrase, display, sizeof(display));
             passphraseItem->setValue(display);
@@ -854,9 +870,12 @@ public:
         randomItem->setValue("Press A");
         randomItem->setClickListener([this](u64 keys) {
             if (keys & HidNpadButton_A) {
-                char newPass[32];
-                GenerateRandomPassphraseOverlay(newPass, sizeof(newPass));
-                ryuLdnSetPassphrase(&g_configService, newPass);
+                RyuLdnConfigService* svc = ryuLdnGetService();
+                if (svc) {
+                    char newPass[32];
+                    GenerateRandomPassphraseOverlay(newPass, sizeof(newPass));
+                    ryuLdnSetPassphrase(svc, newPass);
+                }
                 // Refresh the GUI
                 tsl::changeTo<LdnSettingsGui>();
                 return true;
@@ -870,7 +889,8 @@ public:
         clearItem->setValue("Match all rooms");
         clearItem->setClickListener([](u64 keys) {
             if (keys & HidNpadButton_A) {
-                ryuLdnSetPassphrase(&g_configService, "");
+                RyuLdnConfigService* svc = ryuLdnGetService();
+                if (svc) ryuLdnSetPassphrase(svc, "");
                 tsl::changeTo<LdnSettingsGui>();
                 return true;
             }
@@ -913,21 +933,29 @@ public:
             return frame;
         }
 
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (!svc) {
+            list->addItem(new tsl::elm::ListItem("Service not available"));
+            frame->setContent(list);
+            return frame;
+        }
+
         // Debug enabled master toggle
         auto debugItem = new tsl::elm::ToggleListItem("Debug Enabled", false);
         u32 debugEnabled;
-        if (R_SUCCEEDED(ryuLdnGetDebugEnabled(&g_configService, &debugEnabled))) {
+        if (R_SUCCEEDED(ryuLdnGetDebugEnabled(svc, &debugEnabled))) {
             debugItem->setState(debugEnabled != 0);
         }
         debugItem->setStateChangedListener([](bool enabled) {
-            ryuLdnSetDebugEnabled(&g_configService, enabled ? 1 : 0);
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) ryuLdnSetDebugEnabled(svc, enabled ? 1 : 0);
         });
         list->addItem(debugItem);
 
         // Debug level display (edit via config.ini for now)
         auto levelItem = new tsl::elm::ListItem("Debug Level");
         u32 level;
-        if (R_SUCCEEDED(ryuLdnGetDebugLevel(&g_configService, &level))) {
+        if (R_SUCCEEDED(ryuLdnGetDebugLevel(svc, &level))) {
             levelItem->setValue(DebugLevelToString(level));
         }
         list->addItem(levelItem);
@@ -935,11 +963,12 @@ public:
         // Log to file toggle
         auto logFileItem = new tsl::elm::ToggleListItem("Log to File", false);
         u32 logToFile;
-        if (R_SUCCEEDED(ryuLdnGetLogToFile(&g_configService, &logToFile))) {
+        if (R_SUCCEEDED(ryuLdnGetLogToFile(svc, &logToFile))) {
             logFileItem->setState(logToFile != 0);
         }
         logFileItem->setStateChangedListener([](bool enabled) {
-            ryuLdnSetLogToFile(&g_configService, enabled ? 1 : 0);
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) ryuLdnSetLogToFile(svc, enabled ? 1 : 0);
         });
         list->addItem(logFileItem);
 
@@ -956,8 +985,8 @@ public:
  * @brief Main overlay GUI
  *
  * Main menu of the ryu_ldn_nx Tesla overlay. Displays:
- * - Status section: Connection status, LDN state, session info, latency
- * - Server section: Current server address and reconnect button
+ * - Status section: Connection status
+ * - Server section: Current server address
  * - Settings section: Links to configuration submenus
  * - Config section: Save/reload configuration buttons
  *
@@ -966,13 +995,22 @@ public:
  *
  * Settings are organized into submenus for better organization:
  * - Server Settings: Host, port, TLS configuration
- * - Network Settings: Timeouts and reconnection parameters
+ * - Network Settings: Timeouts
  * - LDN Settings: Enable/disable LDN, passphrase
  * - Debug Settings: Logging configuration
  */
 class MainGui : public tsl::Gui {
 public:
-    MainGui() = default;
+    MainGui() {
+        // Check game active state on construction
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (svc) {
+            u32 active;
+            if (R_SUCCEEDED(ryuLdnIsGameActive(svc, &active))) {
+                m_gameActive = (active != 0);
+            }
+        }
+    }
 
     virtual tsl::elm::Element* createUI() override {
         auto frame = new tsl::elm::OverlayFrame("ryu_ldn_nx", g_version);
@@ -983,27 +1021,51 @@ public:
             list->addItem(new tsl::elm::ListItem("Check sysmodule installation"));
         } else if (g_initState == InitState::Uninit) {
             list->addItem(new tsl::elm::ListItem("Initializing..."));
+        } else if (m_gameActive) {
+            // =========================================================
+            // Game Active Mode - Show runtime info, config is read-only
+            // =========================================================
+
+            // Runtime section - LDN state and session info
+            list->addItem(new tsl::elm::CategoryHeader("Runtime (Game Active)"));
+
+            m_ldnStateItem = new LdnStateListItem();
+            list->addItem(m_ldnStateItem);
+
+            m_sessionInfoItem = new SessionInfoListItem();
+            list->addItem(m_sessionInfoItem);
+
+            m_latencyItem = new LatencyListItem();
+            list->addItem(m_latencyItem);
+
+            // Force reconnect button
+            list->addItem(new ForceReconnectListItem());
+
+            // Status section
+            list->addItem(new tsl::elm::CategoryHeader("Status"));
+            m_statusItem = new StatusListItem();
+            list->addItem(m_statusItem);
+
+            // Config locked message
+            list->addItem(new tsl::elm::CategoryHeader("Config"));
+            auto lockedItem = new tsl::elm::ListItem("Config locked");
+            lockedItem->setValue("(game in progress)");
+            list->addItem(lockedItem);
+
         } else {
+            // =========================================================
+            // No Game Mode - Show configuration options
+            // =========================================================
+
             // Status section - live connection information
             list->addItem(new tsl::elm::CategoryHeader("Status"));
             m_statusItem = new StatusListItem();
             list->addItem(m_statusItem);
 
-            m_ldnStateItem = new LdnStateListItem();
-            list->addItem(m_ldnStateItem);
-
-            m_sessionItem = new SessionInfoListItem();
-            list->addItem(m_sessionItem);
-
-            m_latencyItem = new LatencyListItem();
-            list->addItem(m_latencyItem);
-
-            // Server section - current server and quick reconnect
+            // Server section - current server
             list->addItem(new tsl::elm::CategoryHeader("Server"));
             m_serverItem = new ServerAddressListItem();
             list->addItem(m_serverItem);
-
-            list->addItem(new ReconnectListItem());
 
             // Settings section - links to configuration submenus
             list->addItem(new tsl::elm::CategoryHeader("Settings"));
@@ -1092,17 +1154,29 @@ private:
         if (g_initState != InitState::Loaded) return;
 
         if (m_statusItem) m_statusItem->UpdateStatus();
-        if (m_ldnStateItem) m_ldnStateItem->UpdateState();
-        if (m_sessionItem) m_sessionItem->UpdateInfo();
-        if (m_latencyItem) m_latencyItem->UpdateLatency();
+
+        // Refresh runtime items when game is active
+        if (m_gameActive) {
+            if (m_ldnStateItem) m_ldnStateItem->UpdateState();
+            if (m_sessionInfoItem) m_sessionInfoItem->UpdateInfo();
+            if (m_latencyItem) m_latencyItem->UpdateLatency();
+        } else {
+            if (m_serverItem) m_serverItem->UpdateAddress();
+        }
     }
 
+    // Common items
     StatusListItem* m_statusItem = nullptr;
-    LdnStateListItem* m_ldnStateItem = nullptr;
-    SessionInfoListItem* m_sessionItem = nullptr;
-    LatencyListItem* m_latencyItem = nullptr;
-    ServerAddressListItem* m_serverItem = nullptr;
     u32 m_updateCounter = 0;
+    bool m_gameActive = false;
+
+    // Config mode items (no game active)
+    ServerAddressListItem* m_serverItem = nullptr;
+
+    // Runtime mode items (game active)
+    LdnStateListItem* m_ldnStateItem = nullptr;
+    SessionInfoListItem* m_sessionInfoItem = nullptr;
+    LatencyListItem* m_latencyItem = nullptr;
 };
 
 //=============================================================================
@@ -1113,33 +1187,28 @@ private:
  * @brief Main overlay application
  *
  * Handles service initialization and cleanup.
+ * Connects directly to the ryu:cfg service provided by the sysmodule.
  */
 class RyuLdnOverlay : public tsl::Overlay {
 public:
     virtual void initServices() override {
         g_initState = InitState::Uninit;
 
-        // Initialize services within SM session
+        // Initialize connection to ryu:cfg service
         tsl::hlp::doWithSmSession([&] {
-            // Get ldn:u service
-            Result rc = smGetService(&g_ldnService, "ldn:u");
+            Result rc = ryuLdnInitialize();
             if (R_FAILED(rc)) {
-                g_initState = InitState::Error;
-                return;
-            }
-
-            // Get our custom config service from ldn:u MITM
-            rc = ryuLdnGetConfigFromService(&g_ldnService, &g_configService);
-            if (R_FAILED(rc)) {
-                serviceClose(&g_ldnService);
                 g_initState = InitState::Error;
                 return;
             }
 
             // Get version string
-            rc = ryuLdnGetVersion(&g_configService, g_version);
-            if (R_FAILED(rc)) {
-                strcpy(g_version, "Unknown");
+            RyuLdnConfigService* svc = ryuLdnGetService();
+            if (svc) {
+                rc = ryuLdnGetVersion(svc, g_version);
+                if (R_FAILED(rc)) {
+                    strcpy(g_version, "Unknown");
+                }
             }
 
             g_initState = InitState::Loaded;
@@ -1148,8 +1217,7 @@ public:
 
     virtual void exitServices() override {
         if (g_initState == InitState::Loaded) {
-            serviceClose(&g_configService.s);
-            serviceClose(&g_ldnService);
+            ryuLdnExit();
         }
     }
 
