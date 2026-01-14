@@ -250,16 +250,74 @@ public:
     Result InitializeSystem2(u64 unk, const ams::sf::ClientProcessId& client_process_id);
 
     // ========================================================================
-    // Stub Operations (not implemented)
+    // Private Network Operations
     // ========================================================================
 
-    Result ScanPrivate();
+    /**
+     * @brief Scan for private networks
+     *
+     * Same as Scan() but includes private networks in results.
+     *
+     * @param count Output number of networks found
+     * @param buffer Output network info array
+     * @param channel Channel to scan (0 for all)
+     * @param filter Scan filter
+     * @return Result code
+     */
+    Result ScanPrivate(
+        ams::sf::Out<u32> count,
+        ams::sf::OutAutoSelectArray<NetworkInfo> buffer,
+        u16 channel,
+        ScanFilter filter);
+
+    /**
+     * @brief Create a private (password-protected) network
+     *
+     * @param data Network configuration including security parameter
+     * @param addressList Address list buffer
+     * @return Result code
+     */
+    Result CreateNetworkPrivate(
+        CreateNetworkPrivateConfig data,
+        ams::sf::InPointerBuffer addressList);
+
+    /**
+     * @brief Connect to a private network
+     *
+     * @param data Connection data including security parameter
+     * @return Result code
+     */
+    Result ConnectPrivate(ConnectPrivateData data);
+
+    // ========================================================================
+    // Other Operations
+    // ========================================================================
+
+    /**
+     * @brief Set wireless controller restriction
+     * @return Result code (stub)
+     */
     Result SetWirelessControllerRestriction();
-    Result CreateNetworkPrivate();
-    Result Reject();
+
+    /**
+     * @brief Reject a node from the network
+     *
+     * @param nodeId Node ID to reject
+     * @return Result code
+     */
+    Result Reject(u32 nodeId);
+
+    /**
+     * @brief Add entry to accept filter
+     * @return Result code (stub)
+     */
     Result AddAcceptFilterEntry();
+
+    /**
+     * @brief Clear accept filter
+     * @return Result code (stub)
+     */
     Result ClearAcceptFilter();
-    Result ConnectPrivate();
 
 private:
     /**

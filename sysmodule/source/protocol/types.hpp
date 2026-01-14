@@ -805,6 +805,40 @@ struct __attribute__((packed)) SecurityConfig {
 static_assert(sizeof(SecurityConfig) == 0x44, "SecurityConfig must be 0x44 bytes");
 
 /**
+ * @brief Security Parameter - 0x20 bytes (32 bytes)
+ *
+ * Random security data generated for private rooms.
+ * Used in CreateAccessPointPrivate and ConnectPrivate.
+ */
+struct __attribute__((packed)) SecurityParameter {
+    uint8_t data[16];        ///< Random security data
+    uint8_t session_id[16];  ///< Session ID
+};
+static_assert(sizeof(SecurityParameter) == 0x20, "SecurityParameter must be 0x20 bytes");
+
+/**
+ * @brief Address Entry - 0x0C bytes (12 bytes)
+ *
+ * IP/MAC address pair for a node.
+ */
+struct __attribute__((packed)) AddressEntry {
+    uint32_t   ipv4_address;  ///< IPv4 address
+    MacAddress mac_address;   ///< MAC address
+    uint16_t   reserved;      ///< Reserved/padding
+};
+static_assert(sizeof(AddressEntry) == 0x0C, "AddressEntry must be 0x0C bytes");
+
+/**
+ * @brief Address List - 0x60 bytes (96 bytes)
+ *
+ * List of up to 8 address entries for nodes in a network.
+ */
+struct __attribute__((packed)) AddressList {
+    AddressEntry addresses[8];  ///< Address entries (max 8 nodes)
+};
+static_assert(sizeof(AddressList) == 0x60, "AddressList must be 0x60 bytes");
+
+/**
  * @brief User Config - 0x30 bytes (48 bytes)
  */
 struct __attribute__((packed)) UserConfig {
@@ -850,6 +884,39 @@ struct __attribute__((packed)) CreateAccessPointRequest {
     RyuNetworkConfig ryu_network_config;
 };
 static_assert(sizeof(CreateAccessPointRequest) == 0xBC, "CreateAccessPointRequest must be 0xBC bytes");
+
+/**
+ * @brief Create Access Point Private Request - 0x13C bytes (316 bytes)
+ *
+ * Request to create a private (password-protected) network.
+ * Contains additional security data compared to CreateAccessPointRequest.
+ * Advertise data is appended after this structure.
+ */
+struct __attribute__((packed)) CreateAccessPointPrivateRequest {
+    SecurityConfig     security_config;      ///< 0x00: Security config (0x44)
+    SecurityParameter  security_parameter;   ///< 0x44: Security parameter (0x20)
+    UserConfig         user_config;          ///< 0x64: User config (0x30)
+    NetworkConfig      network_config;       ///< 0x94: Network config (0x20)
+    AddressList        address_list;         ///< 0xB4: Address list (0x60)
+    RyuNetworkConfig   ryu_network_config;   ///< 0x114: Ryu network config (0x28)
+};
+static_assert(sizeof(CreateAccessPointPrivateRequest) == 0x13C, "CreateAccessPointPrivateRequest must be 0x13C bytes");
+
+/**
+ * @brief Connect Private Request - 0xBC bytes (188 bytes)
+ *
+ * Request to connect to a private (password-protected) network.
+ * Contains SecurityParameter for authentication.
+ */
+struct __attribute__((packed)) ConnectPrivateRequest {
+    SecurityConfig     security_config;             ///< 0x00: Security config (0x44)
+    SecurityParameter  security_parameter;          ///< 0x44: Security parameter (0x20)
+    UserConfig         user_config;                 ///< 0x64: User config (0x30)
+    uint32_t           local_communication_version; ///< 0x94: LDN version
+    uint32_t           option_unknown;              ///< 0x98: Unknown option
+    NetworkConfig      network_config;              ///< 0x9C: Network config (0x20)
+};
+static_assert(sizeof(ConnectPrivateRequest) == 0xBC, "ConnectPrivateRequest must be 0xBC bytes");
 
 /**
  * @brief Scan Filter (Full) - 0x60 bytes (96 bytes)

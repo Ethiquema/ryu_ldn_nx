@@ -314,6 +314,20 @@ public:
     ClientResult send_create_access_point(const protocol::CreateAccessPointRequest& request);
 
     /**
+     * @brief Send CreateAccessPointPrivate request
+     *
+     * Request to create a new private (password-protected) network session.
+     *
+     * @param request Private access point configuration
+     * @param advertise_data Optional advertise data
+     * @param advertise_size Size of advertise data
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_create_access_point_private(const protocol::CreateAccessPointPrivateRequest& request,
+                                                   const uint8_t* advertise_data = nullptr,
+                                                   size_t advertise_size = 0);
+
+    /**
      * @brief Send Connect request
      *
      * Request to join an existing network session.
@@ -322,6 +336,16 @@ public:
      * @return ClientResult indicating success or error
      */
     ClientResult send_connect(const protocol::ConnectRequest& request);
+
+    /**
+     * @brief Send ConnectPrivate request
+     *
+     * Request to join a private (password-protected) network session.
+     *
+     * @param request Private connection request
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_connect_private(const protocol::ConnectPrivateRequest& request);
 
     /**
      * @brief Send Scan request

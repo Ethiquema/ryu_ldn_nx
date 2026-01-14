@@ -454,34 +454,152 @@ Result ICommunicationService::Disconnect() {
 }
 
 // ============================================================================
-// Stub Operations
+// Private Network Operations
 // ============================================================================
 
-Result ICommunicationService::ScanPrivate() {
+Result ICommunicationService::ScanPrivate(
+        ams::sf::Out<u32> count,
+        ams::sf::OutAutoSelectArray<NetworkInfo> buffer,
+        u16 channel,
+        ScanFilter filter) {
+    // ScanPrivate is the same as Scan but for private networks
+    // The filter behavior is slightly different (doesn't mask BSSID flag)
+    return Scan(count, buffer, channel, filter);
+}
+
+Result ICommunicationService::CreateNetworkPrivate(
+        CreateNetworkPrivateConfig data,
+        ams::sf::InPointerBuffer addressList) {
+    R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
+
+    auto result = m_state_machine.CreateNetwork();
+    R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Build CreateAccessPointPrivate request from config
+    ryu_ldn::protocol::CreateAccessPointPrivateRequest request{};
+
+    // Security config
+    request.security_config.security_mode = data.securityConfig.securityMode;
+    request.security_config.passphrase_size = data.securityConfig.passphraseSize;
+    std::memcpy(request.security_config.passphrase, data.securityConfig.passphrase,
+                sizeof(request.security_config.passphrase));
+
+    // Security parameter
+    std::memcpy(request.security_parameter.data, data.securityParameter.unkRandom,
+                sizeof(request.security_parameter.data));
+    std::memcpy(request.security_parameter.session_id, data.securityParameter.sessionId.data,
+                sizeof(request.security_parameter.session_id));
+
+    // User config
+    std::memcpy(request.user_config.user_name, data.userConfig.userName,
+                sizeof(request.user_config.user_name));
+
+    // Network config
+    request.network_config.intent_id.local_communication_id = data.networkConfig.intentId.localCommunicationId;
+    request.network_config.intent_id.scene_id = data.networkConfig.intentId.sceneId;
+    request.network_config.channel = data.networkConfig.channel;
+    request.network_config.node_count_max = data.networkConfig.nodeCountMax;
+    request.network_config.local_communication_version = data.networkConfig.localCommunicationVersion;
+
+    // Address list - copy from IPC buffer
+    if (addressList.GetSize() >= sizeof(ryu_ldn::protocol::AddressList)) {
+        std::memcpy(&request.address_list, addressList.GetPointer(),
+                    sizeof(request.address_list));
+    }
+
+    // Ryu network config (external proxy settings) - set to 0 for now
+    std::memset(&request.ryu_network_config, 0, sizeof(request.ryu_network_config));
+
+    // Send to server
+    auto send_result = m_server_client.send_create_access_point_private(request);
+    if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+        // Rollback state on send failure
+        m_state_machine.DestroyNetwork();
+        R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+    }
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::AccessPointCreated);
+
     R_SUCCEED();
 }
+
+Result ICommunicationService::ConnectPrivate(ConnectPrivateData data) {
+    R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
+
+    auto result = m_state_machine.Connect();
+    R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Build ConnectPrivate request
+    ryu_ldn::protocol::ConnectPrivateRequest request{};
+
+    // Security config
+    request.security_config.security_mode = data.securityConfig.securityMode;
+    request.security_config.passphrase_size = data.securityConfig.passphraseSize;
+    std::memcpy(request.security_config.passphrase, data.securityConfig.passphrase,
+                sizeof(request.security_config.passphrase));
+
+    // Security parameter
+    std::memcpy(request.security_parameter.data, data.securityParameter.unkRandom,
+                sizeof(request.security_parameter.data));
+    std::memcpy(request.security_parameter.session_id, data.securityParameter.sessionId.data,
+                sizeof(request.security_parameter.session_id));
+
+    // User config
+    std::memcpy(request.user_config.user_name, data.userConfig.userName,
+                sizeof(request.user_config.user_name));
+
+    // Other fields
+    request.local_communication_version = data.localCommunicationVersion;
+    request.option_unknown = data.option;
+
+    // Network config
+    request.network_config.intent_id.local_communication_id = data.networkConfig.intentId.localCommunicationId;
+    request.network_config.intent_id.scene_id = data.networkConfig.intentId.sceneId;
+    request.network_config.channel = data.networkConfig.channel;
+    request.network_config.node_count_max = data.networkConfig.nodeCountMax;
+    request.network_config.local_communication_version = data.networkConfig.localCommunicationVersion;
+
+    // Send to server
+    auto send_result = m_server_client.send_connect_private(request);
+    if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+        // Rollback state on send failure
+        m_state_machine.Disconnect();
+        R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+    }
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::StationConnected);
+
+    R_SUCCEED();
+}
+
+// ============================================================================
+// Other Operations
+// ============================================================================
 
 Result ICommunicationService::SetWirelessControllerRestriction() {
+    // Stub - wireless controller restriction not needed for online play
     R_SUCCEED();
 }
 
-Result ICommunicationService::CreateNetworkPrivate() {
-    R_SUCCEED();
-}
+Result ICommunicationService::Reject(u32 nodeId) {
+    R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
-Result ICommunicationService::Reject() {
+    // TODO: Send reject request to server
+    // For now, just acknowledge
+    AMS_UNUSED(nodeId);
+
     R_SUCCEED();
 }
 
 Result ICommunicationService::AddAcceptFilterEntry() {
+    // Stub - accept filter not implemented
     R_SUCCEED();
 }
 
 Result ICommunicationService::ClearAcceptFilter() {
-    R_SUCCEED();
-}
-
-Result ICommunicationService::ConnectPrivate() {
+    // Stub - accept filter not implemented
     R_SUCCEED();
 }
 

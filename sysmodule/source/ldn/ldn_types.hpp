@@ -310,6 +310,53 @@ struct SecurityParameter {
 static_assert(sizeof(SecurityParameter) == 32);
 
 /**
+ * @brief Address entry for private networks
+ */
+struct AddressEntry {
+    u32 ipv4Address;
+    MacAddress macAddress;
+    u16 reserved;
+};
+static_assert(sizeof(AddressEntry) == 12);
+
+/**
+ * @brief Address list for private networks (up to 8 entries)
+ */
+struct AddressList {
+    AddressEntry addresses[8];
+};
+static_assert(sizeof(AddressList) == 96);
+
+/**
+ * @brief Configuration for CreateNetworkPrivate()
+ *
+ * This structure is passed to CreateNetworkPrivate via IPC.
+ * AddressList is passed separately as a buffer.
+ */
+struct CreateNetworkPrivateConfig {
+    SecurityConfig securityConfig;      ///< 0x00: 68 bytes
+    SecurityParameter securityParameter; ///< 0x44: 32 bytes
+    UserConfig userConfig;               ///< 0x64: 48 bytes
+    u8 _unk[4];                          ///< 0x94: 4 bytes padding
+    NetworkConfig networkConfig;         ///< 0x98: 32 bytes
+};
+static_assert(sizeof(CreateNetworkPrivateConfig) == 184);
+
+/**
+ * @brief Connection data for ConnectPrivate()
+ */
+struct ConnectPrivateData {
+    SecurityConfig securityConfig;        ///< 0x00: 68 bytes
+    SecurityParameter securityParameter;  ///< 0x44: 32 bytes
+    UserConfig userConfig;                ///< 0x64: 48 bytes
+    u32 localCommunicationVersion;        ///< 0x94: 4 bytes
+    u32 option;                           ///< 0x98: 4 bytes
+    u8 _pad[4];                           ///< 0x9C: 4 bytes padding
+    NetworkConfig networkConfig;          ///< 0xA0: 32 bytes
+};
+static_assert(sizeof(ConnectPrivateData) == 192);
+
+/**
  * @brief Scan filter configuration
  */
 struct ScanFilter {

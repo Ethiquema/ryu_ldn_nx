@@ -583,6 +583,99 @@ TEST(send_empty_proxy_data) {
 }
 
 // =============================================================================
+// Tests: Private Room Operations (Story 7.7)
+// =============================================================================
+
+/**
+ * @test send_create_access_point_private fails when disconnected
+ */
+TEST(send_create_access_point_private_not_connected) {
+    socket_init();
+
+    TcpClient client;
+
+    CreateAccessPointPrivateRequest request{};
+    request.security_config.security_mode = 2;
+    request.security_parameter.data[0] = 0xAA;
+    request.network_config.node_count_max = 8;
+
+    ClientResult result = client.send_create_access_point_private(request);
+
+    ASSERT_EQ(result, ClientResult::NotConnected);
+}
+
+/**
+ * @test send_create_access_point_private with advertise data fails when disconnected
+ */
+TEST(send_create_access_point_private_with_advertise_not_connected) {
+    socket_init();
+
+    TcpClient client;
+
+    CreateAccessPointPrivateRequest request{};
+    request.security_config.security_mode = 2;
+
+    uint8_t advertise_data[] = {0x01, 0x02, 0x03, 0x04};
+    ClientResult result = client.send_create_access_point_private(request, advertise_data, sizeof(advertise_data));
+
+    ASSERT_EQ(result, ClientResult::NotConnected);
+}
+
+/**
+ * @test send_connect_private fails when disconnected
+ */
+TEST(send_connect_private_not_connected) {
+    socket_init();
+
+    TcpClient client;
+
+    ConnectPrivateRequest request{};
+    request.security_config.security_mode = 2;
+    request.security_parameter.data[0] = 0xBB;
+    request.local_communication_version = 1;
+    request.network_config.node_count_max = 4;
+
+    ClientResult result = client.send_connect_private(request);
+
+    ASSERT_EQ(result, ClientResult::NotConnected);
+}
+
+/**
+ * @test CreateAccessPointPrivateRequest size is correct
+ */
+TEST(create_access_point_private_request_size) {
+    ASSERT_EQ(sizeof(CreateAccessPointPrivateRequest), 0x13Cu);  // 316 bytes
+}
+
+/**
+ * @test ConnectPrivateRequest size is correct
+ */
+TEST(connect_private_request_size) {
+    ASSERT_EQ(sizeof(ConnectPrivateRequest), 0xBCu);  // 188 bytes
+}
+
+/**
+ * @test SecurityParameter size is correct
+ */
+TEST(security_parameter_size) {
+    ASSERT_EQ(sizeof(SecurityParameter), 0x20u);  // 32 bytes
+}
+
+/**
+ * @test AddressList size is correct
+ */
+TEST(address_list_size) {
+    ASSERT_EQ(sizeof(AddressList), 0x60u);  // 96 bytes
+}
+
+/**
+ * @test AddressEntry size is correct
+ */
+TEST(address_entry_size) {
+    ASSERT_EQ(sizeof(AddressEntry), 0x0Cu);  // 12 bytes
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
