@@ -41,9 +41,9 @@ solutioning:
 
 planning:
   status: completed
-  epics_created: 6
-  stories_created: 42
-  estimated_sprints: 7-8
+  epics_created: 7
+  stories_created: 48
+  estimated_sprints: 8-9
 
 # Epics
 epics:
@@ -100,10 +100,19 @@ epics:
     depends_on: [0, 1, 2, 3, 4]
     file: _bmad/epics/epic-5-docs-release.md
 
+  - id: 6
+    name: "Runtime LDN Info + Config Lock"
+    priority: P1
+    status: in_progress
+    stories_completed: 0
+    stories_total: 6
+    depends_on: [3, 4]
+    file: _bmad/epics/epic-6-runtime-info.md
+
 # Execution en cours
 execution:
-  current_epic: 5
-  current_story: "5.5"
+  current_epic: 6
+  current_story: "6.1"
   stories_completed:
     # Epic 0 - Infrastructure
     - "0.1: Docker Build Environment"
@@ -152,9 +161,12 @@ execution:
     - "5.4: GitHub Actions docs"
 
 next_actions:
-  - "Story 5.5: README final et badges"
-  - "Story 5.6: CHANGELOG et releases"
-  - "Story 5.7: Tests E2E release"
+  - "Story 6.1: SharedState Singleton (Test-First)"
+  - "Story 6.2: Commandes IPC Runtime 23-28"
+  - "Story 6.3: Intégration SharedState dans MITM"
+  - "Story 6.4: Client IPC Overlay Runtime"
+  - "Story 6.5: UI Conditionnelle Overlay"
+  - "Story 6.6: Tests et Documentation"
 
 # Fichiers principaux du projet
 files_created:
@@ -222,5 +234,6 @@ notes: |
   Epic 3 (Service LDN) COMPLETE - 9/9 stories - 156 tests.
   Epic 4 (Tesla Overlay) COMPLETE - 6/6 stories - overlay.ovl compilé.
   Epic 5 (Documentation) EN COURS - 4/7 stories.
+  Epic 6 (Runtime Info) EN COURS - 0/6 stories - SharedState singleton pour runtime LDN.
   Total: 369 tests unitaires passent.
   Builds: sysmodule.nsp, overlay.ovl, documentation Starlight.
