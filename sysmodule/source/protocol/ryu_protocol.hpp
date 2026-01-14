@@ -282,7 +282,7 @@ inline EncodeResult encode_create_access_point(uint8_t* buffer, size_t buffer_si
 inline EncodeResult encode_set_accept_policy(uint8_t* buffer, size_t buffer_size,
                                              AcceptPolicy policy, size_t& out_size) {
     SetAcceptPolicyRequest msg{};
-    msg.accept_policy = static_cast<uint32_t>(policy);
+    msg.accept_policy = static_cast<uint8_t>(policy);
     return encode(buffer, buffer_size, PacketId::SetAcceptPolicy, msg, out_size);
 }
 
