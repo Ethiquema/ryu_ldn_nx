@@ -665,4 +665,42 @@ ams::Result ConfigService::GetActiveProcessId(ams::sf::Out<u64> out) {
     R_SUCCEED();
 }
 
+// ============================================================================
+// P2P Proxy Control
+// ============================================================================
+
+/**
+ * @brief Get P2P proxy disabled state
+ *
+ * Returns whether P2P proxy is disabled (like Ryujinx MultiplayerDisableP2p).
+ *
+ * @param out Output: 1 if disabled, 0 if enabled
+ * @return Always succeeds
+ */
+ams::Result ConfigService::GetDisableP2p(ams::sf::Out<u32> out) {
+    std::scoped_lock lock(g_config_mutex);
+    *out = g_config.ldn.disable_p2p ? 1 : 0;
+
+    LOG_VERBOSE("Config IPC: GetDisableP2p -> %u", *out);
+    R_SUCCEED();
+}
+
+/**
+ * @brief Set P2P proxy disabled state
+ *
+ * Sets whether P2P proxy should be disabled (like Ryujinx MultiplayerDisableP2p).
+ * When disabled, the server will not attempt P2P connections.
+ *
+ * @param disabled 1 to disable P2P, 0 to enable
+ * @return Always succeeds
+ */
+ams::Result ConfigService::SetDisableP2p(u32 disabled) {
+    LOG_INFO("Config IPC: SetDisableP2p(%u)", disabled);
+
+    std::scoped_lock lock(g_config_mutex);
+    g_config.ldn.disable_p2p = (disabled != 0);
+
+    R_SUCCEED();
+}
+
 } // namespace ryu_ldn::ipc

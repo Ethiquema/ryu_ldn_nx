@@ -146,6 +146,8 @@ void process_ldn_key(const char* key, const char* value, LdnConfig& config) {
         safe_strcpy(config.passphrase, value, MAX_PASSPHRASE_LENGTH);
     } else if (std::strcmp(key, "interface") == 0) {
         safe_strcpy(config.interface_name, value, MAX_INTERFACE_LENGTH);
+    } else if (std::strcmp(key, "disable_p2p") == 0) {
+        config.disable_p2p = parse_bool(value);
     }
 }
 
@@ -288,6 +290,8 @@ size_t format_config_content(char* buffer, size_t buffer_size, const Config& con
     WRITE_LINE("passphrase = %s", config.ldn.passphrase);
     WRITE_LINE("; Network interface (empty = auto)");
     WRITE_LINE("interface = %s", config.ldn.interface_name);
+    WRITE_LINE("; Disable P2P proxy (0/1) - like Ryujinx MultiplayerDisableP2p");
+    WRITE_LINE("disable_p2p = %d", config.ldn.disable_p2p ? 1 : 0);
     WRITE_LINE("");
 
     WRITE_LINE("[debug]");
@@ -328,6 +332,7 @@ Config get_default_config() {
     config.ldn.enabled = DEFAULT_LDN_ENABLED;
     config.ldn.passphrase[0] = '\0';
     config.ldn.interface_name[0] = '\0';
+    config.ldn.disable_p2p = DEFAULT_DISABLE_P2P;
 
     // Debug defaults
     config.debug.enabled = DEFAULT_DEBUG_ENABLED;
@@ -602,7 +607,9 @@ ConfigResult save_config(const char* path, const Config& config) {
     std::fprintf(file, "; Room passphrase (empty = public)\n");
     std::fprintf(file, "passphrase = %s\n", config.ldn.passphrase);
     std::fprintf(file, "; Network interface (empty = auto)\n");
-    std::fprintf(file, "interface = %s\n\n", config.ldn.interface_name);
+    std::fprintf(file, "interface = %s\n", config.ldn.interface_name);
+    std::fprintf(file, "; Disable P2P proxy (0/1) - like Ryujinx MultiplayerDisableP2p\n");
+    std::fprintf(file, "disable_p2p = %d\n\n", config.ldn.disable_p2p ? 1 : 0);
 
     std::fprintf(file, "[debug]\n");
     std::fprintf(file, "; Enable debug logging (0/1)\n");
