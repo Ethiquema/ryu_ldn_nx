@@ -20,6 +20,7 @@ extern "C" {
 
 #include "ldn/ldn_mitm_service.hpp"
 #include "config/config.hpp"
+#include "config/config_ipc_service.hpp"
 #include "debug/log.hpp"
 
 namespace ams {
@@ -210,6 +211,45 @@ namespace ams {
     }
 
     // ========================================================================
+    // Configuration IPC Service (ryu:cfg)
+    // ========================================================================
+
+    namespace cfg {
+
+        /// Thread priority for config service
+        const s32 ThreadPriority = 10;
+
+        /// Thread stack size
+        const size_t ThreadStackSize = 0x2000;
+
+        /// Thread stack
+        alignas(os::MemoryPageSize) u8 g_thread_stack[ThreadStackSize];
+        os::ThreadType g_thread;
+
+        /// Server manager options for config service
+        struct ConfigServerManagerOptions {
+            static constexpr size_t PointerBufferSize   = 0x100;
+            static constexpr size_t MaxDomains          = 0;
+            static constexpr size_t MaxDomainObjects    = 0;
+            static constexpr bool   CanDeferInvokeRequest = false;
+            static constexpr bool   CanManageMitmServers  = false;
+        };
+
+        /// Maximum concurrent sessions for config service
+        constexpr size_t MaxSessions = 2;
+
+        /// Server manager for ryu:cfg service
+        using ConfigServerManager = sf::hipc::ServerManager<1, ConfigServerManagerOptions, MaxSessions>;
+        ConfigServerManager g_config_server_manager;
+
+        /// Config service thread entry point
+        void LoopConfigServerThread(void*) {
+            g_config_server_manager.LoopProcess();
+        }
+
+    }
+
+    // ========================================================================
     // System Module Initialization
     // ========================================================================
 
@@ -279,14 +319,46 @@ namespace ams {
     // ========================================================================
 
     void Main() {
+        // Initialize global configuration for IPC service
+        ryu_ldn::ipc::InitializeConfig();
+
+        // ====================================================================
+        // Register ryu:cfg configuration service
+        // ====================================================================
+        LOG_INFO("Registering ryu:cfg config service");
+        constexpr sm::ServiceName ConfigServiceName = sm::ServiceName::Encode("ryu:cfg");
+
+        // Create the config service object and register it
+        auto config_service = sf::CreateSharedObjectEmplaced<
+            ryu_ldn::ipc::IConfigService,
+            ryu_ldn::ipc::ConfigService>();
+
+        R_ABORT_UNLESS(cfg::g_config_server_manager.RegisterObjectForServer(
+            std::move(config_service), ConfigServiceName, cfg::MaxSessions));
+        LOG_INFO("Config service ryu:cfg registered successfully");
+
+        // Create config service thread
+        R_ABORT_UNLESS(os::CreateThread(
+            &cfg::g_thread,
+            cfg::LoopConfigServerThread,
+            nullptr,
+            cfg::g_thread_stack,
+            cfg::ThreadStackSize,
+            cfg::ThreadPriority));
+
+        os::SetThreadNamePointer(&cfg::g_thread, "ryu_ldn::CfgThread");
+        os::StartThread(&cfg::g_thread);
+
+        // ====================================================================
         // Register ldn:u MITM service
+        // ====================================================================
         LOG_INFO("Registering ldn:u MITM service");
         constexpr sm::ServiceName MitmServiceName = sm::ServiceName::Encode("ldn:u");
         R_ABORT_UNLESS((mitm::g_server_manager.RegisterMitmServer<
             mitm::ldn::LdnMitMService>(0, MitmServiceName)));
         LOG_INFO("MITM service registered successfully");
 
-        // Create main processing thread
+        // Create MITM processing thread
         R_ABORT_UNLESS(os::CreateThread(
             &mitm::g_thread,
             mitm::ProcessForServerOnAllThreads,
@@ -298,7 +370,8 @@ namespace ams {
         os::SetThreadNamePointer(&mitm::g_thread, "ryu_ldn::MainThread");
         os::StartThread(&mitm::g_thread);
 
-        // Wait for main thread (runs forever)
+        // Wait for MITM thread (runs forever)
+        // Note: Config thread also runs forever in parallel
         os::WaitThread(&mitm::g_thread);
     }
 
