@@ -594,6 +594,70 @@ TEST(protocol_connect_private_request_fields) {
 }
 
 // ============================================================================
+// External Proxy Types Tests (Compatibility Fix)
+// ============================================================================
+
+TEST(protocol_external_proxy_config_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyConfig), 0x26u);  // 38 bytes
+}
+
+TEST(protocol_external_proxy_config_fields) {
+    ryu_ldn::protocol::ExternalProxyConfig cfg{};
+    cfg.proxy_ip[0] = '1';
+    cfg.proxy_ip[1] = '2';
+    cfg.proxy_ip[2] = '7';
+    cfg.address_family = 2;  // IPv4
+    cfg.proxy_port = 30456;
+    cfg.token[0] = 0xAA;
+
+    ASSERT_EQ(cfg.proxy_ip[0], (uint8_t)'1');
+    ASSERT_EQ(cfg.address_family, 2u);
+    ASSERT_EQ(cfg.proxy_port, 30456u);
+    ASSERT_EQ(cfg.token[0], 0xAAu);
+}
+
+TEST(protocol_external_proxy_token_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyToken), 0x28u);  // 40 bytes
+}
+
+TEST(protocol_external_proxy_token_fields) {
+    ryu_ldn::protocol::ExternalProxyToken tok{};
+    tok.virtual_ip = 0x0A720001;  // 10.114.0.1
+    tok.token[0] = 0xBB;
+    tok.physical_ip[0] = '1';
+    tok.address_family = 2;  // IPv4
+
+    ASSERT_EQ(tok.virtual_ip, 0x0A720001u);
+    ASSERT_EQ(tok.token[0], 0xBBu);
+    ASSERT_EQ(tok.address_family, 2u);
+}
+
+TEST(protocol_external_proxy_connection_state_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyConnectionState), 0x08u);  // 8 bytes
+}
+
+TEST(protocol_external_proxy_connection_state_fields) {
+    ryu_ldn::protocol::ExternalProxyConnectionState state{};
+    state.ip_address = 0x0A720001;
+    state.connected = 1;
+
+    ASSERT_EQ(state.ip_address, 0x0A720001u);
+    ASSERT_EQ(state.connected, 1u);
+}
+
+TEST(protocol_set_accept_policy_request_size) {
+    // Must be 1 byte to match Ryujinx/Server
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::SetAcceptPolicyRequest), 1u);
+}
+
+TEST(protocol_set_accept_policy_request_fields) {
+    ryu_ldn::protocol::SetAcceptPolicyRequest req{};
+    req.accept_policy = 2;  // BlackList
+
+    ASSERT_EQ(req.accept_policy, 2u);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 

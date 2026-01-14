@@ -791,6 +791,54 @@ struct __attribute__((packed)) ProxyDisconnectMessage {
 static_assert(sizeof(ProxyDisconnectMessage) == 0x14, "ProxyDisconnectMessage must be 20 bytes");
 
 // ============================================================================
+// External Proxy Structures
+// ============================================================================
+
+/**
+ * @brief External Proxy Config - 0x26 bytes (38 bytes)
+ *
+ * Sent by the server to point a client towards an external server being used as a proxy.
+ * The client then forwards this to the external proxy after connecting, to verify the connection worked.
+ */
+struct __attribute__((packed)) ExternalProxyConfig {
+    uint8_t  proxy_ip[16];     ///< Proxy server IP address (IPv4 or IPv6 string)
+    uint32_t address_family;   ///< AddressFamily enum (2=IPv4, 23=IPv6)
+    uint16_t proxy_port;       ///< Proxy server port
+    uint8_t  token[16];        ///< Authentication token
+};
+static_assert(sizeof(ExternalProxyConfig) == 0x26, "ExternalProxyConfig must be 0x26 bytes");
+
+/**
+ * @brief External Proxy Token - 0x28 bytes (40 bytes)
+ *
+ * Sent by the master server to an external proxy to tell them someone is going to connect.
+ * This drives authentication, and lets the proxy know what virtual IP to give to each joiner.
+ */
+struct __attribute__((packed)) ExternalProxyToken {
+    uint32_t virtual_ip;       ///< Virtual IP assigned to the client
+    uint8_t  token[16];        ///< Authentication token
+    uint8_t  physical_ip[16];  ///< Client's physical IP address
+    uint32_t address_family;   ///< AddressFamily enum (2=IPv4, 23=IPv6)
+};
+static_assert(sizeof(ExternalProxyToken) == 0x28, "ExternalProxyToken must be 0x28 bytes");
+
+/**
+ * @brief External Proxy Connection State - 0x08 bytes (8 bytes)
+ *
+ * Indicates a change in connection state for the given client.
+ * Is sent to notify the master server when connection is first established.
+ * Can be sent by the external proxy to the master server to notify it of a proxy disconnect.
+ *
+ * Note: Pack=4 alignment means 3 bytes padding after the bool.
+ */
+struct ExternalProxyConnectionState {
+    uint32_t ip_address;       ///< IP address of the client
+    uint8_t  connected;        ///< Connection state (0=disconnected, 1=connected)
+    uint8_t  _pad[3];          ///< Padding for Pack=4 alignment
+};
+static_assert(sizeof(ExternalProxyConnectionState) == 0x08, "ExternalProxyConnectionState must be 0x08 bytes");
+
+// ============================================================================
 // Request/Response Structures (Story 1.2)
 // ============================================================================
 
@@ -965,12 +1013,15 @@ struct __attribute__((packed)) ConnectRequest {
 static_assert(sizeof(ConnectRequest) == 0x4FC, "ConnectRequest must be 0x4FC bytes");
 
 /**
- * @brief Set Accept Policy Request - 4 bytes
+ * @brief Set Accept Policy Request - 1 byte
+ *
+ * Sent by host to change the station accept policy.
+ * Must match Ryujinx/Server exactly (1 byte, Pack=1).
  */
 struct __attribute__((packed)) SetAcceptPolicyRequest {
-    uint32_t accept_policy;
+    uint8_t accept_policy;  ///< AcceptPolicy enum (0-3)
 };
-static_assert(sizeof(SetAcceptPolicyRequest) == 4, "SetAcceptPolicyRequest must be 4 bytes");
+static_assert(sizeof(SetAcceptPolicyRequest) == 1, "SetAcceptPolicyRequest must be 1 byte");
 
 /**
  * @brief Reject Request - 8 bytes
