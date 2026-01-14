@@ -123,10 +123,12 @@ using ClientStateCallback = void (*)(ConnectionState old_state, ConnectionState 
  * @param packet_id Type of packet received
  * @param data Pointer to packet payload (after header)
  * @param size Size of payload in bytes
+ * @param user_data User-provided context pointer
  */
 using ClientPacketCallback = void (*)(protocol::PacketId packet_id,
                                        const uint8_t* data,
-                                       size_t size);
+                                       size_t size,
+                                       void* user_data);
 
 /**
  * @brief Configuration for RyuLdnClient
@@ -282,8 +284,9 @@ public:
      * @brief Set callback for received packets
      *
      * @param callback Function to call on packet receive (nullptr to disable)
+     * @param user_data User-provided context pointer passed to callback
      */
-    void set_packet_callback(ClientPacketCallback callback);
+    void set_packet_callback(ClientPacketCallback callback, void* user_data = nullptr);
 
     // ========================================================================
     // Connection Management
@@ -459,6 +462,55 @@ public:
      */
     ClientOpResult send_ping();
 
+    /**
+     * @brief Send a ping response to echo back a server ping
+     *
+     * @param ping_id The ping ID from the server's ping request
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_ping_response(uint8_t ping_id);
+
+    /**
+     * @brief Send disconnect notification to server
+     *
+     * Notifies the server that we're leaving the network.
+     *
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_disconnect_network();
+
+    /**
+     * @brief Send SetAcceptPolicy request (host only)
+     *
+     * Changes the accept policy for new connections.
+     *
+     * @param policy New accept policy
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_set_accept_policy(protocol::AcceptPolicy policy);
+
+    /**
+     * @brief Send SetAdvertiseData request (host only)
+     *
+     * Updates the advertise data for the network.
+     *
+     * @param data Advertise data buffer
+     * @param size Size of data (max 384 bytes)
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_set_advertise_data(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Send Reject request (host only)
+     *
+     * Rejects/kicks a player from the network.
+     *
+     * @param node_id Node ID of player to reject
+     * @param reason Disconnect reason
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_reject(uint32_t node_id, protocol::DisconnectReason reason);
+
 private:
     // ========================================================================
     // Internal State
@@ -471,6 +523,7 @@ private:
 
     ClientStateCallback m_state_callback;   ///< User callback for state changes
     ClientPacketCallback m_packet_callback; ///< User callback for packets
+    void* m_packet_callback_user_data;      ///< User data for packet callback
 
     uint64_t m_last_ping_time_ms;           ///< Time of last ping sent
     uint64_t m_backoff_start_time_ms;       ///< Start of current backoff period

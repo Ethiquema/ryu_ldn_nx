@@ -124,6 +124,7 @@ RyuLdnClient::RyuLdnClient()
     , m_reconnect_manager()
     , m_state_callback(nullptr)
     , m_packet_callback(nullptr)
+    , m_packet_callback_user_data(nullptr)
     , m_last_ping_time_ms(0)
     , m_backoff_start_time_ms(0)
     , m_current_backoff_delay_ms(0)
@@ -155,6 +156,7 @@ RyuLdnClient::RyuLdnClient(const RyuLdnClientConfig& config)
     , m_reconnect_manager(config.reconnect)
     , m_state_callback(nullptr)
     , m_packet_callback(nullptr)
+    , m_packet_callback_user_data(nullptr)
     , m_last_ping_time_ms(0)
     , m_backoff_start_time_ms(0)
     , m_current_backoff_delay_ms(0)
@@ -197,6 +199,7 @@ RyuLdnClient::RyuLdnClient(RyuLdnClient&& other) noexcept
     , m_reconnect_manager(other.m_reconnect_manager.get_config())
     , m_state_callback(other.m_state_callback)
     , m_packet_callback(other.m_packet_callback)
+    , m_packet_callback_user_data(other.m_packet_callback_user_data)
     , m_last_ping_time_ms(other.m_last_ping_time_ms)
     , m_backoff_start_time_ms(other.m_backoff_start_time_ms)
     , m_current_backoff_delay_ms(other.m_current_backoff_delay_ms)
@@ -214,6 +217,7 @@ RyuLdnClient::RyuLdnClient(RyuLdnClient&& other) noexcept
 {
     other.m_state_callback = nullptr;
     other.m_packet_callback = nullptr;
+    other.m_packet_callback_user_data = nullptr;
     other.m_initialized = false;
 }
 
@@ -233,6 +237,7 @@ RyuLdnClient& RyuLdnClient::operator=(RyuLdnClient&& other) noexcept {
         m_reconnect_manager.set_config(other.m_reconnect_manager.get_config());
         m_state_callback = other.m_state_callback;
         m_packet_callback = other.m_packet_callback;
+        m_packet_callback_user_data = other.m_packet_callback_user_data;
         m_last_ping_time_ms = other.m_last_ping_time_ms;
         m_backoff_start_time_ms = other.m_backoff_start_time_ms;
         m_current_backoff_delay_ms = other.m_current_backoff_delay_ms;
@@ -250,6 +255,7 @@ RyuLdnClient& RyuLdnClient::operator=(RyuLdnClient&& other) noexcept {
 
         other.m_state_callback = nullptr;
         other.m_packet_callback = nullptr;
+        other.m_packet_callback_user_data = nullptr;
         other.m_initialized = false;
     }
     return *this;
@@ -286,9 +292,11 @@ void RyuLdnClient::set_state_callback(ClientStateCallback callback) {
  * @brief Set callback for received packets
  *
  * @param callback Function to call for each received packet
+ * @param user_data User-provided context pointer passed to callback
  */
-void RyuLdnClient::set_packet_callback(ClientPacketCallback callback) {
+void RyuLdnClient::set_packet_callback(ClientPacketCallback callback, void* user_data) {
     m_packet_callback = callback;
+    m_packet_callback_user_data = user_data;
 }
 
 // ============================================================================
@@ -743,6 +751,96 @@ ClientOpResult RyuLdnClient::send_ping() {
     return ClientOpResult::Success;
 }
 
+ClientOpResult RyuLdnClient::send_ping_response(uint8_t ping_id) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    protocol::PingMessage msg{};
+    msg.requester = 0;  // Echo back server's ping
+    msg.id = ping_id;
+    ClientResult result = m_tcp_client.send_ping(msg);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+ClientOpResult RyuLdnClient::send_disconnect_network() {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    protocol::DisconnectMessage msg{};
+    msg.disconnect_ip = 0;  // Server will fill this in
+    ClientResult result = m_tcp_client.send_disconnect(msg);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+ClientOpResult RyuLdnClient::send_set_accept_policy(protocol::AcceptPolicy policy) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    protocol::SetAcceptPolicyRequest request{};
+    request.accept_policy = static_cast<uint8_t>(policy);
+    ClientResult result = m_tcp_client.send_set_accept_policy(request);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+ClientOpResult RyuLdnClient::send_set_advertise_data(const uint8_t* data, size_t size) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    ClientResult result = m_tcp_client.send_set_advertise_data(data, size);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+ClientOpResult RyuLdnClient::send_reject(uint32_t node_id, protocol::DisconnectReason reason) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    protocol::RejectRequest request{};
+    request.node_id = node_id;
+    request.disconnect_reason = static_cast<uint32_t>(reason);
+    ClientResult result = m_tcp_client.send_reject(request);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
 // ============================================================================
 // Internal Methods
 // ============================================================================
@@ -869,7 +967,7 @@ void RyuLdnClient::handle_packet(protocol::PacketId id,
         default:
             // Pass to user callback
             if (m_packet_callback != nullptr) {
-                m_packet_callback(id, data, size);
+                m_packet_callback(id, data, size, m_packet_callback_user_data);
             }
             break;
     }
@@ -1068,7 +1166,7 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
             LOG_VERBOSE("Unexpected packet during handshake: %u", static_cast<uint32_t>(id));
             // Pass to user callback if set
             if (m_packet_callback != nullptr) {
-                m_packet_callback(id, data, size);
+                m_packet_callback(id, data, size, m_packet_callback_user_data);
             }
             return false;
     }
