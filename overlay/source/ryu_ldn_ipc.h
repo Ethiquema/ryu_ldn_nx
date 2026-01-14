@@ -5,34 +5,42 @@
  * Provides functions to communicate with the ryu_ldn_nx sysmodule
  * for retrieving status information and changing configuration.
  *
- * ## IPC Command IDs
- * The sysmodule exposes custom commands on the ldn:u service:
+ * ## Service Name
+ * The sysmodule exposes a standalone IPC service: ryu:cfg
  *
- * ### Basic Commands (65000-65010)
- * - 65000: GetConfigService - Get configuration service handle
- * - 65001: GetVersion - Get sysmodule version string
- * - 65002: GetConnectionStatus - Get current connection state
- * - 65003: GetLdnState - Get current LDN state
- * - 65004: GetSessionInfo - Get current session info
- * - 65005: GetServerAddress - Get configured server address
- * - 65006: SetServerAddress - Change server address
- * - 65007: GetDebugEnabled - Check if debug logging is on
- * - 65008: SetDebugEnabled - Enable/disable debug logging
- * - 65009: ForceReconnect - Force reconnection to server
- * - 65010: GetLastRtt - Get last RTT in ms
+ * ## IPC Command IDs (ryu:cfg service)
  *
- * ### Extended Config Commands (65011-65030)
- * - 65011: GetPassphrase / 65012: SetPassphrase
- * - 65013: GetLdnEnabled / 65014: SetLdnEnabled
- * - 65015: GetUseTls / 65016: SetUseTls
- * - 65017: GetConnectTimeout / 65018: SetConnectTimeout
- * - 65019: GetPingInterval / 65020: SetPingInterval
- * - 65021: GetReconnectDelay / 65022: SetReconnectDelay
- * - 65023: GetMaxReconnectAttempts / 65024: SetMaxReconnectAttempts
- * - 65025: GetDebugLevel / 65026: SetDebugLevel
- * - 65027: GetLogToFile / 65028: SetLogToFile
- * - 65029: SaveConfig - Save current config to file
- * - 65030: ReloadConfig - Reload config from file
+ * | ID | Command            | Description                       |
+ * |----|--------------------|-----------------------------------|
+ * | 0  | GetVersion         | Get sysmodule version string      |
+ * | 1  | GetConnectionStatus| Get current connection state      |
+ * | 2  | GetPassphrase      | Get room passphrase               |
+ * | 3  | SetPassphrase      | Set room passphrase               |
+ * | 4  | GetServerAddress   | Get server host and port          |
+ * | 5  | SetServerAddress   | Set server host and port          |
+ * | 6  | GetLdnEnabled      | Check if LDN emulation is on      |
+ * | 7  | SetLdnEnabled      | Toggle LDN emulation              |
+ * | 8  | GetUseTls          | Check TLS encryption state        |
+ * | 9  | SetUseTls          | Toggle TLS encryption             |
+ * | 10 | GetDebugEnabled    | Check debug logging state         |
+ * | 11 | SetDebugEnabled    | Toggle debug logging              |
+ * | 12 | GetDebugLevel      | Get log verbosity (0-3)           |
+ * | 13 | SetDebugLevel      | Set log verbosity                 |
+ * | 14 | GetLogToFile       | Check file logging state          |
+ * | 15 | SetLogToFile       | Toggle file logging               |
+ * | 16 | SaveConfig         | Persist config to SD card         |
+ * | 17 | ReloadConfig       | Reload config from SD card        |
+ * | 18 | GetConnectTimeout  | Get connection timeout (ms)       |
+ * | 19 | SetConnectTimeout  | Set connection timeout            |
+ * | 20 | GetPingInterval    | Get keepalive interval (ms)       |
+ * | 21 | SetPingInterval    | Set keepalive interval            |
+ * | 22 | IsServiceActive    | Ping to check service is running  |
+ * | 23 | IsGameActive       | Check if game is using LDN        |
+ * | 24 | GetLdnState        | Get current LDN CommState (0-6)   |
+ * | 25 | GetSessionInfo     | Get session info struct (8 bytes) |
+ * | 26 | GetLastRtt         | Get last measured RTT (ms)        |
+ * | 27 | ForceReconnect     | Request MITM to reconnect         |
+ * | 28 | GetActiveProcessId | Get PID of active game (debug)    |
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -57,28 +65,31 @@ typedef enum {
 } RyuLdnConnectionStatus;
 
 /**
- * @brief LDN state enumeration (matches Nintendo's states)
+ * @brief LDN communication state
+ *
+ * Mirrors the CommState enum from the sysmodule.
  */
 typedef enum {
-    RyuLdnState_None = 0,
-    RyuLdnState_Initialized = 1,
-    RyuLdnState_AccessPoint = 2,
-    RyuLdnState_AccessPointCreated = 3,
-    RyuLdnState_Station = 4,
-    RyuLdnState_StationConnected = 5,
-    RyuLdnState_Error = 6,
+    RyuLdnState_None = 0,               ///< Not initialized
+    RyuLdnState_Initialized = 1,        ///< Initialized, ready to open AP or Station
+    RyuLdnState_AccessPoint = 2,        ///< Access point mode, ready to create network
+    RyuLdnState_AccessPointCreated = 3, ///< Network created, accepting connections
+    RyuLdnState_Station = 4,            ///< Station mode, ready to scan/connect
+    RyuLdnState_StationConnected = 5,   ///< Connected to a network
+    RyuLdnState_Error = 6,              ///< Error state
 } RyuLdnState;
 
 /**
  * @brief Session information structure
+ *
+ * Contains runtime information about the current LDN session.
  */
 typedef struct {
-    u8 node_count;           ///< Number of players in session
-    u8 node_count_max;       ///< Maximum players allowed
-    u8 local_node_id;        ///< Our node ID in the session
-    u8 is_host;              ///< 1 if we are the host, 0 if client
-    u32 session_duration_ms; ///< Time since session started (ms)
-    char game_name[64];      ///< Game name (if available)
+    u8 node_count;      ///< Current number of nodes in session
+    u8 max_nodes;       ///< Maximum nodes allowed in session
+    u8 local_node_id;   ///< This node's ID in the session
+    u8 is_host;         ///< 1 if this node is the host, 0 otherwise
+    u8 reserved[4];     ///< Reserved for future use
 } RyuLdnSessionInfo;
 
 /**
@@ -89,13 +100,34 @@ typedef struct {
 } RyuLdnConfigService;
 
 /**
- * @brief Get configuration service from ldn:u
+ * @brief Initialize connection to ryu:cfg service
  *
- * @param ldn_srv Pointer to ldn:u service
- * @param out Output configuration service
+ * This opens a connection to the standalone ryu:cfg service.
+ * Call ryuLdnExit() when done.
+ *
+ * @return Result code (0 on success)
+ */
+Result ryuLdnInitialize(void);
+
+/**
+ * @brief Close connection to ryu:cfg service
+ */
+void ryuLdnExit(void);
+
+/**
+ * @brief Get the configuration service handle
+ *
+ * @return Pointer to internal service (valid after ryuLdnInitialize)
+ */
+RyuLdnConfigService* ryuLdnGetService(void);
+
+/**
+ * @brief Check if sysmodule is active
+ *
+ * @param active Output: 1 if active, 0 otherwise
  * @return Result code
  */
-Result ryuLdnGetConfigFromService(Service* ldn_srv, RyuLdnConfigService* out);
+Result ryuLdnIsServiceActive(RyuLdnConfigService* s, u32* active);
 
 /**
  * @brief Get sysmodule version string
@@ -114,24 +146,6 @@ Result ryuLdnGetVersion(RyuLdnConfigService* s, char* version);
  * @return Result code
  */
 Result ryuLdnGetConnectionStatus(RyuLdnConfigService* s, RyuLdnConnectionStatus* status);
-
-/**
- * @brief Get current LDN state
- *
- * @param s Configuration service
- * @param state Output LDN state
- * @return Result code
- */
-Result ryuLdnGetLdnState(RyuLdnConfigService* s, RyuLdnState* state);
-
-/**
- * @brief Get session information
- *
- * @param s Configuration service
- * @param info Output session info
- * @return Result code
- */
-Result ryuLdnGetSessionInfo(RyuLdnConfigService* s, RyuLdnSessionInfo* info);
 
 /**
  * @brief Get configured server address
@@ -171,25 +185,8 @@ Result ryuLdnGetDebugEnabled(RyuLdnConfigService* s, u32* enabled);
  */
 Result ryuLdnSetDebugEnabled(RyuLdnConfigService* s, u32 enabled);
 
-/**
- * @brief Force reconnection to server
- *
- * @param s Configuration service
- * @return Result code
- */
-Result ryuLdnForceReconnect(RyuLdnConfigService* s);
-
-/**
- * @brief Get last RTT (round-trip time) in milliseconds
- *
- * @param s Configuration service
- * @param rtt_ms Output RTT in ms
- * @return Result code
- */
-Result ryuLdnGetLastRtt(RyuLdnConfigService* s, u32* rtt_ms);
-
 //=============================================================================
-// Extended Configuration Commands (65011-65030)
+// Configuration Commands
 //=============================================================================
 
 /**
@@ -294,42 +291,6 @@ Result ryuLdnGetPingInterval(RyuLdnConfigService* s, u32* interval_ms);
 Result ryuLdnSetPingInterval(RyuLdnConfigService* s, u32 interval_ms);
 
 /**
- * @brief Get reconnect delay in milliseconds
- *
- * @param s Configuration service
- * @param delay_ms Output delay value
- * @return Result code
- */
-Result ryuLdnGetReconnectDelay(RyuLdnConfigService* s, u32* delay_ms);
-
-/**
- * @brief Set reconnect delay in milliseconds
- *
- * @param s Configuration service
- * @param delay_ms Delay value
- * @return Result code
- */
-Result ryuLdnSetReconnectDelay(RyuLdnConfigService* s, u32 delay_ms);
-
-/**
- * @brief Get max reconnect attempts
- *
- * @param s Configuration service
- * @param attempts Output attempts value
- * @return Result code
- */
-Result ryuLdnGetMaxReconnectAttempts(RyuLdnConfigService* s, u32* attempts);
-
-/**
- * @brief Set max reconnect attempts
- *
- * @param s Configuration service
- * @param attempts Attempts value (0 = unlimited)
- * @return Result code
- */
-Result ryuLdnSetMaxReconnectAttempts(RyuLdnConfigService* s, u32 attempts);
-
-/**
  * @brief Get debug level (0-3)
  *
  * @param s Configuration service
@@ -382,6 +343,71 @@ Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
  * @return Result code
  */
 Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
+
+//=============================================================================
+// Runtime LDN State Commands (23-28)
+//=============================================================================
+
+/**
+ * @brief Check if a game is actively using LDN
+ *
+ * @param s Configuration service
+ * @param active Output: 1 if game is active, 0 otherwise
+ * @return Result code
+ */
+Result ryuLdnIsGameActive(RyuLdnConfigService* s, u32* active);
+
+/**
+ * @brief Get current LDN communication state
+ *
+ * @param s Configuration service
+ * @param state Output LDN state
+ * @return Result code
+ */
+Result ryuLdnGetLdnState(RyuLdnConfigService* s, RyuLdnState* state);
+
+/**
+ * @brief Get session information
+ *
+ * @param s Configuration service
+ * @param info Output session info structure
+ * @return Result code
+ */
+Result ryuLdnGetSessionInfo(RyuLdnConfigService* s, RyuLdnSessionInfo* info);
+
+/**
+ * @brief Get last measured round-trip time
+ *
+ * @param s Configuration service
+ * @param rtt_ms Output RTT in milliseconds
+ * @return Result code
+ */
+Result ryuLdnGetLastRtt(RyuLdnConfigService* s, u32* rtt_ms);
+
+/**
+ * @brief Request the MITM service to reconnect
+ *
+ * @param s Configuration service
+ * @return Result code
+ */
+Result ryuLdnForceReconnect(RyuLdnConfigService* s);
+
+/**
+ * @brief Get process ID of the active game
+ *
+ * @param s Configuration service
+ * @param pid Output process ID (0 if no game active)
+ * @return Result code
+ */
+Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid);
+
+/**
+ * @brief Convert LDN state to human-readable string
+ *
+ * @param state LDN state value
+ * @return Static string describing the state
+ */
+const char* ryuLdnStateToString(RyuLdnState state);
 
 #ifdef __cplusplus
 }

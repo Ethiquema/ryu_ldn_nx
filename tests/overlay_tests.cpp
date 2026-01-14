@@ -52,13 +52,17 @@ typedef enum {
     RyuLdnState_Error = 6,
 } RyuLdnState;
 
+/**
+ * @brief Session information structure (matches IPC definition)
+ *
+ * 8 bytes total, same as SessionInfoIpc in sysmodule.
+ */
 typedef struct {
-    u8 node_count;
-    u8 node_count_max;
-    u8 local_node_id;
-    u8 is_host;
-    u32 session_duration_ms;
-    char game_name[64];
+    u8 node_count;      ///< Current number of nodes in session
+    u8 max_nodes;       ///< Maximum nodes allowed in session
+    u8 local_node_id;   ///< This node's ID in the session
+    u8 is_host;         ///< 1 if this node is the host, 0 otherwise
+    u8 reserved[4];     ///< Reserved for future use
 } RyuLdnSessionInfo;
 
 typedef struct {
@@ -99,7 +103,7 @@ void FormatSessionInfo(const RyuLdnSessionInfo* info, char* buf, size_t bufSize)
         snprintf(buf, bufSize, "Not in session");
     } else {
         snprintf(buf, bufSize, "%d/%d players (%s)",
-                 info->node_count, info->node_count_max,
+                 info->node_count, info->max_nodes,
                  info->is_host ? "Host" : "Client");
     }
 }
@@ -225,7 +229,7 @@ TEST(session_info_not_in_session) {
 TEST(session_info_host_single_player) {
     RyuLdnSessionInfo info = {};
     info.node_count = 1;
-    info.node_count_max = 8;
+    info.max_nodes = 8;
     info.is_host = 1;
     char buf[64];
     FormatSessionInfo(&info, buf, sizeof(buf));
@@ -235,7 +239,7 @@ TEST(session_info_host_single_player) {
 TEST(session_info_client_multi_player) {
     RyuLdnSessionInfo info = {};
     info.node_count = 4;
-    info.node_count_max = 8;
+    info.max_nodes = 8;
     info.is_host = 0;
     char buf[64];
     FormatSessionInfo(&info, buf, sizeof(buf));
@@ -245,7 +249,7 @@ TEST(session_info_client_multi_player) {
 TEST(session_info_full_session) {
     RyuLdnSessionInfo info = {};
     info.node_count = 8;
-    info.node_count_max = 8;
+    info.max_nodes = 8;
     info.is_host = 1;
     char buf[64];
     FormatSessionInfo(&info, buf, sizeof(buf));
@@ -255,7 +259,7 @@ TEST(session_info_full_session) {
 TEST(session_info_two_players) {
     RyuLdnSessionInfo info = {};
     info.node_count = 2;
-    info.node_count_max = 2;
+    info.max_nodes = 2;
     info.is_host = 0;
     char buf[64];
     FormatSessionInfo(&info, buf, sizeof(buf));
@@ -329,18 +333,17 @@ TEST(latency_very_high_value) {
 //=============================================================================
 
 TEST(session_info_structure_size) {
-    // Verify structure packing
-    ASSERT(sizeof(RyuLdnSessionInfo) >= 72); // 4 bytes + 4 bytes padding + 64 game_name
+    // Verify structure packing - must be exactly 8 bytes for IPC
+    ASSERT_EQ(sizeof(RyuLdnSessionInfo), 8u);
 }
 
 TEST(session_info_zero_initialized) {
     RyuLdnSessionInfo info = {};
     ASSERT_EQ(info.node_count, 0);
-    ASSERT_EQ(info.node_count_max, 0);
+    ASSERT_EQ(info.max_nodes, 0);
     ASSERT_EQ(info.local_node_id, 0);
     ASSERT_EQ(info.is_host, 0);
-    ASSERT_EQ(info.session_duration_ms, 0u);
-    ASSERT_EQ(info.game_name[0], '\0');
+    ASSERT_EQ(info.reserved[0], 0);
 }
 
 TEST(connection_status_enum_values) {
@@ -368,7 +371,7 @@ TEST(ldn_state_enum_values) {
 TEST(format_session_buffer_small) {
     RyuLdnSessionInfo info = {};
     info.node_count = 8;
-    info.node_count_max = 8;
+    info.max_nodes = 8;
     info.is_host = 1;
     char buf[10]; // Too small, but should not crash
     FormatSessionInfo(&info, buf, sizeof(buf));
