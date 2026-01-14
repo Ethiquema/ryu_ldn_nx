@@ -168,6 +168,13 @@ struct RyuLdnClientConfig {
     bool auto_reconnect;
 
     /**
+     * @brief Room passphrase for filtering (empty = public rooms)
+     *
+     * Format: "Ryujinx-[0-9a-f]{8}" or empty string
+     */
+    char passphrase[config::MAX_PASSPHRASE_LENGTH + 1];
+
+    /**
      * @brief Default constructor with sensible defaults
      */
     RyuLdnClientConfig();

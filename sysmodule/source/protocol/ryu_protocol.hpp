@@ -220,7 +220,7 @@ inline EncodeResult encode_passphrase(uint8_t* buffer, size_t buffer_size,
     PassphraseMessage msg{};
     std::memset(msg.passphrase, 0, sizeof(msg.passphrase));
     if (passphrase && passphrase_len > 0) {
-        size_t copy_len = passphrase_len < 64 ? passphrase_len : 64;
+        size_t copy_len = passphrase_len < 128 ? passphrase_len : 128;
         std::memcpy(msg.passphrase, passphrase, copy_len);
     }
     return encode(buffer, buffer_size, PacketId::Passphrase, msg, out_size);

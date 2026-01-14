@@ -130,7 +130,7 @@ TEST(structure_sizes) {
 
     // Messages
     ASSERT_EQ(sizeof(InitializeMessage), 0x16);  // 22 bytes
-    ASSERT_EQ(sizeof(PassphraseMessage), 0x40);  // 64 bytes
+    ASSERT_EQ(sizeof(PassphraseMessage), 0x80);  // 128 bytes
     ASSERT_EQ(sizeof(PingMessage), 2);
     ASSERT_EQ(sizeof(DisconnectMessage), 6);
 

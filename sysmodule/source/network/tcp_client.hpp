@@ -269,14 +269,25 @@ public:
     ClientResult send_passphrase(const protocol::PassphraseMessage& msg);
 
     /**
+     * @brief Send Passphrase message
+     *
+     * Sends passphrase for room filtering. Must be sent after TCP
+     * connection and before Initialize packet.
+     *
+     * @param passphrase Passphrase string (null-terminated)
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_passphrase(const char* passphrase);
+
+    /**
      * @brief Send Ping message
      *
-     * Keepalive message with timestamp for RTT measurement.
+     * Keepalive message for connection health check.
      *
-     * @param msg Ping message with current timestamp
+     * @param msg Ping message with requester and id
      * @return ClientResult indicating success or error
      *
-     * @note Server will echo back the ping with same timestamp
+     * @note Server will echo back the ping when requester=0
      */
     ClientResult send_ping(const protocol::PingMessage& msg);
 

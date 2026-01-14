@@ -73,6 +73,7 @@ RyuLdnClientConfig::RyuLdnClientConfig()
 {
     std::strncpy(host, "127.0.0.1", sizeof(host) - 1);
     host[sizeof(host) - 1] = '\0';
+    passphrase[0] = '\0';  // Empty passphrase = public rooms
 }
 
 /**
@@ -93,6 +94,10 @@ RyuLdnClientConfig::RyuLdnClientConfig(const config::Config& cfg)
     // Copy host, ensuring null termination
     std::memset(host, 0, sizeof(host));
     std::memcpy(host, cfg.server.host, sizeof(host) - 1);
+
+    // Copy passphrase, ensuring null termination
+    std::memset(passphrase, 0, sizeof(passphrase));
+    std::memcpy(passphrase, cfg.ldn.passphrase, sizeof(passphrase) - 1);
 
     // Configure reconnection from app config
     reconnect.initial_delay_ms = cfg.network.reconnect_delay_ms;
@@ -827,6 +832,19 @@ void RyuLdnClient::handle_packet(protocol::PacketId id,
  */
 ClientOpResult RyuLdnClient::send_initialize() {
     LOG_VERBOSE("Sending Initialize handshake");
+
+    // Send passphrase first (required by RyuLDN protocol)
+    // This must be sent before Initialize, even if empty
+    ClientResult passphrase_result = m_tcp_client.send_passphrase(m_config.passphrase);
+    if (passphrase_result != ClientResult::Success) {
+        LOG_ERROR("Failed to send Passphrase: %s", client_result_to_string(passphrase_result));
+        return ClientOpResult::SendFailed;
+    }
+    if (m_config.passphrase[0] != '\0') {
+        LOG_INFO("Sent passphrase: %s", m_config.passphrase);
+    } else {
+        LOG_VERBOSE("Sent empty passphrase (public rooms)");
+    }
 
     protocol::InitializeMessage msg{};
 

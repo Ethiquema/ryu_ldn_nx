@@ -536,30 +536,30 @@ struct __attribute__((packed)) InitializeMessage {
 static_assert(sizeof(InitializeMessage) == 0x16, "InitializeMessage must be 22 bytes");
 
 /**
- * @brief Passphrase Message - 64 bytes
+ * @brief Passphrase Message - 128 bytes (0x80)
  *
- * Sent by client to authenticate with private (password-protected) rooms.
- * Must match the passphrase set when the access point was created.
+ * Sent by client after TCP connection to filter/authenticate rooms.
+ * Format: "Ryujinx-[0-9a-f]{8}" or empty string for public rooms.
  *
  * ## Wire Format
  * ```
  * Offset  Size  Field       Description
- * 0x00    64    passphrase  UTF-8 passphrase (null-padded)
+ * 0x00    128   passphrase  UTF-8 passphrase (null-padded)
  * ```
  *
- * ## Authentication Flow
- * 1. Client sends ConnectPrivate request
- * 2. Server requests passphrase
- * 3. Client sends PassphraseMessage
- * 4. Server validates and sends Connected or RejectReply
+ * ## Protocol Flow
+ * 1. Client connects via TCP
+ * 2. Client sends Passphrase packet (can be empty)
+ * 3. Client sends Initialize packet
+ * 4. Server responds with Initialize (assigned ID/MAC)
  *
  * ## Security Note
  * Passphrase is sent in plaintext. Use TLS for transport security.
  */
 struct __attribute__((packed)) PassphraseMessage {
-    uint8_t passphrase[64];  ///< UTF-8 passphrase (null-padded, max 64 chars)
+    uint8_t passphrase[128];  ///< UTF-8 passphrase (null-padded, max 128 chars)
 };
-static_assert(sizeof(PassphraseMessage) == 0x40, "PassphraseMessage must be 64 bytes");
+static_assert(sizeof(PassphraseMessage) == 0x80, "PassphraseMessage must be 128 bytes");
 
 /**
  * @brief Ping Message - 2 bytes

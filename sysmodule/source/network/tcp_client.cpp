@@ -227,6 +227,20 @@ ClientResult TcpClient::send_passphrase(const protocol::PassphraseMessage& msg) 
 }
 
 /**
+ * @brief Send Passphrase message (string convenience overload)
+ */
+ClientResult TcpClient::send_passphrase(const char* passphrase) {
+    protocol::PassphraseMessage msg{};
+    std::memset(msg.passphrase, 0, sizeof(msg.passphrase));
+    if (passphrase != nullptr) {
+        size_t len = std::strlen(passphrase);
+        if (len > 127) len = 127;
+        std::memcpy(msg.passphrase, passphrase, len);
+    }
+    return send_passphrase(msg);
+}
+
+/**
  * @brief Send Ping message
  */
 ClientResult TcpClient::send_ping(const protocol::PingMessage& msg) {
