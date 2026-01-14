@@ -50,12 +50,42 @@ Result ICommunicationService::ConnectToServer() {
 
     LOG_INFO("Connecting to RyuLdn server...");
 
-    // Attempt connection
+    // Attempt TCP connection
     auto result = m_server_client.connect();
     if (result != ryu_ldn::network::ClientOpResult::Success) {
         LOG_ERROR("Server connection failed: %s",
                   ryu_ldn::network::client_op_result_to_string(result));
         R_RETURN(MAKERESULT(0x10, 2)); // Connection failed
+    }
+
+    // Wait for handshake to complete (with timeout)
+    constexpr uint64_t handshake_timeout_ms = 5000;
+    constexpr uint64_t poll_interval_ms = 50;
+
+    LOG_VERBOSE("Waiting for handshake...");
+
+    uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    uint64_t current_time_ms = start_time_ms;
+
+    while (!m_server_client.is_ready() && (current_time_ms - start_time_ms) < handshake_timeout_ms) {
+        // Process client state machine (sends handshake, receives response)
+        m_server_client.update(current_time_ms);
+
+        // Check if connection failed during handshake
+        if (!m_server_client.is_connected()) {
+            LOG_ERROR("Connection lost during handshake");
+            R_RETURN(MAKERESULT(0x10, 3)); // Handshake failed
+        }
+
+        // Small delay to avoid busy-waiting
+        svcSleepThread(poll_interval_ms * 1000000ULL); // Convert ms to ns
+        current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    }
+
+    if (!m_server_client.is_ready()) {
+        LOG_ERROR("Handshake timeout");
+        m_server_client.disconnect();
+        R_RETURN(MAKERESULT(0x10, 4)); // Handshake timeout
     }
 
     m_server_connected = true;
