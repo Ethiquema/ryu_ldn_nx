@@ -487,7 +487,7 @@ Result ICommunicationService::CreateNetworkPrivate(
     // Security parameter
     std::memcpy(request.security_parameter.data, data.securityParameter.unkRandom,
                 sizeof(request.security_parameter.data));
-    std::memcpy(request.security_parameter.session_id, data.securityParameter.sessionId.data,
+    std::memcpy(request.security_parameter.session_id, &data.securityParameter.sessionId,
                 sizeof(request.security_parameter.session_id));
 
     // User config
@@ -542,7 +542,7 @@ Result ICommunicationService::ConnectPrivate(ConnectPrivateData data) {
     // Security parameter
     std::memcpy(request.security_parameter.data, data.securityParameter.unkRandom,
                 sizeof(request.security_parameter.data));
-    std::memcpy(request.security_parameter.session_id, data.securityParameter.sessionId.data,
+    std::memcpy(request.security_parameter.session_id, &data.securityParameter.sessionId,
                 sizeof(request.security_parameter.session_id));
 
     // User config

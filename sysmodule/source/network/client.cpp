@@ -644,6 +644,51 @@ ClientOpResult RyuLdnClient::send_connect(const protocol::ConnectRequest& reques
 }
 
 /**
+ * @brief Send create access point private request
+ *
+ * @param request Access point parameters with security settings
+ * @return ClientOpResult indicating success or failure
+ */
+ClientOpResult RyuLdnClient::send_create_access_point_private(
+    const protocol::CreateAccessPointPrivateRequest& request) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    ClientResult result = m_tcp_client.send_create_access_point_private(request, nullptr, 0);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+/**
+ * @brief Send connect private request
+ *
+ * @param request Connection parameters with security settings
+ * @return ClientOpResult indicating success or failure
+ */
+ClientOpResult RyuLdnClient::send_connect_private(const protocol::ConnectPrivateRequest& request) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    ClientResult result = m_tcp_client.send_connect_private(request);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
+/**
  * @brief Send proxy data
  *
  * @param header Proxy header

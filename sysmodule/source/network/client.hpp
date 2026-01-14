@@ -422,6 +422,22 @@ public:
     ClientOpResult send_connect(const protocol::ConnectRequest& request);
 
     /**
+     * @brief Send request to create a private access point
+     *
+     * @param request Access point parameters with security settings
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_create_access_point_private(const protocol::CreateAccessPointPrivateRequest& request);
+
+    /**
+     * @brief Send request to connect to a private network
+     *
+     * @param request Connection parameters with security settings
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_connect_private(const protocol::ConnectPrivateRequest& request);
+
+    /**
      * @brief Send proxy data to another client
      *
      * @param header Proxy header with destination info
