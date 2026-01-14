@@ -247,6 +247,21 @@ namespace ams {
             g_config_server_manager.LoopProcess();
         }
 
+        /// Log maintenance thread stack
+        alignas(os::MemoryPageSize) u8 g_log_thread_stack[0x1000];
+        os::ThreadType g_log_thread;
+
+        /// Log maintenance thread entry point (checks file idle timeout)
+        void LoopLogMaintenanceThread(void*) {
+            while (true) {
+                // Sleep for 2 seconds
+                svc::SleepThread(TimeSpan::FromSeconds(2).GetNanoSeconds());
+
+                // Check if log file should be closed due to idle timeout
+                ryu_ldn::debug::g_logger.check_idle_timeout();
+            }
+        }
+
     }
 
     // ========================================================================
@@ -348,6 +363,18 @@ namespace ams {
 
         os::SetThreadNamePointer(&cfg::g_thread, "ryu_ldn::CfgThread");
         os::StartThread(&cfg::g_thread);
+
+        // Create log maintenance thread (for idle timeout)
+        R_ABORT_UNLESS(os::CreateThread(
+            &cfg::g_log_thread,
+            cfg::LoopLogMaintenanceThread,
+            nullptr,
+            cfg::g_log_thread_stack,
+            sizeof(cfg::g_log_thread_stack),
+            cfg::ThreadPriority + 5));  // Lower priority than config service
+
+        os::SetThreadNamePointer(&cfg::g_log_thread, "ryu_ldn::LogThread");
+        os::StartThread(&cfg::g_log_thread);
 
         // ====================================================================
         // Register ldn:u MITM service

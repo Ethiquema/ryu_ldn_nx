@@ -280,8 +280,18 @@ public:
      */
     LogBuffer& get_buffer() { return m_buffer; }
 
+    /**
+     * @brief Check and close file if idle timeout expired
+     *
+     * Should be called periodically. Closes the file if no writes
+     * occurred within the timeout period (5 seconds).
+     */
+    void check_idle_timeout();
+
 private:
     void output_message(const char* message);
+    void open_file();
+    void close_file();
 
     bool m_enabled = false;
     LogLevel m_level = LogLevel::Warning;
@@ -291,6 +301,10 @@ private:
     void* m_file = nullptr;  // FILE* on PC, unused on Switch
     bool m_file_open = false;
     size_t m_file_offset = 0;
+    uint64_t m_last_write_tick = 0;  // Last write timestamp (ticks)
+    bool m_header_written = false;   // Track if header was written this session
+
+    static constexpr uint64_t FILE_IDLE_TIMEOUT_NS = 5000000000ULL;  // 5 seconds in nanoseconds
 };
 
 // =============================================================================

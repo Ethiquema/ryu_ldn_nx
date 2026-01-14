@@ -164,17 +164,7 @@ void LogBuffer::clear() {
 // =============================================================================
 
 Logger::~Logger() {
-#ifdef __SWITCH__
-    if (m_file_open) {
-        ams::fs::CloseFile(s_log_file_handle);
-        m_file_open = false;
-    }
-#else
-    if (m_file != nullptr) {
-        std::fclose(static_cast<FILE*>(m_file));
-        m_file = nullptr;
-    }
-#endif
+    close_file();
 }
 
 void Logger::init(const config::DebugConfig& config, const char* log_path) {
@@ -191,71 +181,11 @@ void Logger::init(const config::DebugConfig& config, const char* log_path) {
     // Initialize log buffer
     m_buffer.init(MAX_LOG_BUFFER_ENTRIES);
 
-    // Open log file if enabled
-    if (m_enabled && m_log_to_file) {
-#ifdef __SWITCH__
-        // Close existing file if open
-        if (m_file_open) {
-            ams::fs::CloseFile(s_log_file_handle);
-            m_file_open = false;
-        }
+    // Close any existing file - file will be opened on-demand
+    close_file();
 
-        // Ensure parent directory exists
-        char dir_path[256];
-        safe_strcpy(dir_path, m_log_path, sizeof(dir_path) - 1);
-        char* last_slash = std::strrchr(dir_path, '/');
-        if (last_slash) {
-            *last_slash = '\0';
-            ams::fs::EnsureDirectory(dir_path);
-        }
-
-        // Check if file exists
-        ams::fs::DirectoryEntryType entry_type;
-        bool file_exists = R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, m_log_path));
-
-        if (!file_exists) {
-            // Create new file
-            if (R_SUCCEEDED(ams::fs::CreateFile(m_log_path, 0))) {
-                file_exists = true;
-            }
-        }
-
-        // Open file for append
-        if (file_exists) {
-            if (R_SUCCEEDED(ams::fs::OpenFile(&s_log_file_handle, m_log_path,
-                            ams::fs::OpenMode_Write | ams::fs::OpenMode_AllowAppend))) {
-                m_file_open = true;
-
-                // Get current file size for append offset
-                s64 file_size;
-                if (R_SUCCEEDED(ams::fs::GetFileSize(&file_size, s_log_file_handle))) {
-                    m_file_offset = static_cast<size_t>(file_size);
-                }
-
-                // Write header
-                const char* header = "\n=== ryu_ldn_nx Log Started ===\n";
-                size_t header_len = std::strlen(header);
-                ams::fs::WriteFile(s_log_file_handle, m_file_offset, header, header_len,
-                                   ams::fs::WriteOption::Flush);
-                m_file_offset += header_len;
-            }
-        }
-#else
-        // Close existing file if open
-        if (m_file != nullptr) {
-            std::fclose(static_cast<FILE*>(m_file));
-        }
-
-        // Open in append mode
-        m_file = std::fopen(m_log_path, "a");
-
-        if (m_file != nullptr) {
-            std::fprintf(static_cast<FILE*>(m_file),
-                         "\n=== ryu_ldn_nx Log Started ===\n");
-            std::fflush(static_cast<FILE*>(m_file));
-        }
-#endif
-    }
+    // Reset header flag - new session needs new header
+    m_header_written = false;
 
     // Log initialization
     if (m_enabled) {
@@ -308,23 +238,140 @@ void Logger::output_message(const char* message) {
     std::printf("%s\n", message);
 
     // Output to file if enabled
-#ifdef __SWITCH__
-    if (m_log_to_file && m_file_open) {
-        size_t msg_len = std::strlen(message);
-        char line[MAX_LOG_MESSAGE_LENGTH + 2];
-        std::memcpy(line, message, msg_len);
-        line[msg_len] = '\n';
-        line[msg_len + 1] = '\0';
+    if (m_log_to_file) {
+        // Open file on-demand if not already open
+        if (!m_file_open) {
+            open_file();
+        }
 
-        ams::fs::WriteFile(s_log_file_handle, m_file_offset, line, msg_len + 1,
-                           ams::fs::WriteOption::Flush);
-        m_file_offset += msg_len + 1;
+#ifdef __SWITCH__
+        if (m_file_open) {
+            size_t msg_len = std::strlen(message);
+            char line[MAX_LOG_MESSAGE_LENGTH + 2];
+            std::memcpy(line, message, msg_len);
+            line[msg_len] = '\n';
+            line[msg_len + 1] = '\0';
+
+            ams::fs::WriteFile(s_log_file_handle, m_file_offset, line, msg_len + 1,
+                               ams::fs::WriteOption::Flush);
+            m_file_offset += msg_len + 1;
+
+            // Update last write time
+            m_last_write_tick = armGetSystemTick();
+        }
+#else
+        if (m_file != nullptr) {
+            std::fprintf(static_cast<FILE*>(m_file), "%s\n", message);
+            std::fflush(static_cast<FILE*>(m_file));
+
+            // Update last write time (simple incrementing counter for non-Switch)
+            m_last_write_tick++;
+        }
+#endif
+    }
+}
+
+void Logger::open_file() {
+    if (m_file_open) return;
+
+#ifdef __SWITCH__
+    // Ensure parent directory exists
+    char dir_path[256];
+    safe_strcpy(dir_path, m_log_path, sizeof(dir_path) - 1);
+    char* last_slash = std::strrchr(dir_path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+        ams::fs::EnsureDirectory(dir_path);
+    }
+
+    // Check if file exists
+    ams::fs::DirectoryEntryType entry_type;
+    bool file_exists = R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, m_log_path));
+
+    if (!file_exists) {
+        // Create new file
+        if (R_SUCCEEDED(ams::fs::CreateFile(m_log_path, 0))) {
+            file_exists = true;
+        }
+    }
+
+    // Open file for append
+    if (file_exists) {
+        if (R_SUCCEEDED(ams::fs::OpenFile(&s_log_file_handle, m_log_path,
+                        ams::fs::OpenMode_Write | ams::fs::OpenMode_AllowAppend))) {
+            m_file_open = true;
+
+            // Get current file size for append offset
+            s64 file_size;
+            if (R_SUCCEEDED(ams::fs::GetFileSize(&file_size, s_log_file_handle))) {
+                m_file_offset = static_cast<size_t>(file_size);
+            }
+
+            // Write header only once per session
+            if (!m_header_written) {
+                const char* header = "\n=== ryu_ldn_nx Log Started ===\n";
+                size_t header_len = std::strlen(header);
+                ams::fs::WriteFile(s_log_file_handle, m_file_offset, header, header_len,
+                                   ams::fs::WriteOption::Flush);
+                m_file_offset += header_len;
+                m_header_written = true;
+            }
+
+            m_last_write_tick = armGetSystemTick();
+        }
     }
 #else
-    if (m_log_to_file && m_file != nullptr) {
-        std::fprintf(static_cast<FILE*>(m_file), "%s\n", message);
+    // Open in append mode
+    m_file = std::fopen(m_log_path, "a");
+
+    if (m_file != nullptr) {
+        m_file_open = true;
+
+        // Write header only once per session
+        if (!m_header_written) {
+            std::fprintf(static_cast<FILE*>(m_file),
+                         "\n=== ryu_ldn_nx Log Started ===\n");
+            m_header_written = true;
+        }
         std::fflush(static_cast<FILE*>(m_file));
+
+        // Simple counter for non-Switch (timeout not critical for testing)
+        m_last_write_tick++;
     }
+#endif
+}
+
+void Logger::close_file() {
+#ifdef __SWITCH__
+    if (m_file_open) {
+        ams::fs::FlushFile(s_log_file_handle);
+        ams::fs::CloseFile(s_log_file_handle);
+        m_file_open = false;
+    }
+#else
+    if (m_file != nullptr) {
+        std::fflush(static_cast<FILE*>(m_file));
+        std::fclose(static_cast<FILE*>(m_file));
+        m_file = nullptr;
+        m_file_open = false;
+    }
+#endif
+}
+
+void Logger::check_idle_timeout() {
+    if (!m_file_open) return;
+
+#ifdef __SWITCH__
+    uint64_t current_tick = armGetSystemTick();
+    uint64_t elapsed_ns = armTicksToNs(current_tick - m_last_write_tick);
+
+    if (elapsed_ns >= FILE_IDLE_TIMEOUT_NS) {
+        close_file();
+    }
+#else
+    // Non-Switch: always close after check (for testing simplicity)
+    // Real timeout only matters on Switch hardware
+    close_file();
 #endif
 }
 
