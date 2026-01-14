@@ -1,0 +1,3 @@
+name,description,module,path
+"brainstorming","Facilitate interactive brainstorming sessions using diverse creative techniques and ideation methods","core","_bmad/core/workflows/brainstorming/workflow.md"
+"party-mode","Orchestrates group discussions between all installed BMAD agents, enabling natural multi-agent conversations","core","_bmad/core/workflows/party-mode/workflow.md"
