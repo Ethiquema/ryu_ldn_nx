@@ -4,7 +4,7 @@
 
 # Compiler settings (host, not Switch)
 CXX := g++
-CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -g -O0
+CXXFLAGS := -std=c++17 -Wall -Wextra -g -O0
 CXXFLAGS += -I../sysmodule/source
 CXXFLAGS += -DTEST_BUILD
 

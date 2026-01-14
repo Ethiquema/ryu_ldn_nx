@@ -170,7 +170,7 @@ const char* FormatDebugLevel(u32 level) {
 
 // Validate port number
 bool IsValidPort(u16 port) {
-    return port > 0 && port <= 65535;
+    return port > 0;  // u16 is always <= 65535
 }
 
 // Validate timeout (reasonable range)
@@ -463,12 +463,11 @@ TEST(network_settings_zero_init) {
 }
 
 TEST(network_settings_assignment) {
-    IpcNetworkSettings settings = {
-        .connect_timeout_ms = 5000,
-        .ping_interval_ms = 10000,
-        .reconnect_delay_ms = 3000,
-        .max_reconnect_attempts = 10
-    };
+    IpcNetworkSettings settings = {};
+    settings.connect_timeout_ms = 5000;
+    settings.ping_interval_ms = 10000;
+    settings.reconnect_delay_ms = 3000;
+    settings.max_reconnect_attempts = 10;
     ASSERT_EQ(settings.connect_timeout_ms, 5000u);
     ASSERT_EQ(settings.ping_interval_ms, 10000u);
     ASSERT_EQ(settings.reconnect_delay_ms, 3000u);
@@ -488,12 +487,11 @@ TEST(debug_settings_zero_init) {
 }
 
 TEST(debug_settings_assignment) {
-    IpcDebugSettings settings = {
-        .enabled = 1,
-        .level = 2,
-        .log_to_file = 1,
-        .reserved = 0
-    };
+    IpcDebugSettings settings = {};
+    settings.enabled = 1;
+    settings.level = 2;
+    settings.log_to_file = 1;
+    settings.reserved = 0;
     ASSERT_EQ(settings.enabled, 1u);
     ASSERT_EQ(settings.level, 2u);
     ASSERT_EQ(settings.log_to_file, 1u);

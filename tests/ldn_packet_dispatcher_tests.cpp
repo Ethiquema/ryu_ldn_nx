@@ -119,76 +119,76 @@ static struct {
 // Callback Functions
 // ============================================================================
 
-static void on_initialize(const LdnHeader& header, const InitializeMessage& msg) {
+static void on_initialize(const LdnHeader& /*header*/, const InitializeMessage& msg) {
     g_callback_state.initialize_called = true;
     g_callback_state.last_initialize = msg;
 }
 
-static void on_connected(const LdnHeader& header, const NetworkInfo& info) {
+static void on_connected(const LdnHeader& /*header*/, const NetworkInfo& info) {
     g_callback_state.connected_called = true;
     g_callback_state.last_network_info = info;
 }
 
-static void on_sync_network(const LdnHeader& header, const NetworkInfo& info) {
+static void on_sync_network(const LdnHeader& /*header*/, const NetworkInfo& info) {
     g_callback_state.sync_network_called = true;
     g_callback_state.last_network_info = info;
 }
 
-static void on_scan_reply(const LdnHeader& header, const NetworkInfo& info) {
+static void on_scan_reply(const LdnHeader& /*header*/, const NetworkInfo& info) {
     g_callback_state.scan_reply_called = true;
     g_callback_state.last_network_info = info;
 }
 
-static void on_scan_reply_end(const LdnHeader& header) {
+static void on_scan_reply_end(const LdnHeader& /*header*/) {
     g_callback_state.scan_reply_end_called = true;
 }
 
-static void on_disconnect(const LdnHeader& header, const DisconnectMessage& msg) {
+static void on_disconnect(const LdnHeader& /*header*/, const DisconnectMessage& /*msg*/) {
     g_callback_state.disconnect_called = true;
 }
 
-static void on_ping(const LdnHeader& header, const PingMessage& msg) {
+static void on_ping(const LdnHeader& /*header*/, const PingMessage& msg) {
     g_callback_state.ping_called = true;
     g_callback_state.last_ping = msg;
 }
 
-static void on_network_error(const LdnHeader& header, const NetworkErrorMessage& msg) {
+static void on_network_error(const LdnHeader& /*header*/, const NetworkErrorMessage& msg) {
     g_callback_state.network_error_called = true;
     g_callback_state.last_error = msg;
 }
 
-static void on_proxy_config(const LdnHeader& header, const ProxyConfig& cfg) {
+static void on_proxy_config(const LdnHeader& /*header*/, const ProxyConfig& cfg) {
     g_callback_state.proxy_config_called = true;
     g_callback_state.last_proxy_config = cfg;
 }
 
-static void on_proxy_connect(const LdnHeader& header, const ProxyConnectRequest& req) {
+static void on_proxy_connect(const LdnHeader& /*header*/, const ProxyConnectRequest& /*req*/) {
     g_callback_state.proxy_connect_called = true;
 }
 
-static void on_proxy_connect_reply(const LdnHeader& header, const ProxyConnectResponse& resp) {
+static void on_proxy_connect_reply(const LdnHeader& /*header*/, const ProxyConnectResponse& /*resp*/) {
     g_callback_state.proxy_connect_reply_called = true;
 }
 
-static void on_proxy_data(const LdnHeader& header, const ProxyDataHeader& hdr, const uint8_t* data, size_t size) {
+static void on_proxy_data(const LdnHeader& /*header*/, const ProxyDataHeader& hdr, const uint8_t* data, size_t size) {
     g_callback_state.proxy_data_called = true;
     g_callback_state.last_proxy_header = hdr;
     g_callback_state.last_proxy_data.assign(data, data + size);
 }
 
-static void on_proxy_disconnect(const LdnHeader& header, const ProxyDisconnectMessage& msg) {
+static void on_proxy_disconnect(const LdnHeader& /*header*/, const ProxyDisconnectMessage& /*msg*/) {
     g_callback_state.proxy_disconnect_called = true;
 }
 
-static void on_reject(const LdnHeader& header, const RejectRequest& req) {
+static void on_reject(const LdnHeader& /*header*/, const RejectRequest& /*req*/) {
     g_callback_state.reject_called = true;
 }
 
-static void on_reject_reply(const LdnHeader& header) {
+static void on_reject_reply(const LdnHeader& /*header*/) {
     g_callback_state.reject_reply_called = true;
 }
 
-static void on_set_accept_policy(const LdnHeader& header, const SetAcceptPolicyRequest& req) {
+static void on_set_accept_policy(const LdnHeader& /*header*/, const SetAcceptPolicyRequest& /*req*/) {
     g_callback_state.set_accept_policy_called = true;
 }
 

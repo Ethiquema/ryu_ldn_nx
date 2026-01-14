@@ -327,6 +327,9 @@ extern Logger g_logger;
  * @brief Log an error message
  *
  * Always logged when debug is enabled (level >= 0).
+ *
+ * @note Uses GNU extension ##__VA_ARGS__ to handle zero variadic arguments.
+ *       This is well-supported by GCC, Clang, and devkitPro toolchains.
  */
 #define LOG_ERROR(fmt, ...) \
     do { \
