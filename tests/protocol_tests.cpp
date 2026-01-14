@@ -131,7 +131,7 @@ TEST(structure_sizes) {
     // Messages
     ASSERT_EQ(sizeof(InitializeMessage), 0x16);  // 22 bytes
     ASSERT_EQ(sizeof(PassphraseMessage), 0x40);  // 64 bytes
-    ASSERT_EQ(sizeof(PingMessage), 8);
+    ASSERT_EQ(sizeof(PingMessage), 2);
     ASSERT_EQ(sizeof(DisconnectMessage), 6);
 
     // Request structures
@@ -174,9 +174,10 @@ TEST(encode_header_only_packet) {
 TEST(encode_ping_packet) {
     uint8_t buffer[64];
     size_t out_size = 0;
-    uint64_t timestamp = 0x123456789ABCDEF0ULL;
+    uint8_t requester = 1;
+    uint8_t id = 42;
 
-    EncodeResult result = encode_ping(buffer, sizeof(buffer), timestamp, out_size);
+    EncodeResult result = encode_ping(buffer, sizeof(buffer), requester, id, out_size);
 
     ASSERT_EQ(result, EncodeResult::Success);
     ASSERT_EQ(out_size, sizeof(LdnHeader) + sizeof(PingMessage));
@@ -189,7 +190,8 @@ TEST(encode_ping_packet) {
 
     // Verify payload
     PingMessage* msg = reinterpret_cast<PingMessage*>(buffer + sizeof(LdnHeader));
-    ASSERT_EQ(msg->timestamp, timestamp);
+    ASSERT_EQ(msg->requester, requester);
+    ASSERT_EQ(msg->id, id);
 }
 
 TEST(encode_initialize_packet) {
@@ -331,7 +333,8 @@ TEST(decode_ping_packet) {
     header->data_size = sizeof(PingMessage);
 
     PingMessage* msg_in = reinterpret_cast<PingMessage*>(buffer + sizeof(LdnHeader));
-    msg_in->timestamp = 0xFEDCBA9876543210ULL;
+    msg_in->requester = 0;
+    msg_in->id = 99;
 
     // Decode
     LdnHeader header_out;
@@ -339,7 +342,8 @@ TEST(decode_ping_packet) {
     DecodeResult result = decode_ping(buffer, sizeof(buffer), header_out, msg_out);
 
     ASSERT_EQ(result, DecodeResult::Success);
-    ASSERT_EQ(msg_out.timestamp, 0xFEDCBA9876543210ULL);
+    ASSERT_EQ(msg_out.requester, 0);
+    ASSERT_EQ(msg_out.id, 99);
 }
 
 TEST(check_complete_packet_success) {
@@ -380,10 +384,11 @@ TEST(check_complete_packet_incomplete) {
 TEST(roundtrip_ping) {
     uint8_t buffer[64];
     size_t encoded_size = 0;
-    uint64_t original_ts = 0x1122334455667788ULL;
+    uint8_t original_requester = 0;
+    uint8_t original_id = 55;
 
     // Encode
-    EncodeResult enc_result = encode_ping(buffer, sizeof(buffer), original_ts, encoded_size);
+    EncodeResult enc_result = encode_ping(buffer, sizeof(buffer), original_requester, original_id, encoded_size);
     ASSERT_EQ(enc_result, EncodeResult::Success);
 
     // Decode
@@ -392,7 +397,8 @@ TEST(roundtrip_ping) {
     DecodeResult dec_result = decode_ping(buffer, encoded_size, header, msg);
 
     ASSERT_EQ(dec_result, DecodeResult::Success);
-    ASSERT_EQ(msg.timestamp, original_ts);
+    ASSERT_EQ(msg.requester, original_requester);
+    ASSERT_EQ(msg.id, original_id);
 }
 
 TEST(roundtrip_disconnect) {
@@ -469,10 +475,10 @@ TEST(buffer_append_data) {
 TEST(buffer_complete_packet_single_append) {
     PacketBuffer<1024> buffer;
 
-    // Create a complete packet
+    // Create a complete packet (requester=1, id=23)
     uint8_t packet[sizeof(LdnHeader) + sizeof(PingMessage)];
     size_t packet_size;
-    encode_ping(packet, sizeof(packet), 12345, packet_size);
+    encode_ping(packet, sizeof(packet), 1, 23, packet_size);
 
     // Append entire packet
     buffer.append(packet, packet_size);
@@ -488,10 +494,10 @@ TEST(buffer_complete_packet_single_append) {
 TEST(buffer_fragmented_packet_2_parts) {
     PacketBuffer<1024> buffer;
 
-    // Create a complete packet
+    // Create a complete packet (requester=1, id=23)
     uint8_t packet[sizeof(LdnHeader) + sizeof(PingMessage)];
     size_t packet_size;
-    encode_ping(packet, sizeof(packet), 12345, packet_size);
+    encode_ping(packet, sizeof(packet), 1, 23, packet_size);
 
     // Append in 2 parts
     size_t part1 = sizeof(LdnHeader) / 2;  // Half of header
@@ -507,10 +513,10 @@ TEST(buffer_fragmented_packet_2_parts) {
 TEST(buffer_fragmented_packet_n_parts) {
     PacketBuffer<1024> buffer;
 
-    // Create a complete packet
+    // Create a complete packet (requester=1, id=42)
     uint8_t packet[sizeof(LdnHeader) + sizeof(PingMessage)];
     size_t packet_size;
-    encode_ping(packet, sizeof(packet), 12345, packet_size);
+    encode_ping(packet, sizeof(packet), 1, 42, packet_size);
 
     // Append byte by byte
     for (size_t i = 0; i < packet_size - 1; i++) {
@@ -530,9 +536,9 @@ TEST(buffer_multiple_packets) {
     uint8_t packet1[32], packet2[32], packet3[32];
     size_t size1, size2, size3;
 
-    encode_ping(packet1, sizeof(packet1), 111, size1);
-    encode_ping(packet2, sizeof(packet2), 222, size2);
-    encode_ping(packet3, sizeof(packet3), 333, size3);
+    encode_ping(packet1, sizeof(packet1), 1, 11, size1);
+    encode_ping(packet2, sizeof(packet2), 0, 22, size2);
+    encode_ping(packet3, sizeof(packet3), 1, 33, size3);
 
     // Append all at once
     buffer.append(packet1, size1);
@@ -563,7 +569,7 @@ TEST(buffer_extract_packet) {
 
     uint8_t packet[32];
     size_t packet_size;
-    encode_ping(packet, sizeof(packet), 0xABCD, packet_size);
+    encode_ping(packet, sizeof(packet), 0, 77, packet_size);
 
     buffer.append(packet, packet_size);
 
@@ -579,7 +585,8 @@ TEST(buffer_extract_packet) {
     LdnHeader header;
     PingMessage msg;
     decode_ping(out, out_size, header, msg);
-    ASSERT_EQ(msg.timestamp, 0xABCD);
+    ASSERT_EQ(msg.requester, 0);
+    ASSERT_EQ(msg.id, 77);
 }
 
 TEST(buffer_overflow_protection) {

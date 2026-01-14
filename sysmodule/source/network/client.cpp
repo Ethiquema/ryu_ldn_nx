@@ -133,6 +133,7 @@ RyuLdnClient::RyuLdnClient()
     , m_ping_timeout_ms(10000)
     , m_pending_ping_count(0)
     , m_last_rtt_ms(0)
+    , m_ping_id(0)
 {
     generate_mac_address();
 }
@@ -163,6 +164,7 @@ RyuLdnClient::RyuLdnClient(const RyuLdnClientConfig& config)
     , m_ping_timeout_ms(10000)
     , m_pending_ping_count(0)
     , m_last_rtt_ms(0)
+    , m_ping_id(0)
 {
     generate_mac_address();
 }
@@ -673,6 +675,8 @@ ClientOpResult RyuLdnClient::send_ping() {
     }
 
     protocol::PingMessage msg{};
+    msg.requester = 1;  // Client requesting
+    msg.id = m_ping_id++;
     ClientResult result = m_tcp_client.send_ping(msg);
     if (result != ClientResult::Success) {
         if (result == ClientResult::ConnectionLost) {
@@ -781,25 +785,24 @@ void RyuLdnClient::handle_packet(protocol::PacketId id,
     // Handle protocol-level packets
     switch (id) {
         case protocol::PacketId::Ping: {
-            // Server echoed back our ping (pong) or sent its own ping
-            // Either way, connection is alive - update pong time
-            if (m_pending_ping_count > 0) {
-                m_pending_ping_count = 0;
+            // Handle ping according to RyuLDN protocol
+            if (size >= sizeof(protocol::PingMessage)) {
+                const auto* ping_msg =
+                    reinterpret_cast<const protocol::PingMessage*>(data);
 
-                // Calculate RTT if we have a timestamp
-                if (size >= sizeof(protocol::PingMessage)) {
-                    const auto* ping_msg =
-                        reinterpret_cast<const protocol::PingMessage*>(data);
-
-                    // Get current time (approximation - ideally caller provides)
-                    // For now, we just note that pong was received
-                    // RTT would be: current_time - ping_msg->timestamp
-                    // But we don't have current_time here, so we store the
-                    // timestamp and let update() calculate if needed
-                    (void)ping_msg;  // Suppress unused warning
+                if (ping_msg->requester == 0) {
+                    // Server requested ping - echo it back immediately
+                    protocol::PingMessage response = *ping_msg;
+                    m_tcp_client.send_ping(response);
+                    LOG_VERBOSE("Echoed ping id=%u back to server", ping_msg->id);
+                } else {
+                    // Response to our ping - connection is alive
+                    if (m_pending_ping_count > 0) {
+                        m_pending_ping_count = 0;
+                    }
+                    m_last_pong_time_ms = m_last_ping_time_ms;
                 }
             }
-            m_last_pong_time_ms = m_last_ping_time_ms;  // Mark pong received
             break;
         }
 
@@ -906,10 +909,11 @@ bool RyuLdnClient::is_handshake_timeout(uint64_t current_time_ms) const {
  * @brief Process handshake response from server
  *
  * Handles the server's response to our Initialize message.
- * Valid responses include:
- * - SyncNetwork: Server accepted, we're registered
- * - NetworkError: Server rejected with error code
- * - Ping: Server acknowledgment (some implementations)
+ * The RyuLDN server responds with an Initialize packet containing:
+ * - Assigned session ID (16 bytes)
+ * - Assigned MAC address (6 bytes)
+ *
+ * This matches the official Ryujinx client behavior.
  *
  * @param id Packet ID received
  * @param data Packet data
@@ -922,6 +926,27 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
     LOG_VERBOSE("Received handshake response: packet_id=%u", static_cast<uint32_t>(id));
 
     switch (id) {
+        case protocol::PacketId::Initialize: {
+            // Server responds with Initialize containing assigned ID and MAC
+            // This is the expected response from RyuLDN server
+            if (size >= sizeof(protocol::InitializeMessage)) {
+                const auto* init_msg =
+                    reinterpret_cast<const protocol::InitializeMessage*>(data);
+
+                // Store assigned session ID and MAC address
+                std::memcpy(m_session_id.data, init_msg->id.data, sizeof(m_session_id.data));
+                std::memcpy(m_mac_address.data, init_msg->mac_address.data, sizeof(m_mac_address.data));
+
+                LOG_INFO("Handshake successful - assigned MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                         m_mac_address.data[0], m_mac_address.data[1], m_mac_address.data[2],
+                         m_mac_address.data[3], m_mac_address.data[4], m_mac_address.data[5]);
+            }
+
+            m_last_error_code = protocol::NetworkErrorCode::None;
+            m_state_machine.process_event(ConnectionEvent::HandshakeSuccess);
+            return true;
+        }
+
         case protocol::PacketId::NetworkError: {
             // Server rejected our handshake
             if (size >= sizeof(protocol::NetworkErrorMessage)) {
@@ -951,18 +976,8 @@ bool RyuLdnClient::process_handshake_response(protocol::PacketId id,
         }
 
         case protocol::PacketId::SyncNetwork: {
-            // Server accepted our initialization
-            // SyncNetwork contains NetworkInfo with our assigned session info
-            LOG_INFO("Handshake successful - ready");
-            m_last_error_code = protocol::NetworkErrorCode::None;
-            m_state_machine.process_event(ConnectionEvent::HandshakeSuccess);
-            return true;
-        }
-
-        case protocol::PacketId::Ping: {
-            // Some server implementations send Ping as acknowledgment
-            // Consider this a successful handshake
-            LOG_INFO("Handshake successful (ping ack) - ready");
+            // Alternative: some server versions may send SyncNetwork
+            LOG_INFO("Handshake successful (SyncNetwork) - ready");
             m_last_error_code = protocol::NetworkErrorCode::None;
             m_state_machine.process_event(ConnectionEvent::HandshakeSuccess);
             return true;

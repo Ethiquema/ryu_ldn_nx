@@ -230,9 +230,10 @@ inline EncodeResult encode_passphrase(uint8_t* buffer, size_t buffer_size,
  * @brief Encode Ping message
  */
 inline EncodeResult encode_ping(uint8_t* buffer, size_t buffer_size,
-                                uint64_t timestamp, size_t& out_size) {
+                                uint8_t requester, uint8_t id, size_t& out_size) {
     PingMessage msg{};
-    msg.timestamp = timestamp;
+    msg.requester = requester;
+    msg.id = id;
     return encode(buffer, buffer_size, PacketId::Ping, msg, out_size);
 }
 

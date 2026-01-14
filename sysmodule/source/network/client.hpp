@@ -467,6 +467,7 @@ private:
     uint32_t m_ping_timeout_ms;             ///< Ping response timeout (default: 10000ms)
     uint32_t m_pending_ping_count;          ///< Number of pings without response
     uint64_t m_last_rtt_ms;                 ///< Last measured round-trip time
+    uint8_t m_ping_id;                      ///< Incrementing ping ID for tracking
 
     // ========================================================================
     // Internal Methods

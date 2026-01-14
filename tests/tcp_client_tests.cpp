@@ -266,7 +266,8 @@ TEST(send_ping_not_connected) {
     TcpClient client;
 
     PingMessage msg{};
-    msg.timestamp = 12345;
+    msg.requester = 1;
+    msg.id = 42;
     ClientResult result = client.send_ping(msg);
 
     ASSERT_EQ(result, ClientResult::NotConnected);

@@ -562,29 +562,28 @@ struct __attribute__((packed)) PassphraseMessage {
 static_assert(sizeof(PassphraseMessage) == 0x40, "PassphraseMessage must be 64 bytes");
 
 /**
- * @brief Ping Message - 8 bytes
+ * @brief Ping Message - 2 bytes
  *
- * Keepalive packet sent periodically to:
- * 1. Maintain TCP connection (prevent timeout)
- * 2. Measure round-trip latency
- * 3. Detect disconnections
+ * Keepalive packet sent periodically to detect disconnections.
+ * Server sends Ping with Requester=0, client must echo it back.
  *
  * ## Wire Format
  * ```
  * Offset  Size  Field      Description
- * 0x00    8     timestamp  Unix timestamp in milliseconds
+ * 0x00    1     requester  0 = server requested, 1 = client requested
+ * 0x01    1     id         Ping ID for matching request/response
  * ```
  *
- * ## Usage
- * - Client sends Ping periodically (e.g., every 10 seconds)
- * - Server echoes back with same timestamp
- * - Client calculates RTT from response time
- * - If no response within timeout, assume disconnection
+ * ## Protocol
+ * - Server sends Ping with requester=0 and unique id
+ * - Client must echo back the exact same packet
+ * - Server tracks id to detect dropped connections
  */
 struct __attribute__((packed)) PingMessage {
-    uint64_t timestamp;  ///< Unix timestamp in milliseconds (for RTT calculation)
+    uint8_t requester;  ///< 0 = server requested (echo back), 1 = client requested
+    uint8_t id;         ///< Ping ID for matching request/response
 };
-static_assert(sizeof(PingMessage) == 8, "PingMessage must be 8 bytes");
+static_assert(sizeof(PingMessage) == 2, "PingMessage must be 2 bytes");
 
 /**
  * @brief Disconnect Message - 6 bytes
