@@ -7,6 +7,7 @@
  */
 
 #include "ldn_icommunication.hpp"
+#include "ldn_shared_state.hpp"
 #include "../debug/log.hpp"
 #include <arpa/inet.h>
 
@@ -89,6 +90,11 @@ Result ICommunicationService::Initialize(const ams::sf::ClientProcessId& client_
     // Reset disconnect reason on fresh initialization
     m_disconnect_reason = DisconnectReason::None;
 
+    // Update shared state for overlay
+    auto& shared_state = SharedState::GetInstance();
+    shared_state.SetGameActive(true, m_client_process_id);
+    shared_state.SetLdnState(static_cast<ams::mitm::ldn::CommState>(m_state_machine.GetState()));
+
     LOG_VERBOSE("LDN Initialized successfully");
     R_SUCCEED();
 }
@@ -104,6 +110,10 @@ Result ICommunicationService::Finalize() {
 
     // Transition back to None state
     m_state_machine.Finalize();
+
+    // Update shared state - game is no longer active
+    auto& shared_state = SharedState::GetInstance();
+    shared_state.SetGameActive(false, 0);
 
     // Clear client info
     m_client_process_id = 0;
@@ -251,6 +261,9 @@ Result ICommunicationService::OpenAccessPoint() {
         R_RETURN(rc);
     }
 
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::AccessPoint);
+
     R_SUCCEED();
 }
 
@@ -263,6 +276,9 @@ Result ICommunicationService::CloseAccessPoint() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::Initialized);
 
     R_SUCCEED();
 }
@@ -302,6 +318,9 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::AccessPointCreated);
+
     R_SUCCEED();
 }
 
@@ -312,6 +331,9 @@ Result ICommunicationService::DestroyNetwork() {
     // Server will be notified via disconnect or explicit message
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::AccessPoint);
 
     R_SUCCEED();
 }
@@ -348,6 +370,9 @@ Result ICommunicationService::OpenStation() {
         R_RETURN(rc);
     }
 
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::Station);
+
     R_SUCCEED();
 }
 
@@ -360,6 +385,9 @@ Result ICommunicationService::CloseStation() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::Initialized);
 
     R_SUCCEED();
 }
@@ -402,6 +430,9 @@ Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo&
     // Store network info
     std::memcpy(&m_network_info, &data, sizeof(m_network_info));
 
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::StationConnected);
+
     R_SUCCEED();
 }
 
@@ -414,6 +445,9 @@ Result ICommunicationService::Disconnect() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+
+    // Update shared state
+    SharedState::GetInstance().SetLdnState(CommState::Station);
 
     R_SUCCEED();
 }
