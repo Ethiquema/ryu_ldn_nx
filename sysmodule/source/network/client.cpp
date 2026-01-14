@@ -373,8 +373,13 @@ void RyuLdnClient::disconnect() {
     // Close TCP connection
     m_tcp_client.disconnect();
 
-    // Update state machine
+    // Update state machine - Disconnect moves to Disconnecting state
     m_state_machine.process_event(ConnectionEvent::Disconnect);
+
+    // Complete the disconnect - ConnectionLost moves Disconnecting -> Disconnected
+    if (m_state_machine.get_state() == ConnectionState::Disconnecting) {
+        m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+    }
 
     // Reset reconnection state
     m_reconnect_manager.reset();
