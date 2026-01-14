@@ -29,11 +29,38 @@ ICommunicationService::ICommunicationService()
     , m_subnet_mask(0)
     , m_server_client(ryu_ldn::network::RyuLdnClientConfig(ryu_ldn::ipc::g_config))
     , m_server_connected(false)
+    , m_node_mapper()
+    , m_proxy_buffer()
+    , m_response_event(os::EventClearMode_ManualClear)
+    , m_scan_event(os::EventClearMode_ManualClear)
+    , m_error_event(os::EventClearMode_ManualClear)
+    , m_reject_event(os::EventClearMode_ManualClear)
+    , m_last_response_id(ryu_ldn::protocol::PacketId::Initialize)
+    , m_scan_results{}
+    , m_scan_result_count(0)
+    , m_advertise_data{}
+    , m_advertise_data_size(0)
+    , m_game_version{}
+    , m_network_connected(false)
+    , m_last_network_error(ryu_ldn::protocol::NetworkErrorCode::None)
+    , m_use_p2p_proxy(!ryu_ldn::ipc::g_config.ldn.disable_p2p)
+    , m_proxy_config{}
+    , m_external_proxy_config{}
 {
-    // State machine handles event creation internally
+    // Configure packet callback to receive server responses
+    // Use static callback with user_data to route to instance method
+    m_server_client.set_packet_callback(
+        [](ryu_ldn::protocol::PacketId id, const uint8_t* data, size_t size, void* user_data) {
+            auto* self = static_cast<ICommunicationService*>(user_data);
+            self->HandleServerPacket(id, data, size);
+        },
+        this
+    );
 }
 
 ICommunicationService::~ICommunicationService() {
+    LOG_INFO("ICommunicationService destructor called (state=%s)",
+             LdnStateMachine::StateToString(m_state_machine.GetState()));
     // Ensure server is disconnected
     DisconnectFromServer();
 }
@@ -136,6 +163,7 @@ Result ICommunicationService::InitializeSystem2(u64 unk, const ams::sf::ClientPr
 }
 
 Result ICommunicationService::Finalize() {
+    LOG_INFO("Finalize() called");
     // Disconnect from RyuLdn server if connected
     DisconnectFromServer();
 
@@ -163,7 +191,10 @@ Result ICommunicationService::Finalize() {
 // ============================================================================
 
 Result ICommunicationService::GetState(ams::sf::Out<u32> state) {
-    state.SetValue(static_cast<u32>(m_state_machine.GetState()));
+    auto current_state = m_state_machine.GetState();
+    LOG_INFO("GetState() called, returning state=%u (%s)",
+             static_cast<u32>(current_state), LdnStateMachine::StateToString(current_state));
+    state.SetValue(static_cast<u32>(current_state));
 
     // If error_state is set and we have a disconnect reason, return error
     if (m_error_state != 0) {
@@ -176,6 +207,8 @@ Result ICommunicationService::GetState(ams::sf::Out<u32> state) {
 }
 
 Result ICommunicationService::GetNetworkInfo(ams::sf::Out<NetworkInfo> buffer) {
+    LOG_VERBOSE("GetNetworkInfo() called, node_count=%u, max=%u",
+                m_network_info.ldn.nodeCount, m_network_info.ldn.nodeCountMax);
     buffer.SetValue(m_network_info);
     R_SUCCEED();
 }
@@ -239,10 +272,17 @@ Result ICommunicationService::Scan(
     u16 channel,
     ScanFilter filter)
 {
-    AMS_UNUSED(buffer);
     AMS_UNUSED(channel);
 
+    LOG_INFO("Scan() called, local_comm_id=0x%lx", filter.networkId.intentId.localCommunicationId);
+
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
+
+    // Reset scan results buffer and events (like Ryujinx _availableGames.Clear() and _scan.Reset())
+    m_scan_result_count = 0;
+    std::memset(m_scan_results, 0, sizeof(m_scan_results));
+    m_scan_event.Clear();
+    m_error_event.Clear();
 
     // Build scan filter for server
     // Convert from ams::mitm::ldn::ScanFilter to ryu_ldn::protocol::ScanFilterFull
@@ -266,13 +306,71 @@ Result ICommunicationService::Scan(
     // Send scan request
     auto send_result = m_server_client.send_scan(scan_filter);
     if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+        LOG_ERROR("Scan: send failed");
         count.SetValue(0);
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
-    // TODO: Wait for scan results from server callback
-    // For now, return empty list - actual results will come via packet callback
-    count.SetValue(0);
+    LOG_INFO("Scan: sent request, waiting for ScanReplyEnd...");
+
+    // Wait for scan results with polling for network updates
+    // Unlike Ryujinx which has async receive, we need to call update() to process incoming data
+    constexpr uint64_t scan_timeout_ms = 1000;
+    uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    uint64_t current_time_ms = start_time_ms;
+    bool scan_complete = false;
+    bool error_received = false;
+
+    while ((current_time_ms - start_time_ms) < scan_timeout_ms) {
+        // Process incoming packets - this is required because we don't have async receive
+        m_server_client.update(current_time_ms);
+
+        // Check if scan completed or error received
+        if (m_scan_event.TryWait()) {
+            scan_complete = true;
+            break;
+        }
+        if (m_error_event.TryWait()) {
+            error_received = true;
+            break;
+        }
+
+        // Check if connection was lost
+        if (!m_server_client.is_connected()) {
+            LOG_ERROR("Scan: connection lost");
+            count.SetValue(0);
+            R_RETURN(MAKERESULT(0x10, 4));
+        }
+
+        // Short sleep to avoid busy-waiting (but still responsive)
+        svcSleepThread(5 * 1000000ULL); // 5ms
+        current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    }
+
+    if (error_received) {
+        LOG_ERROR("Scan: error received from server");
+        count.SetValue(0);
+        R_RETURN(MAKERESULT(0x10, 5));
+    }
+
+    if (!scan_complete) {
+        LOG_WARN("Scan: timeout waiting for ScanReplyEnd");
+    }
+
+    // Copy results to output buffer
+    size_t result_count = m_scan_result_count;
+    size_t max_results = buffer.GetSize();
+    if (result_count > max_results) {
+        result_count = max_results;
+    }
+
+    for (size_t i = 0; i < result_count; i++) {
+        buffer[i] = m_scan_results[i];
+    }
+
+    count.SetValue(static_cast<u32>(result_count));
+    LOG_INFO("Scan: returning %zu networks", result_count);
+
     R_SUCCEED();
 }
 
@@ -299,6 +397,7 @@ Result ICommunicationService::OpenAccessPoint() {
 }
 
 Result ICommunicationService::CloseAccessPoint() {
+    LOG_INFO("CloseAccessPoint() called");
     // Disconnect from server first
     DisconnectFromServer();
 
@@ -315,6 +414,8 @@ Result ICommunicationService::CloseAccessPoint() {
 }
 
 Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
+    LOG_INFO("CreateNetwork called");
+
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
     auto result = m_state_machine.CreateNetwork();
@@ -341,16 +442,45 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
     request.network_config.node_count_max = data.networkConfig.nodeCountMax;
     request.network_config.local_communication_version = data.networkConfig.localCommunicationVersion;
 
+    // Copy game version to RyuNetworkConfig (like Ryujinx ConfigureAccessPoint)
+    // _gameVersion.AsSpan().CopyTo(request.GameVersion.AsSpan())
+    std::memcpy(request.ryu_network_config.game_version, m_game_version,
+                sizeof(request.ryu_network_config.game_version));
+
+    LOG_VERBOSE("CreateNetwork: local_comm_id=0x%lx, scene_id=%u, channel=%u, max_nodes=%u",
+                request.network_config.intent_id.local_communication_id,
+                request.network_config.intent_id.scene_id,
+                request.network_config.channel,
+                request.network_config.node_count_max);
+
     // Send to server
     auto send_result = m_server_client.send_create_access_point(request);
     if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+        LOG_ERROR("CreateNetwork: send failed: %s",
+                  ryu_ldn::network::client_op_result_to_string(send_result));
         // Rollback state on send failure
         m_state_machine.DestroyNetwork();
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
+    LOG_INFO("CreateNetwork: sent CreateAccessPoint to server, waiting for Connected response...");
+
+    // Wait for Connected response from server (contains NetworkInfo)
+    constexpr uint64_t response_timeout_ms = 5000;
+    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
+        LOG_ERROR("CreateNetwork: did not receive Connected response from server");
+        // Rollback state on timeout/error
+        m_state_machine.DestroyNetwork();
+        R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
+    }
+
+    LOG_INFO("CreateNetwork: received Connected response, network created successfully");
+
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::AccessPointCreated);
+
+    // Signal state change event so the game knows the network is ready
+    m_state_machine.SignalStateChange();
 
     R_SUCCEED();
 }
@@ -370,18 +500,45 @@ Result ICommunicationService::DestroyNetwork() {
 }
 
 Result ICommunicationService::SetAdvertiseData(ams::sf::InAutoSelectBuffer data) {
-    // Advertise data is sent as part of network info updates
-    // Store locally for now - will be sent with CreateNetwork
-    AMS_UNUSED(data);
+    LOG_INFO("SetAdvertiseData() called, size=%zu", data.GetSize());
 
-    // TODO: If network already created, send update to server
+    // Store advertise data locally (like Ryujinx _advertiseData)
+    m_advertise_data_size = std::min(data.GetSize(), sizeof(m_advertise_data));
+    if (m_advertise_data_size > 0) {
+        std::memcpy(m_advertise_data, data.GetPointer(), m_advertise_data_size);
+    }
+
+    // Like Ryujinx: only send if _networkConnected
+    // if (_networkConnected) { SendAsync(...); }
+    if (m_network_connected) {
+        auto send_result = m_server_client.send_set_advertise_data(m_advertise_data, m_advertise_data_size);
+        if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+            LOG_ERROR("SetAdvertiseData: send failed: %s",
+                      ryu_ldn::network::client_op_result_to_string(send_result));
+            R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+        }
+        LOG_VERBOSE("SetAdvertiseData: sent to server");
+    }
 
     R_SUCCEED();
 }
 
 Result ICommunicationService::SetStationAcceptPolicy(u8 policy) {
-    AMS_UNUSED(policy);
-    // TODO: Implement station accept policy
+    LOG_INFO("SetStationAcceptPolicy() called, policy=%u", policy);
+
+    // Like Ryujinx: only send if _networkConnected
+    // if (_networkConnected) { SendAsync(...); }
+    if (m_network_connected) {
+        auto accept_policy = static_cast<ryu_ldn::protocol::AcceptPolicy>(policy);
+        auto send_result = m_server_client.send_set_accept_policy(accept_policy);
+        if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+            LOG_ERROR("SetStationAcceptPolicy: send failed: %s",
+                      ryu_ldn::network::client_op_result_to_string(send_result));
+            R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+        }
+        LOG_VERBOSE("SetStationAcceptPolicy: sent to server");
+    }
+
     R_SUCCEED();
 }
 
@@ -458,20 +615,50 @@ Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo&
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
+    LOG_INFO("Connect: sent Connect request, waiting for Connected response...");
+
+    // Wait for Connected response from server (like Ryujinx _apConnected.WaitOne)
+    constexpr uint64_t response_timeout_ms = 4000; // FailureTimeout in Ryujinx
+    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
+        LOG_ERROR("Connect: did not receive Connected response from server");
+        // Rollback state on timeout/error
+        m_state_machine.Disconnect();
+        R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
+    }
+
+    LOG_INFO("Connect: received Connected response, connected to network");
+
     // Store network info
     std::memcpy(&m_network_info, &data, sizeof(m_network_info));
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::StationConnected);
 
+    // Signal state change event so the game knows we're connected
+    m_state_machine.SignalStateChange();
+
     R_SUCCEED();
 }
 
 Result ICommunicationService::Disconnect() {
+    LOG_INFO("Disconnect() called");
+
     auto result = m_state_machine.Disconnect();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
 
-    // Server disconnect is handled by CloseStation or connection loss
+    // Send disconnect notification to server (like Ryujinx DisconnectNetwork)
+    if (IsServerConnected() && m_network_connected) {
+        auto send_result = m_server_client.send_disconnect_network();
+        if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+            LOG_WARN("Disconnect: failed to send disconnect to server: %s",
+                     ryu_ldn::network::client_op_result_to_string(send_result));
+            // Continue anyway - server will detect disconnect
+        } else {
+            LOG_VERBOSE("Disconnect: sent disconnect notification to server");
+        }
+    }
+
+    m_network_connected = false;
     m_disconnect_reason = DisconnectReason::User;
 
     // Clear network info
@@ -537,8 +724,10 @@ Result ICommunicationService::CreateNetworkPrivate(
                     sizeof(request.address_list));
     }
 
-    // Ryu network config (external proxy settings) - set to 0 for now
+    // Ryu network config - copy game version (like Ryujinx ConfigureAccessPoint)
     std::memset(&request.ryu_network_config, 0, sizeof(request.ryu_network_config));
+    std::memcpy(request.ryu_network_config.game_version, m_game_version,
+                sizeof(request.ryu_network_config.game_version));
 
     // Send to server
     auto send_result = m_server_client.send_create_access_point_private(request);
@@ -548,8 +737,23 @@ Result ICommunicationService::CreateNetworkPrivate(
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
+    LOG_INFO("CreateNetworkPrivate: sent request, waiting for Connected response...");
+
+    // Wait for Connected response from server (like Ryujinx CreateNetworkCommon)
+    constexpr uint64_t response_timeout_ms = 4000; // FailureTimeout in Ryujinx
+    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
+        LOG_ERROR("CreateNetworkPrivate: did not receive Connected response from server");
+        m_state_machine.DestroyNetwork();
+        R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
+    }
+
+    LOG_INFO("CreateNetworkPrivate: received Connected response");
+
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::AccessPointCreated);
+
+    // Signal state change event
+    m_state_machine.SignalStateChange();
 
     R_SUCCEED();
 }
@@ -598,8 +802,23 @@ Result ICommunicationService::ConnectPrivate(ConnectPrivateData data) {
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
 
+    LOG_INFO("ConnectPrivate: sent request, waiting for Connected response...");
+
+    // Wait for Connected response from server (like Ryujinx ConnectCommon)
+    constexpr uint64_t response_timeout_ms = 4000; // FailureTimeout in Ryujinx
+    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
+        LOG_ERROR("ConnectPrivate: did not receive Connected response from server");
+        m_state_machine.Disconnect();
+        R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
+    }
+
+    LOG_INFO("ConnectPrivate: received Connected response");
+
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::StationConnected);
+
+    // Signal state change event
+    m_state_machine.SignalStateChange();
 
     R_SUCCEED();
 }
@@ -614,13 +833,62 @@ Result ICommunicationService::SetWirelessControllerRestriction() {
 }
 
 Result ICommunicationService::Reject(u32 nodeId) {
-    R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
+    LOG_INFO("Reject() called, nodeId=%u", nodeId);
 
-    // TODO: Send reject request to server
-    // For now, just acknowledge
-    AMS_UNUSED(nodeId);
+    // Like Ryujinx: check _networkConnected instead of just IsServerConnected
+    // if (_networkConnected) { ... } else { return ResultCode.InvalidState; }
+    if (!m_network_connected) {
+        LOG_WARN("Reject: not in network session");
+        R_RETURN(MAKERESULT(0x10, 2)); // InvalidState - not in network
+    }
 
-    R_SUCCEED();
+    // Clear reject event before sending (like Ryujinx _reject.Reset())
+    m_reject_event.Clear();
+    m_error_event.Clear();
+
+    // Send reject request to server (like Ryujinx Reject)
+    auto send_result = m_server_client.send_reject(nodeId, ryu_ldn::protocol::DisconnectReason::Rejected);
+    if (send_result != ryu_ldn::network::ClientOpResult::Success) {
+        LOG_ERROR("Reject: send failed: %s",
+                  ryu_ldn::network::client_op_result_to_string(send_result));
+        R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+    }
+
+    // Wait for RejectReply from server
+    // Like Ryujinx: int index = WaitHandle.WaitAny([_reject, _error], InactiveTimeout);
+    constexpr uint64_t reject_timeout_ms = 6000; // InactiveTimeout (was 4000 FailureTimeout)
+    uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    uint64_t current_time_ms = start_time_ms;
+
+    while ((current_time_ms - start_time_ms) < reject_timeout_ms) {
+        m_server_client.update(current_time_ms);
+
+        if (m_reject_event.TryWait()) {
+            LOG_INFO("Reject: received RejectReply");
+            // Like Ryujinx: return (ConsumeNetworkError() != NetworkError.None) ? InvalidState : Success
+            if (ConsumeNetworkError() != ryu_ldn::protocol::NetworkErrorCode::None) {
+                R_RETURN(MAKERESULT(0x10, 4)); // InvalidState due to error
+            }
+            R_SUCCEED();
+        }
+
+        if (m_error_event.TryWait()) {
+            LOG_ERROR("Reject: error received");
+            R_RETURN(MAKERESULT(0x10, 4)); // Error
+        }
+
+        if (!m_server_client.is_connected()) {
+            LOG_ERROR("Reject: connection lost");
+            R_RETURN(MAKERESULT(0x10, 5)); // Connection lost
+        }
+
+        svcSleepThread(5 * 1000000ULL); // 5ms
+        current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    }
+
+    // Like Ryujinx: timeout returns InvalidState
+    LOG_WARN("Reject: timeout waiting for RejectReply");
+    R_RETURN(MAKERESULT(0x10, 2)); // InvalidState on timeout
 }
 
 Result ICommunicationService::AddAcceptFilterEntry() {
@@ -631,6 +899,285 @@ Result ICommunicationService::AddAcceptFilterEntry() {
 Result ICommunicationService::ClearAcceptFilter() {
     // Stub - accept filter not implemented
     R_SUCCEED();
+}
+
+// ============================================================================
+// Packet Callback Handlers
+// ============================================================================
+
+void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, const uint8_t* data, size_t size) {
+    LOG_VERBOSE("Received packet from server: type=%u, size=%zu",
+                static_cast<unsigned>(id), size);
+
+    switch (id) {
+        case ryu_ldn::protocol::PacketId::Connected: {
+            // Server confirms we joined/created a network - contains NetworkInfo
+            if (size >= sizeof(ryu_ldn::protocol::NetworkInfo)) {
+                const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
+
+                // Copy to our local NetworkInfo (layout is compatible)
+                std::memcpy(&m_network_info, net_info, sizeof(m_network_info));
+
+                // Set network connected flag (like Ryujinx _networkConnected = true)
+                m_network_connected = true;
+
+                LOG_INFO("Received Connected: node_count=%u, max=%u",
+                         m_network_info.ldn.nodeCount,
+                         m_network_info.ldn.nodeCountMax);
+
+                // Update session info in shared state
+                auto& shared_state = SharedState::GetInstance();
+                bool is_host = (m_network_info.ldn.nodes[0].isConnected &&
+                               m_state_machine.GetState() == CommState::AccessPointCreated);
+                shared_state.SetSessionInfo(
+                    m_network_info.ldn.nodeCount,
+                    m_network_info.ldn.nodeCountMax,
+                    0, // local_node_id - TODO: determine from nodes array
+                    is_host
+                );
+            } else {
+                LOG_ERROR("Connected packet too small: %zu < %zu",
+                          size, sizeof(ryu_ldn::protocol::NetworkInfo));
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::SyncNetwork: {
+            // Server sends updated network state - contains NetworkInfo
+            if (size >= sizeof(ryu_ldn::protocol::NetworkInfo)) {
+                const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
+                std::memcpy(&m_network_info, net_info, sizeof(m_network_info));
+
+                LOG_VERBOSE("Received SyncNetwork: node_count=%u",
+                            m_network_info.ldn.nodeCount);
+
+                // Update session info
+                auto& shared_state = SharedState::GetInstance();
+                shared_state.SetSessionInfo(
+                    m_network_info.ldn.nodeCount,
+                    m_network_info.ldn.nodeCountMax,
+                    0, // local_node_id
+                    m_state_machine.GetState() == CommState::AccessPointCreated
+                );
+
+                // Signal state change event so game knows network updated
+                m_state_machine.SignalStateChange();
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::Disconnect: {
+            // Server notifies us of disconnection
+            LOG_INFO("Received Disconnect from server");
+            m_network_connected = false;
+            m_disconnect_reason = DisconnectReason::SystemRequest;
+            // Signal state change
+            m_state_machine.SignalStateChange();
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::Reject: {
+            // We received a Reject - we are being rejected/kicked from the network
+            // Like Ryujinx HandleReject: _disconnectReason = reject.DisconnectReason
+            if (size >= sizeof(ryu_ldn::protocol::RejectRequest)) {
+                const auto* reject = reinterpret_cast<const ryu_ldn::protocol::RejectRequest*>(data);
+                m_disconnect_reason = static_cast<DisconnectReason>(reject->disconnect_reason);
+                LOG_INFO("Received Reject from server: reason=%u", reject->disconnect_reason);
+            } else {
+                m_disconnect_reason = DisconnectReason::Rejected;
+                LOG_INFO("Received Reject from server (no reason provided)");
+            }
+            // Note: The actual disconnect will come via Disconnect packet or connection close
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::RejectReply: {
+            // Server confirms our reject request was processed
+            LOG_INFO("Received RejectReply from server");
+            // Signal reject event (like Ryujinx _reject.Set())
+            m_reject_event.Signal();
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::Ping: {
+            // Echo ping back to server
+            if (size >= sizeof(ryu_ldn::protocol::PingMessage)) {
+                const auto* ping = reinterpret_cast<const ryu_ldn::protocol::PingMessage*>(data);
+                LOG_VERBOSE("Received Ping: requester=%u, id=%u", ping->requester, ping->id);
+
+                // Echo back if server requested
+                if (ping->requester == 0) {
+                    m_server_client.send_ping_response(ping->id);
+                }
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::NetworkError: {
+            // Server reports an error - like Ryujinx HandleNetworkError
+            if (size >= sizeof(ryu_ldn::protocol::NetworkErrorMessage)) {
+                const auto* err = reinterpret_cast<const ryu_ldn::protocol::NetworkErrorMessage*>(data);
+                auto error_code = static_cast<ryu_ldn::protocol::NetworkErrorCode>(err->error_code);
+
+                // Like Ryujinx: special handling for PortUnreachable
+                // if (error.Error == NetworkError.PortUnreachable) { _useP2pProxy = false; }
+                // else { _lastError = error.Error; }
+                if (error_code == ryu_ldn::protocol::NetworkErrorCode::None) {
+                    // PortUnreachable equivalent - disable P2P proxy
+                    // (We don't have P2P proxy yet, so just log)
+                    LOG_WARN("Received NetworkError: PortUnreachable (P2P disabled)");
+                } else {
+                    m_last_network_error = error_code;
+                    LOG_ERROR("Received NetworkError: code=%u", err->error_code);
+                }
+            }
+            // Signal error event (like Ryujinx _error.Set())
+            m_error_event.Signal();
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::ScanReply: {
+            // Server sends one network info for each discovered network
+            if (size >= sizeof(ryu_ldn::protocol::NetworkInfo)) {
+                if (m_scan_result_count < MAX_SCAN_RESULTS) {
+                    const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
+                    std::memcpy(&m_scan_results[m_scan_result_count], net_info, sizeof(NetworkInfo));
+                    m_scan_result_count++;
+                    LOG_INFO("ScanReply: found network #%zu, node_count=%u",
+                             m_scan_result_count,
+                             reinterpret_cast<const NetworkInfo*>(net_info)->ldn.nodeCount);
+                } else {
+                    LOG_WARN("ScanReply: buffer full, ignoring network");
+                }
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::ScanReplyEnd: {
+            // Server finished sending scan results
+            LOG_INFO("ScanReplyEnd: scan complete, found %zu networks", m_scan_result_count);
+            // Signal scan event (like Ryujinx _scan.Set())
+            m_scan_event.Signal();
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::ProxyConfig: {
+            // Server sends proxy configuration (like Ryujinx HandleProxyConfig)
+            if (size >= sizeof(ryu_ldn::protocol::ProxyConfig)) {
+                const auto* config = reinterpret_cast<const ryu_ldn::protocol::ProxyConfig*>(data);
+                m_proxy_config = *config;
+                LOG_INFO("Received ProxyConfig: ip=0x%08X, mask=0x%08X",
+                         config->proxy_ip, config->proxy_subnet_mask);
+                // Note: On Ryujinx this registers an LdnProxy for socket interception.
+                // On Switch sysmodule, we just store the config for reference.
+                // The actual proxying is handled by the game's LDN implementation.
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::ExternalProxy: {
+            // Server sends external proxy info for P2P (like Ryujinx HandleExternalProxy)
+            if (size >= sizeof(ryu_ldn::protocol::ExternalProxyConfig)) {
+                const auto* config = reinterpret_cast<const ryu_ldn::protocol::ExternalProxyConfig*>(data);
+                m_external_proxy_config = *config;
+
+                LOG_INFO("Received ExternalProxy: port=%u, family=%u",
+                         config->proxy_port, config->address_family);
+
+                // Like Ryujinx: if P2P is disabled, we don't connect to external proxy
+                // The _useP2pProxy flag controls this behavior
+                if (!m_use_p2p_proxy) {
+                    LOG_INFO("P2P proxy disabled, ignoring ExternalProxy");
+                } else {
+                    // On Ryujinx this creates a P2pProxyClient and performs auth.
+                    // On Switch sysmodule, P2P proxy connections are complex and
+                    // require additional socket handling. For now, we just log.
+                    LOG_INFO("ExternalProxy received (P2P proxy not yet implemented on Switch)");
+                }
+            }
+            break;
+        }
+
+        default:
+            LOG_VERBOSE("Unhandled packet type: %u", static_cast<unsigned>(id));
+            break;
+    }
+
+    // Signal that we received a response (for WaitForResponse)
+    m_last_response_id = id;
+    m_response_event.Signal();
+}
+
+bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected_id, uint64_t timeout_ms) {
+    LOG_VERBOSE("Waiting for response: type=%u, timeout=%lu ms",
+                static_cast<unsigned>(expected_id), timeout_ms);
+
+    // Clear events before waiting
+    m_response_event.Clear();
+    m_error_event.Clear();
+    m_last_response_id = ryu_ldn::protocol::PacketId::Initialize; // Reset to invalid
+
+    // Wait with polling for network updates (required because we don't have async receive)
+    uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    uint64_t current_time_ms = start_time_ms;
+
+    while ((current_time_ms - start_time_ms) < timeout_ms) {
+        // Process incoming packets
+        m_server_client.update(current_time_ms);
+
+        // Check if we received a response
+        if (m_response_event.TryWait()) {
+            // Check if we got the expected response
+            if (m_last_response_id == expected_id) {
+                LOG_VERBOSE("Received expected response: type=%u", static_cast<unsigned>(expected_id));
+                return true;
+            }
+
+            // Check for error response
+            if (m_last_response_id == ryu_ldn::protocol::PacketId::NetworkError) {
+                LOG_ERROR("Received NetworkError while waiting for response");
+                return false;
+            }
+
+            LOG_WARN("Received unexpected response: expected=%u, got=%u",
+                     static_cast<unsigned>(expected_id), static_cast<unsigned>(m_last_response_id));
+            // Continue waiting for the expected response
+            m_response_event.Clear();
+        }
+
+        // Check if connection was lost
+        if (!m_server_client.is_connected()) {
+            LOG_ERROR("Connection lost while waiting for response");
+            return false;
+        }
+
+        // Short sleep to avoid busy-waiting
+        svcSleepThread(5 * 1000000ULL); // 5ms
+        current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+    }
+
+    LOG_ERROR("Timeout waiting for response: type=%u", static_cast<unsigned>(expected_id));
+    return false;
+}
+
+// ============================================================================
+// Helper Methods (like Ryujinx)
+// ============================================================================
+
+void ICommunicationService::SetGameVersion(const uint8_t* version) {
+    // Like Ryujinx SetGameVersion - copy version and pad to 16 bytes
+    if (version != nullptr) {
+        std::memcpy(m_game_version, version, sizeof(m_game_version));
+    } else {
+        std::memset(m_game_version, 0, sizeof(m_game_version));
+    }
+}
+
+ryu_ldn::protocol::NetworkErrorCode ICommunicationService::ConsumeNetworkError() {
+    // Like Ryujinx ConsumeNetworkError - return and reset
+    auto result = m_last_network_error;
+    m_last_network_error = ryu_ldn::protocol::NetworkErrorCode::None;
+    return result;
 }
 
 } // namespace ams::mitm::ldn
