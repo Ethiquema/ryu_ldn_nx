@@ -115,7 +115,7 @@ void run_all_tests() {
 
 TEST(structure_sizes) {
     // Core structures
-    ASSERT_EQ(sizeof(LdnHeader), 0xA);  // 10 bytes (packed, matches C# server)
+    ASSERT_EQ(sizeof(LdnHeader), 0xC);  // 12 bytes (aligned for Switch compatibility)
     ASSERT_EQ(sizeof(MacAddress), 6);
     ASSERT_EQ(sizeof(Ssid), 0x22);      // 34 bytes
     ASSERT_EQ(sizeof(NetworkId), 0x20); // 32 bytes

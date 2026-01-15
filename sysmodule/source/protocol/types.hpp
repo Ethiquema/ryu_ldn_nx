@@ -178,7 +178,7 @@ enum class PacketId : uint8_t {
 // =============================================================================
 
 /**
- * @brief LDN Protocol Header - 10 bytes
+  * @brief LDN Protocol Header - 10 bytes
  *
  * Every packet in the RyuLdn protocol starts with this header.
  * The header contains identification, versioning, and size information.
