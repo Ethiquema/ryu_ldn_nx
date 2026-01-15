@@ -178,7 +178,7 @@ enum class PacketId : uint8_t {
 // =============================================================================
 
 /**
- * @brief LDN Protocol Header - 10 bytes (0xA)
+ * @brief LDN Protocol Header - 10 bytes
  *
  * Every packet in the RyuLdn protocol starts with this header.
  * The header contains identification, versioning, and size information.
@@ -189,7 +189,8 @@ enum class PacketId : uint8_t {
  * 0x00    4     magic       Protocol magic (0x4E444C52 = "RLDN")
  * 0x04    1     type        Packet type (PacketId enum)
  * 0x05    1     version     Protocol version (must be 1)
- * 0x06    4     data_size   Payload size in bytes (signed for compatibility)
+ * 0x06    2     reserved    Padding (must be 0)
+ * 0x08    4     data_size   Payload size in bytes (signed for compatibility)
  * ```
  *
  * ## Validation
@@ -197,18 +198,15 @@ enum class PacketId : uint8_t {
  * 1. magic == PROTOCOL_MAGIC
  * 2. version == PROTOCOL_VERSION
  * 3. data_size >= 0 && data_size <= MAX_PACKET_SIZE
- *
- * ## Binary Compatibility
- * This structure MUST be packed to match C# StructLayout(Size = 0xA).
- * The C# version has no padding between version and data_size.
  */
-struct __attribute__((packed)) LdnHeader {
+struct LdnHeader {
     uint32_t magic;      ///< Must be PROTOCOL_MAGIC (0x4E444C52 = "RLDN")
     uint8_t  type;       ///< Packet type from PacketId enum
     uint8_t  version;    ///< Protocol version (must be PROTOCOL_VERSION = 1)
+    uint16_t reserved;   ///< Padding for alignment (must be 0)
     int32_t  data_size;  ///< Size of payload following header (may be 0)
 };
-static_assert(sizeof(LdnHeader) == 0xA, "LdnHeader must be 10 bytes");
+static_assert(sizeof(LdnHeader) == 0xC, "LdnHeader must be 12 bytes");
 
 /**
  * @brief MAC Address - 6 bytes
