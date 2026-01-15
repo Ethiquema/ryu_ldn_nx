@@ -191,6 +191,13 @@ Result ICommunicationService::Finalize() {
 // ============================================================================
 
 Result ICommunicationService::GetState(ams::sf::Out<u32> state) {
+    // Process incoming packets (like pings) to keep connection alive
+    // This is critical because the server expects ping responses within ~6 seconds
+    if (m_server_connected && m_server_client.is_connected()) {
+        uint64_t current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+        m_server_client.update(current_time_ms);
+    }
+
     auto current_state = m_state_machine.GetState();
     LOG_INFO("GetState() called, returning state=%u (%s)",
              static_cast<u32>(current_state), LdnStateMachine::StateToString(current_state));
@@ -207,6 +214,12 @@ Result ICommunicationService::GetState(ams::sf::Out<u32> state) {
 }
 
 Result ICommunicationService::GetNetworkInfo(ams::sf::Out<NetworkInfo> buffer) {
+    // Process incoming packets (like pings) to keep connection alive
+    if (m_server_connected && m_server_client.is_connected()) {
+        uint64_t current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+        m_server_client.update(current_time_ms);
+    }
+
     LOG_VERBOSE("GetNetworkInfo() called, node_count=%u, max=%u",
                 m_network_info.ldn.nodeCount, m_network_info.ldn.nodeCountMax);
     buffer.SetValue(m_network_info);
