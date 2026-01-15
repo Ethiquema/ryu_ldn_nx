@@ -10,9 +10,75 @@
 #include "ldn_shared_state.hpp"
 #include "../config/config_ipc_service.hpp"
 #include "../debug/log.hpp"
+#include "../bsd/proxy_socket_manager.hpp"
 #include <arpa/inet.h>
 
 namespace ams::mitm::ldn {
+
+// =============================================================================
+// Static State for BSD MITM Integration
+// =============================================================================
+
+/**
+ * @brief Pointer to active ICommunicationService instance for BSD MITM callback
+ *
+ * The BSD MITM needs to send ProxyData through the LDN server connection.
+ * This static pointer provides access to the active service's client.
+ * Set during ConnectToServer, cleared during DisconnectFromServer.
+ */
+static ICommunicationService* g_active_ldn_service = nullptr;
+static os::Mutex g_active_service_mutex{false};
+
+/**
+ * @brief Callback for BSD MITM to send ProxyData through LDN server
+ *
+ * This function is registered with ProxySocketManager and called when
+ * proxy sockets need to send data.
+ *
+ * @param source_ip Source IP (host byte order)
+ * @param source_port Source port (host byte order)
+ * @param dest_ip Destination IP (host byte order)
+ * @param dest_port Destination port (host byte order)
+ * @param protocol Protocol type (TCP/UDP)
+ * @param data Packet payload
+ * @param data_len Payload length
+ * @return true if sent successfully
+ */
+static bool SendProxyDataCallback(uint32_t source_ip, uint16_t source_port,
+                                   uint32_t dest_ip, uint16_t dest_port,
+                                   ryu_ldn::bsd::ProtocolType protocol,
+                                   const void* data, size_t data_len) {
+    std::scoped_lock lock(g_active_service_mutex);
+
+    if (g_active_ldn_service == nullptr) {
+        return false;
+    }
+
+    // Build ProxyDataHeader
+    ryu_ldn::protocol::ProxyDataHeader header{};
+    header.info.source_ipv4 = source_ip;
+    header.info.source_port = source_port;
+    header.info.dest_ipv4 = dest_ip;
+    header.info.dest_port = dest_port;
+
+    // Convert BSD protocol type to protocol type
+    switch (protocol) {
+        case ryu_ldn::bsd::ProtocolType::Tcp:
+            header.info.protocol = ryu_ldn::protocol::ProtocolType::Tcp;
+            break;
+        case ryu_ldn::bsd::ProtocolType::Udp:
+            header.info.protocol = ryu_ldn::protocol::ProtocolType::Udp;
+            break;
+        default:
+            return false;
+    }
+
+    header.data_length = static_cast<uint32_t>(data_len);
+
+    // Send via the LDN client
+    auto result = g_active_ldn_service->SendProxyDataToServer(header, data, data_len);
+    return result == ryu_ldn::network::ClientOpResult::Success;
+}
 
 // Verify struct sizes match Nintendo's expectations
 static_assert(sizeof(NetworkInfo) == 0x480, "sizeof(NetworkInfo) should be 0x480");
@@ -116,6 +182,16 @@ Result ICommunicationService::ConnectToServer() {
     }
 
     m_server_connected = true;
+
+    // Register this service for BSD MITM callback
+    {
+        std::scoped_lock lock(g_active_service_mutex);
+        g_active_ldn_service = this;
+    }
+
+    // Register the send callback with ProxySocketManager
+    mitm::bsd::ProxySocketManager::GetInstance().SetSendCallback(SendProxyDataCallback);
+
     LOG_INFO("Connected to RyuLdn server successfully");
     R_SUCCEED();
 }
@@ -123,6 +199,18 @@ Result ICommunicationService::ConnectToServer() {
 void ICommunicationService::DisconnectFromServer() {
     if (m_server_connected) {
         LOG_INFO("Disconnecting from RyuLdn server");
+
+        // Unregister BSD MITM callback
+        {
+            std::scoped_lock lock(g_active_service_mutex);
+            if (g_active_ldn_service == this) {
+                g_active_ldn_service = nullptr;
+            }
+        }
+
+        // Clear the send callback
+        mitm::bsd::ProxySocketManager::GetInstance().SetSendCallback(nullptr);
+
         m_server_client.disconnect();
         m_server_connected = false;
     }
@@ -227,7 +315,19 @@ Result ICommunicationService::GetNetworkInfo(ams::sf::Out<NetworkInfo> buffer) {
 }
 
 Result ICommunicationService::GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask) {
-    // Get current IP from nifm service
+    // If connected to RyuLdn server and we have a proxy config, return the virtual IP
+    // This is critical for LDN communication - the game needs to use the proxy IP
+    if (m_server_connected && m_proxy_config.proxy_ip != 0) {
+        // Return the virtual IP assigned by the server (like Ryujinx LdnProxy)
+        // proxy_ip is already in host byte order (e.g., 0x0A720001 = 10.114.0.1)
+        address.SetValue(m_proxy_config.proxy_ip);
+        mask.SetValue(m_proxy_config.proxy_subnet_mask);
+        LOG_VERBOSE("GetIpv4Address: returning proxy IP 0x%08X, mask 0x%08X",
+                    m_proxy_config.proxy_ip, m_proxy_config.proxy_subnet_mask);
+        R_SUCCEED();
+    }
+
+    // Fallback: Get current IP from nifm service
     u32 addr, netmask, gateway, primary_dns, secondary_dns;
     Result rc = nifmGetCurrentIpConfigInfo(&addr, &netmask, &gateway, &primary_dns, &secondary_dns);
 
@@ -1111,6 +1211,73 @@ void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, c
             break;
         }
 
+        case ryu_ldn::protocol::PacketId::ProxyData: {
+            // Server relays game data from other players (like Ryujinx HandleProxyData)
+            // Route to BSD MITM proxy sockets for transparent game socket interception
+            if (size >= sizeof(ryu_ldn::protocol::ProxyDataHeader)) {
+                const auto* proxy_header = reinterpret_cast<const ryu_ldn::protocol::ProxyDataHeader*>(data);
+                const uint8_t* payload = data + sizeof(ryu_ldn::protocol::ProxyDataHeader);
+                size_t payload_size = size - sizeof(ryu_ldn::protocol::ProxyDataHeader);
+
+                // Validate payload size matches header
+                if (payload_size >= proxy_header->data_length) {
+                    LOG_VERBOSE("Received ProxyData: src=0x%08X:%u dst=0x%08X:%u proto=%u len=%u",
+                                proxy_header->info.source_ipv4, proxy_header->info.source_port,
+                                proxy_header->info.dest_ipv4, proxy_header->info.dest_port,
+                                static_cast<unsigned>(proxy_header->info.protocol),
+                                proxy_header->data_length);
+
+                    // Convert protocol type for BSD layer
+                    ryu_ldn::bsd::ProtocolType bsd_protocol;
+                    bool protocol_valid = true;
+                    switch (proxy_header->info.protocol) {
+                        case ryu_ldn::protocol::ProtocolType::Tcp:
+                            bsd_protocol = ryu_ldn::bsd::ProtocolType::Tcp;
+                            break;
+                        case ryu_ldn::protocol::ProtocolType::Udp:
+                            bsd_protocol = ryu_ldn::bsd::ProtocolType::Udp;
+                            break;
+                        default:
+                            LOG_WARN("ProxyData: unknown protocol type %u",
+                                     static_cast<unsigned>(proxy_header->info.protocol));
+                            protocol_valid = false;
+                            break;
+                    }
+
+                    if (!protocol_valid) {
+                        break;
+                    }
+
+                    // Route to BSD MITM proxy socket manager
+                    // The manager finds the socket bound to the destination port and queues the data
+                    auto& socket_manager = mitm::bsd::ProxySocketManager::GetInstance();
+                    bool routed = socket_manager.RouteIncomingData(
+                        proxy_header->info.source_ipv4,
+                        proxy_header->info.source_port,
+                        proxy_header->info.dest_ipv4,
+                        proxy_header->info.dest_port,
+                        bsd_protocol,
+                        payload,
+                        proxy_header->data_length
+                    );
+
+                    if (routed) {
+                        LOG_VERBOSE("ProxyData: routed to proxy socket");
+                    } else {
+                        // No matching proxy socket - fallback to legacy buffer for direct reads
+                        LOG_VERBOSE("ProxyData: no matching proxy socket, storing in buffer");
+                        if (!m_proxy_buffer.Write(*proxy_header, payload, proxy_header->data_length)) {
+                            LOG_WARN("ProxyData: buffer full, dropping packet");
+                        }
+                    }
+                } else {
+                    LOG_WARN("ProxyData: payload size mismatch (%zu < %u)",
+                             payload_size, proxy_header->data_length);
+                }
+            }
+            break;
+        }
+
         default:
             LOG_VERBOSE("Unhandled packet type: %u", static_cast<unsigned>(id));
             break;
@@ -1191,6 +1358,23 @@ ryu_ldn::protocol::NetworkErrorCode ICommunicationService::ConsumeNetworkError()
     auto result = m_last_network_error;
     m_last_network_error = ryu_ldn::protocol::NetworkErrorCode::None;
     return result;
+}
+
+ryu_ldn::network::ClientOpResult ICommunicationService::SendProxyDataToServer(
+    const ryu_ldn::protocol::ProxyDataHeader& header,
+    const void* data,
+    size_t data_len)
+{
+    if (!IsServerConnected()) {
+        return ryu_ldn::network::ClientOpResult::NotConnected;
+    }
+
+    LOG_VERBOSE("SendProxyDataToServer: src=0x%08X:%u dst=0x%08X:%u proto=%u len=%zu",
+                header.info.source_ipv4, header.info.source_port,
+                header.info.dest_ipv4, header.info.dest_port,
+                static_cast<unsigned>(header.info.protocol), data_len);
+
+    return m_server_client.send_proxy_data(header, static_cast<const uint8_t*>(data), data_len);
 }
 
 } // namespace ams::mitm::ldn

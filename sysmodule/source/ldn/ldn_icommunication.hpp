@@ -417,6 +417,23 @@ private:
      * @return Last network error code
      */
     ryu_ldn::protocol::NetworkErrorCode ConsumeNetworkError();
+
+public:
+    /**
+     * @brief Send ProxyData to server (for BSD MITM callback)
+     *
+     * This method is called by the BSD MITM layer to send game socket data
+     * through the LDN server connection.
+     *
+     * @param header ProxyData header with addressing info
+     * @param data Packet payload
+     * @param data_len Payload length
+     * @return ClientOpResult indicating success or failure
+     */
+    ryu_ldn::network::ClientOpResult SendProxyDataToServer(
+        const ryu_ldn::protocol::ProxyDataHeader& header,
+        const void* data,
+        size_t data_len);
 };
 
 // Verify interface compliance
