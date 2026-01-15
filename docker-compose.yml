@@ -1,4 +1,16 @@
 services:
+  # Build libstratosphere library (required for sysmodule)
+  libstratosphere:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/sysmodule/Atmosphere-libs/libstratosphere
+    entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "libstratosphere", ".", "--lock", ".lock-libstratosphere-build"]
+    command: ["nx_release"]
+
+  # Build sysmodule (requires libstratosphere)
   build:
     build:
       context: .
@@ -6,8 +18,12 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace/sysmodule
-    command: sh -c "make clean && make"
+    entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "build", ".", "--lock", ".lock-libstratosphere-build", "--lock", ".lock-sysmodule-build"]
+    command: []
+    depends_on:
+      - libstratosphere
 
+  # Run tests (host binary with g++)
   test:
     build:
       context: .
@@ -15,8 +31,9 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace/tests
-    command: sh -c "make clean && make test"
+    command: make test
 
+  # Build Tesla overlay
   overlay:
     build:
       context: .
@@ -24,7 +41,8 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace/overlay
-    command: sh -c "make clean && make"
+    entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "overlay", ".", "--lock", ".lock-overlay-build"]
+    command: []
 
   # Build all targets
   all:
@@ -33,4 +51,9 @@ services:
       dockerfile: Dockerfile
     volumes:
       - .:/workspace
-    command: sh -c "cd /workspace/sysmodule && make clean && make && cd /workspace/overlay && make clean && make"
+    working_dir: /workspace
+    command: ["/bin/sh", "-c", "sleep 2; echo '[all] ⏳ Waiting for all builds to complete...'; while ls /workspace/.lock-* >/dev/null 2>&1; do sleep 1; done; echo '[all] ✅ All builds complete'"]
+    depends_on:
+      - build
+      - overlay
+    
