@@ -227,6 +227,20 @@ ClientResult TcpClient::send_passphrase(const protocol::PassphraseMessage& msg) 
 }
 
 /**
+ * @brief Send Passphrase message (string convenience overload)
+ */
+ClientResult TcpClient::send_passphrase(const char* passphrase) {
+    protocol::PassphraseMessage msg{};
+    std::memset(msg.passphrase, 0, sizeof(msg.passphrase));
+    if (passphrase != nullptr) {
+        size_t len = std::strlen(passphrase);
+        if (len > 127) len = 127;
+        std::memcpy(msg.passphrase, passphrase, len);
+    }
+    return send_passphrase(msg);
+}
+
+/**
  * @brief Send Ping message
  */
 ClientResult TcpClient::send_ping(const protocol::PingMessage& msg) {
@@ -311,6 +325,69 @@ ClientResult TcpClient::send_connect(const protocol::ConnectRequest& request) {
 }
 
 /**
+ * @brief Send CreateAccessPointPrivate request
+ */
+ClientResult TcpClient::send_create_access_point_private(
+        const protocol::CreateAccessPointPrivateRequest& request,
+        const uint8_t* advertise_data,
+        size_t advertise_size) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    // Encode header + request + advertise data
+    size_t total_payload_size = sizeof(request) + advertise_size;
+    if (total_payload_size > sizeof(m_send_buffer) - sizeof(protocol::LdnHeader)) {
+        return ClientResult::BufferTooSmall;
+    }
+
+    // Build header
+    protocol::LdnHeader header{};
+    header.magic = protocol::PROTOCOL_MAGIC;
+    header.version = protocol::PROTOCOL_VERSION;
+    header.type = static_cast<uint8_t>(protocol::PacketId::CreateAccessPointPrivate);
+    header.data_size = static_cast<uint32_t>(total_payload_size);
+
+    // Copy header
+    std::memcpy(m_send_buffer, &header, sizeof(header));
+    size_t offset = sizeof(header);
+
+    // Copy request
+    std::memcpy(m_send_buffer + offset, &request, sizeof(request));
+    offset += sizeof(request);
+
+    // Copy advertise data if present
+    if (advertise_data && advertise_size > 0) {
+        std::memcpy(m_send_buffer + offset, advertise_data, advertise_size);
+        offset += advertise_size;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, offset);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send ConnectPrivate request
+ */
+ClientResult TcpClient::send_connect_private(const protocol::ConnectPrivateRequest& request) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    size_t encoded_size = 0;
+    protocol::EncodeResult encode_result = protocol::encode(
+        m_send_buffer, sizeof(m_send_buffer),
+        protocol::PacketId::ConnectPrivate, request, encoded_size);
+
+    if (encode_result != protocol::EncodeResult::Success) {
+        return ClientResult::EncodingError;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
  * @brief Send Scan request
  */
 ClientResult TcpClient::send_scan(const protocol::ScanFilterFull& filter) {
@@ -346,8 +423,81 @@ ClientResult TcpClient::send_proxy_data(const protocol::ProxyDataHeader& header,
     size_t encoded_size = 0;
     protocol::EncodeResult encode_result = protocol::encode_proxy_data(
         m_send_buffer, sizeof(m_send_buffer),
-        header.destination_node_id, header.source_node_id,
-        data, data_size, encoded_size);
+        header.info, data, data_size, encoded_size);
+
+    if (encode_result != protocol::EncodeResult::Success) {
+        return ClientResult::EncodingError;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send SetAcceptPolicy request
+ */
+ClientResult TcpClient::send_set_accept_policy(const protocol::SetAcceptPolicyRequest& request) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    size_t encoded_size = 0;
+    protocol::EncodeResult encode_result = protocol::encode(
+        m_send_buffer, sizeof(m_send_buffer),
+        protocol::PacketId::SetAcceptPolicy, request, encoded_size);
+
+    if (encode_result != protocol::EncodeResult::Success) {
+        return ClientResult::EncodingError;
+    }
+
+    SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send SetAdvertiseData request
+ */
+ClientResult TcpClient::send_set_advertise_data(const uint8_t* data, size_t size) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    // Limit to max advertise data size (384 bytes as per protocol)
+    if (size > 384) {
+        size = 384;
+    }
+
+    // Build header manually for variable-size payload
+    protocol::LdnHeader header{};
+    header.magic = protocol::PROTOCOL_MAGIC;
+    header.version = protocol::PROTOCOL_VERSION;
+    header.type = static_cast<uint8_t>(protocol::PacketId::SetAdvertiseData);
+    header.data_size = static_cast<int32_t>(size);
+
+    // Encode header
+    std::memcpy(m_send_buffer, &header, sizeof(header));
+    // Append data
+    if (data && size > 0) {
+        std::memcpy(m_send_buffer + sizeof(header), data, size);
+    }
+
+    size_t total_size = sizeof(header) + size;
+    SocketResult send_result = m_socket.send_all(m_send_buffer, total_size);
+    return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
+}
+
+/**
+ * @brief Send Reject request
+ */
+ClientResult TcpClient::send_reject(const protocol::RejectRequest& request) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    size_t encoded_size = 0;
+    protocol::EncodeResult encode_result = protocol::encode(
+        m_send_buffer, sizeof(m_send_buffer),
+        protocol::PacketId::Reject, request, encoded_size);
 
     if (encode_result != protocol::EncodeResult::Success) {
         return ClientResult::EncodingError;

@@ -269,14 +269,25 @@ public:
     ClientResult send_passphrase(const protocol::PassphraseMessage& msg);
 
     /**
+     * @brief Send Passphrase message
+     *
+     * Sends passphrase for room filtering. Must be sent after TCP
+     * connection and before Initialize packet.
+     *
+     * @param passphrase Passphrase string (null-terminated)
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_passphrase(const char* passphrase);
+
+    /**
      * @brief Send Ping message
      *
-     * Keepalive message with timestamp for RTT measurement.
+     * Keepalive message for connection health check.
      *
-     * @param msg Ping message with current timestamp
+     * @param msg Ping message with requester and id
      * @return ClientResult indicating success or error
      *
-     * @note Server will echo back the ping with same timestamp
+     * @note Server will echo back the ping when requester=0
      */
     ClientResult send_ping(const protocol::PingMessage& msg);
 
@@ -303,6 +314,20 @@ public:
     ClientResult send_create_access_point(const protocol::CreateAccessPointRequest& request);
 
     /**
+     * @brief Send CreateAccessPointPrivate request
+     *
+     * Request to create a new private (password-protected) network session.
+     *
+     * @param request Private access point configuration
+     * @param advertise_data Optional advertise data
+     * @param advertise_size Size of advertise data
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_create_access_point_private(const protocol::CreateAccessPointPrivateRequest& request,
+                                                   const uint8_t* advertise_data = nullptr,
+                                                   size_t advertise_size = 0);
+
+    /**
      * @brief Send Connect request
      *
      * Request to join an existing network session.
@@ -311,6 +336,16 @@ public:
      * @return ClientResult indicating success or error
      */
     ClientResult send_connect(const protocol::ConnectRequest& request);
+
+    /**
+     * @brief Send ConnectPrivate request
+     *
+     * Request to join a private (password-protected) network session.
+     *
+     * @param request Private connection request
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_connect_private(const protocol::ConnectPrivateRequest& request);
 
     /**
      * @brief Send Scan request
@@ -334,6 +369,37 @@ public:
      */
     ClientResult send_proxy_data(const protocol::ProxyDataHeader& header,
                                   const uint8_t* data, size_t data_size);
+
+    /**
+     * @brief Send SetAcceptPolicy request
+     *
+     * Host-only command to change the accept policy for new connections.
+     *
+     * @param request Accept policy request
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_set_accept_policy(const protocol::SetAcceptPolicyRequest& request);
+
+    /**
+     * @brief Send SetAdvertiseData request
+     *
+     * Host-only command to update the advertise data for the network.
+     *
+     * @param data Advertise data buffer
+     * @param size Size of advertise data (max 384 bytes)
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_set_advertise_data(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Send Reject request
+     *
+     * Host-only command to reject/kick a player from the network.
+     *
+     * @param request Reject request with node ID and reason
+     * @return ClientResult indicating success or error
+     */
+    ClientResult send_reject(const protocol::RejectRequest& request);
 
     // =========================================================================
     // Receive Operations

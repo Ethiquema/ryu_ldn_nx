@@ -127,7 +127,7 @@ TEST(protocol_network_config_size) {
 }
 
 TEST(protocol_scan_filter_full_size) {
-    ASSERT_EQ(sizeof(ryu_ldn::protocol::ScanFilterFull), 93u);
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ScanFilterFull), 0x60u);  // 96 bytes with Pack=8 alignment
 }
 
 TEST(protocol_connect_request_size) {
@@ -443,16 +443,218 @@ TEST(network_info_complete_structure) {
 // ============================================================================
 
 TEST(proxy_data_header_size) {
-    ASSERT_EQ(sizeof(ryu_ldn::protocol::ProxyDataHeader), 8u);
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ProxyDataHeader), 0x14u);  // 20 bytes
 }
 
 TEST(proxy_data_header_fields) {
     ryu_ldn::protocol::ProxyDataHeader header{};
-    header.destination_node_id = 1;
-    header.source_node_id = 0;
+    header.info.source_ipv4 = 0xC0A80101;   // 192.168.1.1
+    header.info.source_port = 12345;
+    header.info.dest_ipv4 = 0xC0A80102;     // 192.168.1.2
+    header.info.dest_port = 54321;
+    header.info.protocol = ryu_ldn::protocol::ProtocolType::Udp;
+    header.data_length = 100;
 
-    ASSERT_EQ(header.destination_node_id, 1u);
-    ASSERT_EQ(header.source_node_id, 0u);
+    ASSERT_EQ(header.info.source_ipv4, 0xC0A80101u);
+    ASSERT_EQ(header.info.dest_ipv4, 0xC0A80102u);
+    ASSERT_EQ(header.data_length, 100u);
+}
+
+// ============================================================================
+// Private Room Types Tests (Story 7.7)
+// ============================================================================
+
+TEST(protocol_security_parameter_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::SecurityParameter), 0x20u);  // 32 bytes
+}
+
+TEST(protocol_security_parameter_fields) {
+    ryu_ldn::protocol::SecurityParameter param{};
+    // Set security data
+    param.data[0] = 0x12;
+    param.data[15] = 0x34;
+    // Set session ID
+    param.session_id[0] = 0xAB;
+    param.session_id[15] = 0xCD;
+
+    ASSERT_EQ(param.data[0], 0x12u);
+    ASSERT_EQ(param.data[15], 0x34u);
+    ASSERT_EQ(param.session_id[0], 0xABu);
+    ASSERT_EQ(param.session_id[15], 0xCDu);
+}
+
+TEST(protocol_address_entry_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::AddressEntry), 0x0Cu);  // 12 bytes
+}
+
+TEST(protocol_address_entry_fields) {
+    ryu_ldn::protocol::AddressEntry entry{};
+    entry.ipv4_address = 0x0A720001;  // 10.114.0.1
+    entry.mac_address.data[0] = 0x12;
+    entry.mac_address.data[5] = 0x78;
+    entry.reserved = 0;
+
+    ASSERT_EQ(entry.ipv4_address, 0x0A720001u);
+    ASSERT_EQ(entry.mac_address.data[0], 0x12u);
+    ASSERT_EQ(entry.mac_address.data[5], 0x78u);
+}
+
+TEST(protocol_address_list_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::AddressList), 0x60u);  // 96 bytes (8 * 12)
+}
+
+TEST(protocol_address_list_fields) {
+    ryu_ldn::protocol::AddressList list{};
+    // Set first entry
+    list.addresses[0].ipv4_address = 0x0A720001;
+    list.addresses[0].mac_address.data[0] = 0x11;
+    // Set last entry
+    list.addresses[7].ipv4_address = 0x0A720008;
+    list.addresses[7].mac_address.data[0] = 0x88;
+
+    ASSERT_EQ(list.addresses[0].ipv4_address, 0x0A720001u);
+    ASSERT_EQ(list.addresses[7].ipv4_address, 0x0A720008u);
+}
+
+TEST(protocol_create_access_point_private_request_size) {
+    // 0x13C = 316 bytes
+    // SecurityConfig(0x44) + SecurityParameter(0x20) + UserConfig(0x30) + NetworkConfig(0x20) + AddressList(0x60) + RyuNetworkConfig(0x28)
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::CreateAccessPointPrivateRequest), 0x13Cu);
+}
+
+TEST(protocol_create_access_point_private_request_fields) {
+    ryu_ldn::protocol::CreateAccessPointPrivateRequest req{};
+
+    // Security config
+    req.security_config.security_mode = 2;
+    req.security_config.passphrase_size = 8;
+    memcpy(req.security_config.passphrase, "password", 8);
+
+    // Security parameter
+    req.security_parameter.data[0] = 0xAA;
+    req.security_parameter.session_id[0] = 0xBB;
+
+    // User config
+    memcpy(req.user_config.user_name, "PrivateHost", 12);
+
+    // Network config
+    req.network_config.intent_id.local_communication_id = 0x0100000000001234ULL;
+    req.network_config.node_count_max = 8;
+
+    // Address list
+    req.address_list.addresses[0].ipv4_address = 0x0A720001;
+
+    // Ryu network config
+    req.ryu_network_config.address_family = 2;  // IPv4
+    req.ryu_network_config.external_proxy_port = 30456;
+
+    ASSERT_EQ(req.security_config.security_mode, 2u);
+    ASSERT_EQ(req.security_parameter.data[0], 0xAAu);
+    ASSERT_EQ(req.security_parameter.session_id[0], 0xBBu);
+    ASSERT_STREQ(req.user_config.user_name, "PrivateHost");
+    ASSERT_EQ(req.network_config.node_count_max, 8u);
+    ASSERT_EQ(req.address_list.addresses[0].ipv4_address, 0x0A720001u);
+}
+
+TEST(protocol_connect_private_request_size) {
+    // 0xBC = 188 bytes
+    // SecurityConfig(0x44) + SecurityParameter(0x20) + UserConfig(0x30) + u32(4) + u32(4) + NetworkConfig(0x20)
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ConnectPrivateRequest), 0xBCu);
+}
+
+TEST(protocol_connect_private_request_fields) {
+    ryu_ldn::protocol::ConnectPrivateRequest req{};
+
+    // Security config
+    req.security_config.security_mode = 2;
+    req.security_config.passphrase_size = 8;
+    memcpy(req.security_config.passphrase, "password", 8);
+
+    // Security parameter
+    req.security_parameter.data[0] = 0xCC;
+    req.security_parameter.session_id[0] = 0xDD;
+
+    // User config
+    memcpy(req.user_config.user_name, "PrivateClient", 14);
+
+    // Version and options
+    req.local_communication_version = 1;
+    req.option_unknown = 0;
+
+    // Network config
+    req.network_config.intent_id.local_communication_id = 0x0100000000005678ULL;
+    req.network_config.node_count_max = 4;
+
+    ASSERT_EQ(req.security_config.security_mode, 2u);
+    ASSERT_EQ(req.security_parameter.data[0], 0xCCu);
+    ASSERT_EQ(req.security_parameter.session_id[0], 0xDDu);
+    ASSERT_STREQ(req.user_config.user_name, "PrivateClient");
+    ASSERT_EQ(req.local_communication_version, 1u);
+    ASSERT_EQ(req.network_config.node_count_max, 4u);
+}
+
+// ============================================================================
+// External Proxy Types Tests (Compatibility Fix)
+// ============================================================================
+
+TEST(protocol_external_proxy_config_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyConfig), 0x26u);  // 38 bytes
+}
+
+TEST(protocol_external_proxy_config_fields) {
+    ryu_ldn::protocol::ExternalProxyConfig cfg{};
+    cfg.proxy_ip[0] = '1';
+    cfg.proxy_ip[1] = '2';
+    cfg.proxy_ip[2] = '7';
+    cfg.address_family = 2;  // IPv4
+    cfg.proxy_port = 30456;
+    cfg.token[0] = 0xAA;
+
+    ASSERT_EQ(cfg.proxy_ip[0], (uint8_t)'1');
+    ASSERT_EQ(cfg.address_family, 2u);
+    ASSERT_EQ(cfg.proxy_port, 30456u);
+    ASSERT_EQ(cfg.token[0], 0xAAu);
+}
+
+TEST(protocol_external_proxy_token_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyToken), 0x28u);  // 40 bytes
+}
+
+TEST(protocol_external_proxy_token_fields) {
+    ryu_ldn::protocol::ExternalProxyToken tok{};
+    tok.virtual_ip = 0x0A720001;  // 10.114.0.1
+    tok.token[0] = 0xBB;
+    tok.physical_ip[0] = '1';
+    tok.address_family = 2;  // IPv4
+
+    ASSERT_EQ(tok.virtual_ip, 0x0A720001u);
+    ASSERT_EQ(tok.token[0], 0xBBu);
+    ASSERT_EQ(tok.address_family, 2u);
+}
+
+TEST(protocol_external_proxy_connection_state_size) {
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ExternalProxyConnectionState), 0x08u);  // 8 bytes
+}
+
+TEST(protocol_external_proxy_connection_state_fields) {
+    ryu_ldn::protocol::ExternalProxyConnectionState state{};
+    state.ip_address = 0x0A720001;
+    state.connected = 1;
+
+    ASSERT_EQ(state.ip_address, 0x0A720001u);
+    ASSERT_EQ(state.connected, 1u);
+}
+
+TEST(protocol_set_accept_policy_request_size) {
+    // Must be 1 byte to match Ryujinx/Server
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::SetAcceptPolicyRequest), 1u);
+}
+
+TEST(protocol_set_accept_policy_request_fields) {
+    ryu_ldn::protocol::SetAcceptPolicyRequest req{};
+    req.accept_policy = 2;  // BlackList
+
+    ASSERT_EQ(req.accept_policy, 2u);
 }
 
 // ============================================================================

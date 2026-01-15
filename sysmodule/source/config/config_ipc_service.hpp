@@ -54,6 +54,10 @@ enum class ConfigCmd : u32 {
     GetLastRtt          = 26,  ///< Returns last RTT in milliseconds
     ForceReconnect      = 27,  ///< Requests reconnection
     GetActiveProcessId  = 28,  ///< Returns PID of active game (debug)
+
+    // P2P Proxy control (29-30)
+    GetDisableP2p       = 29,  ///< Returns 1 if P2P proxy is disabled
+    SetDisableP2p       = 30,  ///< Sets P2P proxy disabled state (like Ryujinx MultiplayerDisableP2p)
 };
 
 /**
@@ -175,6 +179,16 @@ public:
 
     /// Returns the process ID of the active game (for debugging)
     ams::Result GetActiveProcessId(ams::sf::Out<u64> out);
+
+    // =========================================================================
+    // P2P Proxy Control
+    // =========================================================================
+
+    /// Returns 1 if P2P proxy is disabled
+    ams::Result GetDisableP2p(ams::sf::Out<u32> out);
+
+    /// Sets P2P proxy disabled state (like Ryujinx MultiplayerDisableP2p)
+    ams::Result SetDisableP2p(u32 disabled);
 };
 
 } // namespace ryu_ldn::ipc
@@ -222,7 +236,10 @@ public:
     AMS_SF_METHOD_INFO(C, H, 25, ams::Result, GetSessionInfo,     (ams::sf::Out<ryu_ldn::ipc::SessionInfoIpc> out),    (out),       ams::hos::Version_Min, ams::hos::Version_Max)    \
     AMS_SF_METHOD_INFO(C, H, 26, ams::Result, GetLastRtt,         (ams::sf::Out<u32> out),                             (out),       ams::hos::Version_Min, ams::hos::Version_Max)    \
     AMS_SF_METHOD_INFO(C, H, 27, ams::Result, ForceReconnect,     (),                                                  (),          ams::hos::Version_Min, ams::hos::Version_Max)    \
-    AMS_SF_METHOD_INFO(C, H, 28, ams::Result, GetActiveProcessId, (ams::sf::Out<u64> out),                             (out),       ams::hos::Version_Min, ams::hos::Version_Max)
+    AMS_SF_METHOD_INFO(C, H, 28, ams::Result, GetActiveProcessId, (ams::sf::Out<u64> out),                             (out),       ams::hos::Version_Min, ams::hos::Version_Max)    \
+    /* P2P Proxy control commands (29-30) */                                                                                       \
+    AMS_SF_METHOD_INFO(C, H, 29, ams::Result, GetDisableP2p,      (ams::sf::Out<u32> out),                             (out),       ams::hos::Version_Min, ams::hos::Version_Max)    \
+    AMS_SF_METHOD_INFO(C, H, 30, ams::Result, SetDisableP2p,      (u32 disabled),                                      (disabled),  ams::hos::Version_Min, ams::hos::Version_Max)
 
 /**
  * @brief Define the IConfigService interface

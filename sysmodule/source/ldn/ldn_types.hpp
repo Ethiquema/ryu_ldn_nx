@@ -140,21 +140,25 @@ static_assert(sizeof(Ssid) == 34);
 
 /**
  * @brief Session identifier
+ *
+ * Stored as raw bytes to avoid alignment issues in packed IPC structures.
+ * The Switch IPC expects structures packed without padding.
  */
 struct SessionId {
-    u64 high;
-    u64 low;
+    u8 raw[16];
 
     bool operator==(const SessionId& b) const {
-        return high == b.high && low == b.low;
+        return std::memcmp(raw, b.raw, sizeof(raw)) == 0;
     }
 };
 static_assert(sizeof(SessionId) == 16);
 
 /**
  * @brief Intent identifier (game + scene)
+ *
+ * Packed to avoid alignment issues in IPC structures.
  */
-struct IntentId {
+struct __attribute__((packed)) IntentId {
     u64 localCommunicationId;   ///< Title ID / Game ID
     u8 _unk1[2];
     u16 sceneId;                ///< Scene ID within game
@@ -308,6 +312,61 @@ struct SecurityParameter {
     SessionId sessionId;
 };
 static_assert(sizeof(SecurityParameter) == 32);
+
+/**
+ * @brief Address entry for private networks
+ */
+struct AddressEntry {
+    u32 ipv4Address;
+    MacAddress macAddress;
+    u16 reserved;
+};
+static_assert(sizeof(AddressEntry) == 12);
+
+/**
+ * @brief Address list for private networks (up to 8 entries)
+ */
+struct AddressList {
+    AddressEntry addresses[8];
+};
+static_assert(sizeof(AddressList) == 96);
+
+/**
+ * @brief Configuration for CreateNetworkPrivate()
+ *
+ * This structure is passed to CreateNetworkPrivate via IPC.
+ * AddressList is passed separately as a buffer.
+ * Total size: 0xB8 = 184 bytes (matches Nintendo Switch IPC layout).
+ *
+ * Packed to prevent compiler from adding extra padding for u64 alignment.
+ */
+struct __attribute__((packed)) CreateNetworkPrivateConfig {
+    SecurityConfig securityConfig;      ///< 0x00: 68 bytes
+    SecurityParameter securityParameter; ///< 0x44: 32 bytes
+    UserConfig userConfig;               ///< 0x64: 48 bytes
+    u8 _unk[4];                          ///< 0x94: 4 bytes padding (align NetworkConfig to 8)
+    NetworkConfig networkConfig;         ///< 0x98: 32 bytes
+};
+static_assert(sizeof(CreateNetworkPrivateConfig) == 184);
+
+/**
+ * @brief Connection data for ConnectPrivate()
+ *
+ * Total size: 0xC0 = 192 bytes (matches Nintendo Switch IPC layout).
+ * NetworkConfig requires 8-byte alignment, hence 4 bytes padding at 0x9C.
+ *
+ * Packed to prevent compiler from adding extra padding for u64 alignment.
+ */
+struct __attribute__((packed)) ConnectPrivateData {
+    SecurityConfig securityConfig;        ///< 0x00: 68 bytes
+    SecurityParameter securityParameter;  ///< 0x44: 32 bytes
+    UserConfig userConfig;                ///< 0x64: 48 bytes
+    u32 localCommunicationVersion;        ///< 0x94: 4 bytes
+    u32 option;                           ///< 0x98: 4 bytes
+    u8 _pad[4];                           ///< 0x9C: 4 bytes padding (align NetworkConfig to 8)
+    NetworkConfig networkConfig;          ///< 0xA0: 32 bytes
+};
+static_assert(sizeof(ConnectPrivateData) == 192);
 
 /**
  * @brief Scan filter configuration

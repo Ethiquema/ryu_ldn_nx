@@ -250,16 +250,74 @@ public:
     Result InitializeSystem2(u64 unk, const ams::sf::ClientProcessId& client_process_id);
 
     // ========================================================================
-    // Stub Operations (not implemented)
+    // Private Network Operations
     // ========================================================================
 
-    Result ScanPrivate();
+    /**
+     * @brief Scan for private networks
+     *
+     * Same as Scan() but includes private networks in results.
+     *
+     * @param count Output number of networks found
+     * @param buffer Output network info array
+     * @param channel Channel to scan (0 for all)
+     * @param filter Scan filter
+     * @return Result code
+     */
+    Result ScanPrivate(
+        ams::sf::Out<u32> count,
+        ams::sf::OutAutoSelectArray<NetworkInfo> buffer,
+        u16 channel,
+        ScanFilter filter);
+
+    /**
+     * @brief Create a private (password-protected) network
+     *
+     * @param data Network configuration including security parameter
+     * @param addressList Address list buffer
+     * @return Result code
+     */
+    Result CreateNetworkPrivate(
+        CreateNetworkPrivateConfig data,
+        ams::sf::InPointerBuffer addressList);
+
+    /**
+     * @brief Connect to a private network
+     *
+     * @param data Connection data including security parameter
+     * @return Result code
+     */
+    Result ConnectPrivate(ConnectPrivateData data);
+
+    // ========================================================================
+    // Other Operations
+    // ========================================================================
+
+    /**
+     * @brief Set wireless controller restriction
+     * @return Result code (stub)
+     */
     Result SetWirelessControllerRestriction();
-    Result CreateNetworkPrivate();
-    Result Reject();
+
+    /**
+     * @brief Reject a node from the network
+     *
+     * @param nodeId Node ID to reject
+     * @return Result code
+     */
+    Result Reject(u32 nodeId);
+
+    /**
+     * @brief Add entry to accept filter
+     * @return Result code (stub)
+     */
     Result AddAcceptFilterEntry();
+
+    /**
+     * @brief Clear accept filter
+     * @return Result code (stub)
+     */
     Result ClearAcceptFilter();
-    Result ConnectPrivate();
 
 private:
     /**
@@ -280,6 +338,23 @@ private:
     bool IsServerConnected() const;
 
 private:
+    /**
+     * @brief Handle packet received from server
+     * @param id Packet type
+     * @param data Packet payload
+     * @param size Payload size
+     */
+    void HandleServerPacket(ryu_ldn::protocol::PacketId id, const uint8_t* data, size_t size);
+
+    /**
+     * @brief Wait for a specific packet response from server
+     * @param expected_id Expected packet type
+     * @param timeout_ms Timeout in milliseconds
+     * @return true if packet received, false on timeout
+     */
+    bool WaitForResponse(ryu_ldn::protocol::PacketId expected_id, uint64_t timeout_ms);
+
+private:
     LdnStateMachine m_state_machine;        ///< Thread-safe state machine
     u64 m_error_state;                      ///< Error state flag
     u64 m_client_process_id;                ///< Client game process ID
@@ -294,6 +369,54 @@ private:
 
     LdnNodeMapper m_node_mapper;            ///< Node ID to IP mapping
     LdnProxyBuffer m_proxy_buffer;          ///< Incoming proxy data buffer
+
+    // Response handling with events (like Ryujinx ManualResetEvent pattern)
+    os::Event m_response_event;             ///< Signaled when any response received
+    os::Event m_scan_event;                 ///< Signaled when scan completes
+    os::Event m_error_event;                ///< Signaled on network error
+    os::Event m_reject_event;               ///< Signaled when reject reply received
+    ryu_ldn::protocol::PacketId m_last_response_id; ///< Last received packet ID
+
+    // Scan results buffer
+    static constexpr size_t MAX_SCAN_RESULTS = 24;  ///< Max networks from scan
+    NetworkInfo m_scan_results[MAX_SCAN_RESULTS];   ///< Scan results buffer
+    size_t m_scan_result_count;                     ///< Number of scan results
+
+    // Advertise data buffer
+    uint8_t m_advertise_data[384];          ///< Stored advertise data
+    size_t m_advertise_data_size;           ///< Size of advertise data
+
+    // Game version (like Ryujinx _gameVersion)
+    uint8_t m_game_version[16];             ///< Game version string for CreateAccessPoint
+
+    // Network connected flag (like Ryujinx _networkConnected)
+    bool m_network_connected;               ///< True when in active network session
+
+    // Last network error (like Ryujinx _lastError)
+    ryu_ldn::protocol::NetworkErrorCode m_last_network_error; ///< Last error from server
+
+    // P2P Proxy support (like Ryujinx _useP2pProxy, Config)
+    bool m_use_p2p_proxy;                                   ///< True if P2P proxy enabled
+    ryu_ldn::protocol::ProxyConfig m_proxy_config;          ///< Current proxy configuration
+    ryu_ldn::protocol::ExternalProxyConfig m_external_proxy_config; ///< External proxy config
+
+    /**
+     * @brief Set game version from local_communication_version
+     *
+     * Converts version number to string format for RyuNetworkConfig.
+     *
+     * @param version Version buffer (16 bytes)
+     */
+    void SetGameVersion(const uint8_t* version);
+
+    /**
+     * @brief Consume last network error (like Ryujinx ConsumeNetworkError)
+     *
+     * Returns the last error and resets it to None.
+     *
+     * @return Last network error code
+     */
+    ryu_ldn::protocol::NetworkErrorCode ConsumeNetworkError();
 };
 
 // Verify interface compliance

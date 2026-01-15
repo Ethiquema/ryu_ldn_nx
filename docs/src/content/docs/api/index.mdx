@@ -1,0 +1,30 @@
+---
+title: API Reference
+description: API documentation for ryu_ldn_nx
+---
+
+# API Reference
+
+This section contains the API documentation generated from the source code.
+
+## Modules
+
+### Protocol
+- [RyuProtocol](/ryu_ldn_nx/api/protocol) - Protocol encoder/decoder
+- [PacketBuffer](/ryu_ldn_nx/api/packet-buffer) - Packet buffering utilities
+- [Types](/ryu_ldn_nx/api/types) - Protocol types and structures
+
+### Network
+- [NetworkClient](/ryu_ldn_nx/api/network-client) - Main network client
+- [TcpClient](/ryu_ldn_nx/api/tcp-client) - TCP socket wrapper
+- [ConnectionState](/ryu_ldn_nx/api/connection-state) - Connection state machine
+- [ReconnectManager](/ryu_ldn_nx/api/reconnect) - Automatic reconnection
+
+### LDN Service
+- [LdnMitMService](/ryu_ldn_nx/api/ldn-mitm-service) - MITM service implementation
+- [LdnICommunication](/ryu_ldn_nx/api/ldn-icommunication) - IPC command handler
+- [LdnStateMachine](/ryu_ldn_nx/api/ldn-state-machine) - LDN state management
+- [LdnConfigService](/ryu_ldn_nx/api/ldn-config-service) - Overlay configuration IPC
+
+### Config
+- [Config](/ryu_ldn_nx/api/config) - Configuration parser

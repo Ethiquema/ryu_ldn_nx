@@ -150,6 +150,9 @@ constexpr uint32_t DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
 /** @brief Default LDN enabled state */
 constexpr bool DEFAULT_LDN_ENABLED = true;
 
+/** @brief Default P2P proxy disabled state (like Ryujinx MultiplayerDisableP2p) */
+constexpr bool DEFAULT_DISABLE_P2P = false;
+
 // -----------------------------------------------------------------------------
 // Default Values - Debug
 // -----------------------------------------------------------------------------
@@ -227,11 +230,13 @@ struct NetworkConfig {
  * - `enabled`: Enable/disable LDN emulation (0/1)
  * - `passphrase`: Passphrase for private rooms (max 64 chars)
  * - `interface`: Preferred network interface (empty = auto)
+ * - `disable_p2p`: Disable P2P proxy (0/1) - like Ryujinx MultiplayerDisableP2p
  */
 struct LdnConfig {
     bool enabled;                                    ///< Enable LDN emulation
     char passphrase[MAX_PASSPHRASE_LENGTH + 1];      ///< Room passphrase (null-terminated)
     char interface_name[MAX_INTERFACE_LENGTH + 1];   ///< Network interface (null-terminated)
+    bool disable_p2p;                                ///< Disable P2P proxy (like Ryujinx)
 };
 
 /**

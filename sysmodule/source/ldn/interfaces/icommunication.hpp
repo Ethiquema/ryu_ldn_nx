@@ -67,13 +67,20 @@
     AMS_SF_METHOD_INFO(C, H, 401, Result, Finalize, (), ())                                                             \
     AMS_SF_METHOD_INFO(C, H, 402, Result, InitializeSystem2,                                                            \
         (u64 unk, const ams::sf::ClientProcessId &client_process_id), (unk, client_process_id))                         \
-    /* Not yet implemented (stubs) */                                                                                   \
-    AMS_SF_METHOD_INFO(C, H, 103, Result, ScanPrivate, (), ())                                                          \
+    /* Private Network Operations */                                                                                     \
+    AMS_SF_METHOD_INFO(C, H, 103, Result, ScanPrivate,                                                                  \
+        (ams::sf::Out<u32> count,                                                                                       \
+         ams::sf::OutAutoSelectArray<ams::mitm::ldn::NetworkInfo> buffer,                                               \
+         u16 channel, ams::mitm::ldn::ScanFilter filter), (count, buffer, channel, filter))                             \
+    AMS_SF_METHOD_INFO(C, H, 203, Result, CreateNetworkPrivate,                                                         \
+        (ams::mitm::ldn::CreateNetworkPrivateConfig data,                                                               \
+         ams::sf::InPointerBuffer addressList), (data, addressList))                                                    \
+    AMS_SF_METHOD_INFO(C, H, 303, Result, ConnectPrivate,                                                               \
+        (ams::mitm::ldn::ConnectPrivateData data), (data))                                                              \
+    /* Other stubs */                                                                                                   \
     AMS_SF_METHOD_INFO(C, H, 104, Result, SetWirelessControllerRestriction, (), ())                                     \
-    AMS_SF_METHOD_INFO(C, H, 203, Result, CreateNetworkPrivate, (), ())                                                 \
-    AMS_SF_METHOD_INFO(C, H, 205, Result, Reject, (), ())                                                               \
+    AMS_SF_METHOD_INFO(C, H, 205, Result, Reject, (u32 nodeId), (nodeId))                                               \
     AMS_SF_METHOD_INFO(C, H, 208, Result, AddAcceptFilterEntry, (), ())                                                 \
-    AMS_SF_METHOD_INFO(C, H, 209, Result, ClearAcceptFilter, (), ())                                                    \
-    AMS_SF_METHOD_INFO(C, H, 303, Result, ConnectPrivate, (), ())
+    AMS_SF_METHOD_INFO(C, H, 209, Result, ClearAcceptFilter, (), ())
 
 AMS_SF_DEFINE_INTERFACE(ams::mitm::ldn, ICommunicationInterface, AMS_RYU_LDN_ICOMMUNICATION, 0x85280DC3)

@@ -213,6 +213,14 @@ public:
      */
     static const char* ResultToString(StateTransitionResult result);
 
+    /**
+     * @brief Manually signal state change event
+     *
+     * Call this when external events (like server packets) indicate
+     * a state-relevant change that games should be notified about.
+     */
+    void SignalStateChange();
+
 private:
     /**
      * @brief Perform state transition if valid
@@ -228,11 +236,6 @@ private:
      * @return true if transition is allowed
      */
     static bool IsValidTransition(CommState from, CommState to);
-
-    /**
-     * @brief Signal state change event
-     */
-    void SignalStateChange();
 
 private:
     mutable os::SdkMutex m_mutex;           ///< Mutex for thread safety

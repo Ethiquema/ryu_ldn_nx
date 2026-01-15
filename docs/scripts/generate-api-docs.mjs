@@ -26,9 +26,12 @@ const parser = new XMLParser({
 function escapeMdx(text) {
   if (!text) return '';
   // Escape < and > outside of backticks
+  // Also escape curly braces which are JSX expressions in MDX
   return text
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/\{/g, '\\{')
+    .replace(/\}/g, '\\}');
 }
 
 /**
