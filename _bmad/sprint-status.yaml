@@ -103,16 +103,38 @@ epics:
   - id: 6
     name: "Runtime LDN Info + Config Lock"
     priority: P1
-    status: in_progress
+    status: paused
     stories_completed: 0
     stories_total: 6
     depends_on: [3, 4]
     file: _bmad/epics/epic-6-runtime-info.md
 
+  - id: 7
+    name: "Packet Handlers Refactoring"
+    priority: P1
+    status: in_progress
+    stories_completed: 3
+    stories_total: 6
+    depends_on: [3]
+    file: _bmad/epics/epic-7-packet-handlers.md
+
+  - id: 8
+    name: "BSD Socket MITM (Proxy Data Routing)"
+    priority: P0
+    status: in_progress
+    stories_completed: 1
+    stories_total: 9
+    depends_on: [3]
+    file: _bmad/epics/epic-8-bsd-mitm.md
+    notes: |
+      CRITICAL: Required for game data communication.
+      Current problem: Games create sockets with 10.114.x.x but this network doesn't exist.
+      Solution: Intercept bsd:u service and route LDN sockets via ProxyData.
+
 # Execution en cours
 execution:
-  current_epic: 6
-  current_story: "6.1"
+  current_epic: 8
+  current_story: "8.2"
   stories_completed:
     # Epic 0 - Infrastructure
     - "0.1: Docker Build Environment"
@@ -161,12 +183,15 @@ execution:
     - "5.4: GitHub Actions docs"
 
 next_actions:
-  - "Story 6.1: SharedState Singleton (Test-First)"
-  - "Story 6.2: Commandes IPC Runtime 23-28"
-  - "Story 6.3: Intégration SharedState dans MITM"
-  - "Story 6.4: Client IPC Overlay Runtime"
-  - "Story 6.5: UI Conditionnelle Overlay"
-  - "Story 6.6: Tests et Documentation"
+  # Epic 8 - BSD MITM (PRIORITY)
+  - "Story 8.2: Interface IPC BSD (structures et commandes)"
+  - "Story 8.3: Service MITM BSD de base (forwarding)"
+  - "Story 8.4: Proxy Socket Manager (détection 10.114.x.x)"
+  - "Story 8.5: Interception Bind/Connect"
+  - "Story 8.6: Interception Send/Recv"
+  - "Story 8.7: Réception ProxyData → ProxySocket"
+  - "Story 8.8: Commandes BSD restantes"
+  - "Story 8.9: Tests d'intégration MK8DX"
 
 # Fichiers principaux du projet
 files_created:
@@ -234,6 +259,15 @@ notes: |
   Epic 3 (Service LDN) COMPLETE - 9/9 stories - 156 tests.
   Epic 4 (Tesla Overlay) COMPLETE - 6/6 stories - overlay.ovl compilé.
   Epic 5 (Documentation) EN COURS - 4/7 stories.
-  Epic 6 (Runtime Info) EN COURS - 0/6 stories - SharedState singleton pour runtime LDN.
+  Epic 6 (Runtime Info) PAUSED - 0/6 stories.
+  Epic 7 (Packet Handlers) EN COURS - 3/6 stories.
+  Epic 8 (BSD MITM) DÉMARRÉ - 1/9 stories - CRITIQUE pour MVP.
+
+  2026-01-15: PROBLÈME IDENTIFIÉ
+  - CreateNetwork fonctionne, GetIpv4Address retourne 10.114.0.1
+  - Le jeu ferme immédiatement (CloseAccessPoint) car les sockets échouent
+  - Les sockets utilisent 10.114.x.x mais ce réseau n'existe pas
+  - SOLUTION: Intercepter bsd:u et router via ProxyData
+
   Total: 369 tests unitaires passent.
   Builds: sysmodule.nsp, overlay.ovl, documentation Starlight.

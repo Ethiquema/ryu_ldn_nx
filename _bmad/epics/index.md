@@ -1,8 +1,8 @@
 # Index des Epics - ryu_ldn_nx
 
-**Date** : 2026-01-12
-**Total Epics** : 6
-**Estimation totale** : ~7-8 sprints
+**Date** : 2026-01-15
+**Total Epics** : 8
+**Estimation totale** : ~10-12 sprints
 
 ---
 
@@ -51,12 +51,14 @@
 
 ### P0 - Critiques (MVP)
 
-| Epic | Nom | Stories | Estimation | Dépendances |
-|------|-----|---------|------------|-------------|
-| [0](epic-0-infrastructure.md) | Infrastructure Projet | 6 | 1 sprint | - |
-| [1](epic-1-protocol.md) | Protocole RyuLdn | 6 | 1 sprint | Epic 0 |
-| [2](epic-2-network-client.md) | Client Réseau | 8 | 1.5 sprints | Epic 0, 1 |
-| [3](epic-3-ldn-service.md) | Service LDN (MITM) | 9 | 2 sprints | Epic 0, 1, 2 |
+| Epic | Nom | Stories | Estimation | Dépendances | Statut |
+|------|-----|---------|------------|-------------|--------|
+| [0](epic-0-infrastructure.md) | Infrastructure Projet | 6 | 1 sprint | - | ✅ Done |
+| [1](epic-1-protocol.md) | Protocole RyuLdn | 6 | 1 sprint | Epic 0 | ✅ Done |
+| [2](epic-2-network-client.md) | Client Réseau | 8 | 1.5 sprints | Epic 0, 1 | ✅ Done |
+| [3](epic-3-ldn-service.md) | Service LDN (MITM) | 9 | 2 sprints | Epic 0, 1, 2 | ✅ Done |
+| [7](epic-7-packet-handlers.md) | Packet Handlers | 6 | 1 sprint | Epic 3 | 🔄 In Progress |
+| **[8](epic-8-bsd-mitm.md)** | **BSD Socket MITM** | **9** | **3-4 sprints** | **Epic 3** | **🆕 New** |
 
 ### P1 - Importants
 
