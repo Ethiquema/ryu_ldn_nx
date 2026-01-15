@@ -46,6 +46,7 @@
 #include <deque>
 #include <vector>
 #include "bsd_types.hpp"
+#include "../protocol/types.hpp"
 
 namespace ams::mitm::bsd {
 
@@ -74,6 +75,7 @@ constexpr size_t PROXY_SOCKET_MAX_PAYLOAD = 1400;
 enum class ProxySocketState {
     Created,        ///< Socket created but not bound
     Bound,          ///< Socket bound to local address
+    Connecting,     ///< TCP: Connect in progress, waiting for reply
     Connected,      ///< Socket connected to remote (TCP) or has default dest (UDP)
     Listening,      ///< Socket listening for connections (TCP only)
     Closed,         ///< Socket closed, awaiting cleanup
@@ -363,6 +365,49 @@ public:
      */
     std::unique_ptr<ProxySocket> Accept(ryu_ldn::bsd::SockAddrIn* out_addr);
 
+    /**
+     * @brief Queue an incoming connection request (TCP listen socket)
+     *
+     * Called by ProxySocketManager when a ProxyConnect packet arrives
+     * for this listening socket.
+     *
+     * @param request The connection request info
+     */
+    void IncomingConnection(const ryu_ldn::protocol::ProxyConnectRequest& request);
+
+    /**
+     * @brief Handle connect response (for TCP connect handshake)
+     *
+     * Called by ProxySocketManager when ProxyConnectReply arrives.
+     *
+     * @param response The connect response
+     */
+    void HandleConnectResponse(const ryu_ldn::protocol::ProxyConnectResponse& response);
+
+    /**
+     * @brief Check if accept queue has pending connections
+     * @return true if there are pending connections
+     */
+    bool HasPendingConnections() const;
+
+    /**
+     * @brief Get broadcast flag
+     * @return true if SO_BROADCAST is enabled
+     */
+    bool IsBroadcastEnabled() const { return m_broadcast; }
+
+    /**
+     * @brief Set broadcast flag (SO_BROADCAST)
+     * @param enabled true to enable broadcast reception
+     */
+    void SetBroadcastEnabled(bool enabled) { m_broadcast = enabled; }
+
+    /**
+     * @brief Set broadcast address for filtering
+     * @param addr Broadcast address (e.g., 10.114.255.255)
+     */
+    void SetBroadcastAddress(uint32_t addr) { m_broadcast_address = addr; }
+
     // =========================================================================
     // Shutdown and Close
     // =========================================================================
@@ -486,6 +531,41 @@ private:
      * @brief TCP accept queue (pending connections)
      */
     std::deque<std::unique_ptr<ProxySocket>> m_accept_queue;
+
+    /**
+     * @brief Event signaled when accept queue has connections
+     */
+    os::Event m_accept_event{os::EventClearMode_ManualClear};
+
+    /**
+     * @brief TCP connect response received flag
+     */
+    bool m_connect_response_received{false};
+
+    /**
+     * @brief TCP connect response data (valid when m_connect_response_received is true)
+     */
+    ryu_ldn::protocol::ProxyConnectResponse m_connect_response{};
+
+    /**
+     * @brief Event signaled when connect response is received
+     */
+    os::Event m_connect_event{os::EventClearMode_ManualClear};
+
+    /**
+     * @brief Broadcast flag (SO_BROADCAST)
+     *
+     * When false, incoming broadcast packets are filtered out.
+     * When true, broadcast packets are accepted.
+     */
+    bool m_broadcast{false};
+
+    /**
+     * @brief Broadcast address for filtering
+     *
+     * Calculated as: local_ip | ~subnet_mask (e.g., 10.114.255.255)
+     */
+    uint32_t m_broadcast_address{0};
 
     /**
      * @brief Socket options storage

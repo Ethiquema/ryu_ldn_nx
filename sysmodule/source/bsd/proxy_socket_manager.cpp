@@ -161,6 +161,102 @@ bool ProxySocketManager::SendProxyData(uint32_t source_ip, uint16_t source_port,
     return callback(source_ip, source_port, dest_ip, dest_port, protocol, data, data_len);
 }
 
+void ProxySocketManager::SetProxyConnectCallback(SendProxyConnectCallback callback) {
+    std::scoped_lock lock(m_mutex);
+    m_proxy_connect_callback = callback;
+}
+
+bool ProxySocketManager::SendProxyConnect(uint32_t source_ip, uint16_t source_port,
+                                           uint32_t dest_ip, uint16_t dest_port,
+                                           ryu_ldn::bsd::ProtocolType protocol) {
+    SendProxyConnectCallback callback;
+    {
+        std::scoped_lock lock(m_mutex);
+        callback = m_proxy_connect_callback;
+    }
+
+    if (callback == nullptr) {
+        return false;
+    }
+
+    return callback(source_ip, source_port, dest_ip, dest_port, protocol);
+}
+
+bool ProxySocketManager::RouteConnectResponse(const ryu_ldn::protocol::ProxyConnectResponse& response) {
+    std::scoped_lock lock(m_mutex);
+
+    // Find socket in Connecting state that matches the destination
+    uint32_t dest_ip = response.info.source_ipv4;  // Response comes back to our source
+    uint16_t dest_port = response.info.source_port;
+
+    for (auto& [fd, socket] : m_sockets) {
+        if (socket == nullptr) {
+            continue;
+        }
+
+        // Check if socket is connecting
+        if (socket->GetState() != ProxySocketState::Connecting) {
+            continue;
+        }
+
+        // Check local address matches
+        const auto& local_addr = socket->GetLocalAddr();
+        if (local_addr.GetAddr() != dest_ip || local_addr.GetPort() != dest_port) {
+            continue;
+        }
+
+        // Found matching socket - deliver response
+        socket->HandleConnectResponse(response);
+        return true;
+    }
+
+    return false;
+}
+
+bool ProxySocketManager::RouteConnectRequest(const ryu_ldn::protocol::ProxyConnectRequest& request) {
+    std::scoped_lock lock(m_mutex);
+
+    // Find listening socket that matches the destination
+    uint32_t dest_ip = request.info.dest_ipv4;
+    uint16_t dest_port = request.info.dest_port;
+
+    for (auto& [fd, socket] : m_sockets) {
+        if (socket == nullptr) {
+            continue;
+        }
+
+        // Check if socket is listening
+        if (socket->GetState() != ProxySocketState::Listening) {
+            continue;
+        }
+
+        // Check protocol matches (TCP)
+        if (socket->GetProtocol() != ryu_ldn::bsd::ProtocolType::Tcp) {
+            continue;
+        }
+
+        // Check local address matches destination
+        const auto& local_addr = socket->GetLocalAddr();
+
+        // Port must match
+        if (local_addr.GetPort() != dest_port) {
+            continue;
+        }
+
+        // IP can be exact match or INADDR_ANY
+        uint32_t local_ip = local_addr.GetAddr();
+        if (local_ip != 0 && local_ip != dest_ip) {
+            continue;
+        }
+
+        // Found matching listener - queue the connection
+        socket->IncomingConnection(request);
+        return true;
+    }
+
+    return false;
+}
+
 // =============================================================================
 // Data Routing
 // =============================================================================

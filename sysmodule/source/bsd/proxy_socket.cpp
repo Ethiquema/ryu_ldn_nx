@@ -88,10 +88,52 @@ Result ProxySocket::Connect(const ryu_ldn::bsd::SockAddrIn& addr) {
 
     // Store remote address
     m_remote_addr = addr;
-    m_state = ProxySocketState::Connected;
 
-    // TODO: For TCP, send ProxyConnect packet to server
-    // This will be implemented when we integrate with ProxySocketManager
+    // For TCP, perform connect handshake
+    if (m_type == ryu_ldn::bsd::SocketType::Stream) {
+        m_state = ProxySocketState::Connecting;
+        m_connect_response_received = false;
+        m_connect_event.Clear();
+
+        // Send ProxyConnect via ProxySocketManager
+        auto& manager = ProxySocketManager::GetInstance();
+        bool sent = manager.SendProxyConnect(
+            m_local_addr.GetAddr(), m_local_addr.GetPort(),
+            addr.GetAddr(), addr.GetPort(),
+            m_protocol
+        );
+
+        if (!sent) {
+            m_state = ProxySocketState::Bound;
+            R_THROW(static_cast<s32>(Errno::NetUnreach));
+        }
+
+        // Wait for ProxyConnectReply (with timeout)
+        if (!m_non_blocking) {
+            // Blocking connect - wait up to 4 seconds (like Ryujinx)
+            bool got_response = m_connect_event.TimedWait(TimeSpan::FromSeconds(4));
+
+            if (!got_response || !m_connect_response_received) {
+                m_state = ProxySocketState::Bound;
+                R_THROW(static_cast<s32>(Errno::TimedOut));
+            }
+
+            // Check if connection was refused (protocol != Unspecified means error)
+            if (m_connect_response.info.protocol != ryu_ldn::protocol::ProtocolType::Unspecified) {
+                m_state = ProxySocketState::Bound;
+                R_THROW(static_cast<s32>(Errno::ConnRefused));
+            }
+
+            m_state = ProxySocketState::Connected;
+        } else {
+            // Non-blocking connect - return EINPROGRESS
+            // The connect will complete asynchronously
+            R_THROW(static_cast<s32>(Errno::InProgress));
+        }
+    } else {
+        // For UDP, just store the default destination
+        m_state = ProxySocketState::Connected;
+    }
 
     R_SUCCEED();
 }
@@ -279,6 +321,32 @@ s32 ProxySocket::RecvFrom(void* buffer, size_t len, s32 flags, ryu_ldn::bsd::Soc
 }
 
 void ProxySocket::IncomingData(const void* data, size_t len, const ryu_ldn::bsd::SockAddrIn& from) {
+    // Check if this is a broadcast packet and filter if SO_BROADCAST not set
+    // Broadcast packets have destination IP matching the broadcast address
+    // (e.g., 10.114.255.255 for LDN network)
+    if (m_broadcast_address != 0 && !m_broadcast) {
+        // Get local address to check if packet was sent to broadcast
+        uint32_t local_ip = m_local_addr.GetAddr();
+
+        // If we're bound to a specific IP and not the broadcast address,
+        // check if the packet came from broadcast (source would be broadcast addr)
+        // Actually, for UDP the check is: if packet destination was broadcast
+        // Since we receive based on our local port, we need to check if
+        // the packet was originally sent to broadcast address.
+        // The 'from' address is the source, not destination.
+        // We filter based on whether packet destination matched broadcast.
+        // Since IncomingData is called after routing, we check our local binding.
+
+        // If bound to INADDR_ANY (0.0.0.0), we accept packets to broadcast
+        // only if SO_BROADCAST is set
+        if (local_ip == 0) {
+            // We can't easily determine if this was a broadcast packet
+            // without the original destination. For safety, we use heuristic:
+            // If source IP matches broadcast pattern, it might be a broadcast response
+            // Skip filtering for now - proper filtering requires destination IP
+        }
+    }
+
     std::scoped_lock lock(m_queue_mutex);
 
     // Drop if queue is full (UDP behavior)
@@ -322,13 +390,40 @@ ReceivedPacket ProxySocket::PopFrontPacket(bool peek) {
 // =============================================================================
 
 Result ProxySocket::SetSockOpt(s32 level, s32 optname, const void* optval, size_t optlen) {
+    // Handle SOL_SOCKET level options
+    if (level == static_cast<s32>(ryu_ldn::bsd::SocketOptionLevel::Socket)) {
+        switch (static_cast<ryu_ldn::bsd::SocketOption>(optname)) {
+            case ryu_ldn::bsd::SocketOption::Broadcast:
+                // SO_BROADCAST - enable/disable broadcast reception
+                if (optval != nullptr && optlen >= sizeof(s32)) {
+                    s32 value = *reinterpret_cast<const s32*>(optval);
+                    m_broadcast = (value != 0);
+                    R_SUCCEED();
+                }
+                R_THROW(static_cast<s32>(Errno::Inval));
+
+            case ryu_ldn::bsd::SocketOption::ReuseAddr:
+            case ryu_ldn::bsd::SocketOption::KeepAlive:
+            case ryu_ldn::bsd::SocketOption::DontRoute:
+            case ryu_ldn::bsd::SocketOption::Linger:
+            case ryu_ldn::bsd::SocketOption::OobInline:
+            case ryu_ldn::bsd::SocketOption::ReusePort:
+            case ryu_ldn::bsd::SocketOption::SndBuf:
+            case ryu_ldn::bsd::SocketOption::RcvBuf:
+            case ryu_ldn::bsd::SocketOption::SndLoWat:
+            case ryu_ldn::bsd::SocketOption::RcvLoWat:
+            case ryu_ldn::bsd::SocketOption::SndTimeo:
+            case ryu_ldn::bsd::SocketOption::RcvTimeo:
+                // Accept but ignore these common options
+                R_SUCCEED();
+
+            default:
+                break;
+        }
+    }
+
+    // Accept but ignore unknown options (compatibility)
     AMS_UNUSED(level, optname, optval, optlen);
-
-    // Most socket options are stored locally but don't affect real behavior
-    // since we're proxying through the server
-    // TODO: Store options if needed for specific games
-
-    // Accept but ignore most options
     R_SUCCEED();
 }
 
@@ -353,6 +448,15 @@ Result ProxySocket::GetSockOpt(s32 level, s32 optname, void* optval, size_t* opt
                 // SO_ERROR - return 0 (no error)
                 if (*optlen >= sizeof(s32)) {
                     *reinterpret_cast<s32*>(optval) = 0;
+                    *optlen = sizeof(s32);
+                    R_SUCCEED();
+                }
+                break;
+
+            case ryu_ldn::bsd::SocketOption::Broadcast:
+                // SO_BROADCAST - return broadcast flag
+                if (*optlen >= sizeof(s32)) {
+                    *reinterpret_cast<s32*>(optval) = m_broadcast ? 1 : 0;
                     *optlen = sizeof(s32);
                     R_SUCCEED();
                 }
@@ -394,11 +498,102 @@ std::unique_ptr<ProxySocket> ProxySocket::Accept(ryu_ldn::bsd::SockAddrIn* out_a
         return nullptr;
     }
 
-    // TODO: Implement TCP accept from accept queue
-    // For now, LDN games primarily use UDP
+    // Check if non-blocking and no connections available
+    {
+        std::scoped_lock lock(m_queue_mutex);
+        if (m_accept_queue.empty()) {
+            if (m_non_blocking) {
+                // EWOULDBLOCK
+                return nullptr;
+            }
+        } else {
+            // Connection available - return it
+            auto accepted = std::move(m_accept_queue.front());
+            m_accept_queue.pop_front();
 
-    AMS_UNUSED(out_addr);
+            if (m_accept_queue.empty()) {
+                m_accept_event.Clear();
+            }
+
+            if (out_addr != nullptr) {
+                *out_addr = accepted->GetRemoteAddr();
+            }
+
+            return accepted;
+        }
+    }
+
+    // Blocking wait for connection
+    m_accept_event.Wait();
+
+    // Try again after waking up
+    {
+        std::scoped_lock lock(m_queue_mutex);
+        if (!m_accept_queue.empty()) {
+            auto accepted = std::move(m_accept_queue.front());
+            m_accept_queue.pop_front();
+
+            if (m_accept_queue.empty()) {
+                m_accept_event.Clear();
+            }
+
+            if (out_addr != nullptr) {
+                *out_addr = accepted->GetRemoteAddr();
+            }
+
+            return accepted;
+        }
+    }
+
+    // No connection (spurious wakeup or shutdown)
     return nullptr;
+}
+
+void ProxySocket::IncomingConnection(const ryu_ldn::protocol::ProxyConnectRequest& request) {
+    // Only accept on listening sockets
+    if (m_state != ProxySocketState::Listening) {
+        return;
+    }
+
+    std::scoped_lock lock(m_queue_mutex);
+
+    // Create a new socket for the accepted connection
+    auto accepted = std::make_unique<ProxySocket>(m_type, m_protocol);
+
+    // Set local address (same as listening socket)
+    accepted->m_local_addr = m_local_addr;
+    accepted->m_state = ProxySocketState::Bound;
+
+    // Set remote address from request
+    accepted->m_remote_addr.sin_family = static_cast<uint8_t>(ryu_ldn::bsd::AddressFamily::Inet);
+    accepted->m_remote_addr.sin_len = sizeof(ryu_ldn::bsd::SockAddrIn);
+    accepted->m_remote_addr.sin_addr = __builtin_bswap32(request.info.source_ipv4);
+    accepted->m_remote_addr.sin_port = __builtin_bswap16(request.info.source_port);
+
+    // Mark as connected
+    accepted->m_state = ProxySocketState::Connected;
+
+    // Add to accept queue
+    m_accept_queue.push_back(std::move(accepted));
+
+    // Signal that a connection is available
+    m_accept_event.Signal();
+
+    // TODO: Send ProxyConnectReply back to the peer via ProxySocketManager
+}
+
+void ProxySocket::HandleConnectResponse(const ryu_ldn::protocol::ProxyConnectResponse& response) {
+    // Store the response
+    m_connect_response = response;
+    m_connect_response_received = true;
+
+    // Signal that connect response arrived
+    m_connect_event.Signal();
+}
+
+bool ProxySocket::HasPendingConnections() const {
+    std::scoped_lock lock(m_queue_mutex);
+    return !m_accept_queue.empty();
 }
 
 // =============================================================================

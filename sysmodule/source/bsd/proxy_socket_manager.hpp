@@ -67,6 +67,7 @@
 #include "proxy_socket.hpp"
 #include "ephemeral_port_pool.hpp"
 #include "bsd_types.hpp"
+#include "../protocol/types.hpp"
 
 namespace ams::mitm::bsd {
 
@@ -299,6 +300,76 @@ public:
                        ryu_ldn::bsd::ProtocolType protocol,
                        const void* data, size_t data_len);
 
+    /**
+     * @brief Callback type for sending ProxyConnect to the LDN server
+     *
+     * This callback is invoked when a TCP proxy socket calls Connect().
+     *
+     * @param source_ip Source IP (host byte order)
+     * @param source_port Source port (host byte order)
+     * @param dest_ip Destination IP (host byte order)
+     * @param dest_port Destination port (host byte order)
+     * @param protocol Protocol type (TCP)
+     * @return true if request was sent successfully, false otherwise
+     */
+    using SendProxyConnectCallback = bool (*)(uint32_t source_ip, uint16_t source_port,
+                                               uint32_t dest_ip, uint16_t dest_port,
+                                               ryu_ldn::bsd::ProtocolType protocol);
+
+    /**
+     * @brief Set the callback for sending ProxyConnect to the LDN server
+     *
+     * Called by the LDN MITM service during initialization.
+     *
+     * @param callback Function to call when TCP proxy sockets call Connect()
+     *
+     * @note Thread-safe
+     */
+    void SetProxyConnectCallback(SendProxyConnectCallback callback);
+
+    /**
+     * @brief Send ProxyConnect request for TCP connection handshake
+     *
+     * Called by ProxySocket::Connect for TCP sockets.
+     *
+     * @param source_ip Source IP (host byte order)
+     * @param source_port Source port (host byte order)
+     * @param dest_ip Destination IP (host byte order)
+     * @param dest_port Destination port (host byte order)
+     * @param protocol Protocol type (TCP)
+     * @return true if request was sent, false if no callback or send failed
+     *
+     * @note Thread-safe
+     */
+    bool SendProxyConnect(uint32_t source_ip, uint16_t source_port,
+                          uint32_t dest_ip, uint16_t dest_port,
+                          ryu_ldn::bsd::ProtocolType protocol);
+
+    /**
+     * @brief Route incoming ProxyConnectReply to the connecting socket
+     *
+     * Called by the LDN MITM service when a ProxyConnectReply packet arrives.
+     *
+     * @param response The connect response
+     * @return true if routed successfully, false if no matching socket
+     *
+     * @note Thread-safe
+     */
+    bool RouteConnectResponse(const ryu_ldn::protocol::ProxyConnectResponse& response);
+
+    /**
+     * @brief Route incoming ProxyConnect to a listening socket (accept queue)
+     *
+     * Called by the LDN MITM service when a ProxyConnect packet arrives
+     * for a listening socket (incoming TCP connection).
+     *
+     * @param request The connect request
+     * @return true if routed successfully, false if no matching listener
+     *
+     * @note Thread-safe
+     */
+    bool RouteConnectRequest(const ryu_ldn::protocol::ProxyConnectRequest& request);
+
     // =========================================================================
     // LDN Network Configuration
     // =========================================================================
@@ -409,6 +480,11 @@ private:
      * @brief Callback for sending ProxyData to LDN server
      */
     SendProxyDataCallback m_send_callback{nullptr};
+
+    /**
+     * @brief Callback for sending ProxyConnect to LDN server (TCP handshake)
+     */
+    SendProxyConnectCallback m_proxy_connect_callback{nullptr};
 };
 
 } // namespace ams::mitm::bsd
