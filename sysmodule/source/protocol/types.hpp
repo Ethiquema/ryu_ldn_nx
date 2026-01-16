@@ -178,7 +178,7 @@ enum class PacketId : uint8_t {
 // =============================================================================
 
 /**
-  * @brief LDN Protocol Header - 10 bytes
+ * @brief LDN Protocol Header - 12 bytes
  *
  * Every packet in the RyuLdn protocol starts with this header.
  * The header contains identification, versioning, and size information.
@@ -189,9 +189,12 @@ enum class PacketId : uint8_t {
  * 0x00    4     magic       Protocol magic (0x4E444C52 = "RLDN")
  * 0x04    1     type        Packet type (PacketId enum)
  * 0x05    1     version     Protocol version (must be 1)
- * 0x06    2     reserved    Padding (must be 0)
+ * 0x06    2     reserved    Padding for Switch compatibility (must be 0)
  * 0x08    4     data_size   Payload size in bytes (signed for compatibility)
  * ```
+ *
+ * NOTE: The 2-byte reserved field is required for Switch compatibility.
+ * DO NOT change this to 10 bytes - it breaks communication.
  *
  * ## Validation
  * When receiving a packet, validate:
@@ -203,10 +206,10 @@ struct LdnHeader {
     uint32_t magic;      ///< Must be PROTOCOL_MAGIC (0x4E444C52 = "RLDN")
     uint8_t  type;       ///< Packet type from PacketId enum
     uint8_t  version;    ///< Protocol version (must be PROTOCOL_VERSION = 1)
-    uint16_t reserved;   ///< Padding for alignment (must be 0)
+    uint16_t reserved;   ///< Padding for Switch compatibility (must be 0)
     int32_t  data_size;  ///< Size of payload following header (may be 0)
 };
-static_assert(sizeof(LdnHeader) == 0xC, "LdnHeader must be 12 bytes");
+static_assert(sizeof(LdnHeader) == 0xC, "LdnHeader must be 12 bytes - DO NOT CHANGE");
 
 /**
  * @brief MAC Address - 6 bytes

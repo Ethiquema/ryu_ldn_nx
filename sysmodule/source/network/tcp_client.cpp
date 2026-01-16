@@ -321,6 +321,9 @@ ClientResult TcpClient::send_create_access_point(const protocol::CreateAccessPoi
         return ClientResult::EncodingError;
     }
 
+    LOG_INFO("send_create_access_point: header=%zu, payload=%zu, total=%zu bytes",
+             sizeof(protocol::LdnHeader), sizeof(request), encoded_size);
+
     SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
     return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);
 }
@@ -341,6 +344,20 @@ ClientResult TcpClient::send_connect(const protocol::ConnectRequest& request) {
     if (encode_result != protocol::EncodeResult::Success) {
         return ClientResult::EncodingError;
     }
+
+    LOG_INFO("send_connect: header=%zu, payload=%zu, total=%zu bytes",
+             sizeof(protocol::LdnHeader), sizeof(request), encoded_size);
+
+    // Dump first 32 bytes of packet for debugging
+    LOG_INFO("send_connect packet[0-31]: %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
+             m_send_buffer[0], m_send_buffer[1], m_send_buffer[2], m_send_buffer[3],
+             m_send_buffer[4], m_send_buffer[5], m_send_buffer[6], m_send_buffer[7],
+             m_send_buffer[8], m_send_buffer[9], m_send_buffer[10], m_send_buffer[11],
+             m_send_buffer[12], m_send_buffer[13], m_send_buffer[14], m_send_buffer[15],
+             m_send_buffer[16], m_send_buffer[17], m_send_buffer[18], m_send_buffer[19],
+             m_send_buffer[20], m_send_buffer[21], m_send_buffer[22], m_send_buffer[23],
+             m_send_buffer[24], m_send_buffer[25], m_send_buffer[26], m_send_buffer[27],
+             m_send_buffer[28], m_send_buffer[29], m_send_buffer[30], m_send_buffer[31]);
 
     SocketResult send_result = m_socket.send_all(m_send_buffer, encoded_size);
     return send_result == SocketResult::Success ? ClientResult::Success : socket_to_client_result(send_result);

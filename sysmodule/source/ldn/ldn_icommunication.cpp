@@ -12,6 +12,8 @@
 #include "../debug/log.hpp"
 #include "../bsd/proxy_socket_manager.hpp"
 #include <arpa/inet.h>
+#include <switch/services/ns.h>
+#include <switch/nacp.h>
 
 namespace ams::mitm::ldn {
 
@@ -28,6 +30,9 @@ namespace ams::mitm::ldn {
  */
 static ICommunicationService* g_active_ldn_service = nullptr;
 static os::Mutex g_active_service_mutex{false};
+
+// Background thread stack - allocated statically to avoid bloating class size
+alignas(os::ThreadStackAlignment) static u8 g_background_thread_stack[0x4000];
 
 /**
  * @brief Static callback for inactivity timeout
@@ -131,9 +136,19 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_p2p_client(nullptr)
     , m_p2p_server(nullptr)
     , m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
+    , m_background_thread{}
+    , m_background_thread_running(false)
+    , m_client_mutex(false)
     , m_program_id(program_id)
+    , m_local_communication_id(0)
 {
     LOG_INFO("ICommunicationService created with program_id=0x%016lx", m_program_id.value);
+
+    // Load LocalCommunicationId from NACP (this is NOT the same as program_id)
+    // Games use LocalCommunicationId for LDN filtering, which is stored in the NACP
+    m_local_communication_id = LoadLocalCommunicationIdFromNacp();
+    LOG_INFO("LocalCommunicationId from NACP: 0x%016lx", m_local_communication_id);
+
     // Configure packet callback to receive server responses
     // Use static callback with user_data to route to instance method
     m_server_client.set_packet_callback(
@@ -143,11 +158,31 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
         },
         this
     );
+
+    // Start background thread for processing server pings
+    // Uses static stack (g_background_thread_stack) to avoid class bloat
+    m_background_thread_running = true;
+    R_ABORT_UNLESS(os::CreateThread(
+        &m_background_thread,
+        BackgroundThreadEntry,
+        this,
+        g_background_thread_stack,
+        sizeof(g_background_thread_stack),
+        20  // Low priority (higher number = lower priority)
+    ));
+    os::SetThreadNamePointer(&m_background_thread, "ldn_bg");
+    os::StartThread(&m_background_thread);
 }
 
 ICommunicationService::~ICommunicationService() {
     LOG_INFO("ICommunicationService destructor called (state=%s)",
              LdnStateMachine::StateToString(m_state_machine.GetState()));
+
+    // Stop background thread first
+    m_background_thread_running = false;
+    os::WaitThread(&m_background_thread);
+    os::DestroyThread(&m_background_thread);
+
     // Stop P2P server if hosting
     StopP2pProxyServer();
     // Ensure P2P proxy client is disconnected
@@ -157,53 +192,139 @@ ICommunicationService::~ICommunicationService() {
 }
 
 // ============================================================================
+// NACP LocalCommunicationId Loading
+// ============================================================================
+
+u64 ICommunicationService::LoadLocalCommunicationIdFromNacp() {
+    // Read the NACP from the application to get the real LocalCommunicationId
+    // This is what the Nintendo SDK does internally when LocalCommunicationId=-1
+    // See: https://switchbrew.org/wiki/LDN_services - "When -1, this is overwritten
+    // with the first LocalCommunicationId from the user-process NACP"
+
+    Result rc;
+    u64 local_comm_id = 0;
+
+    // Initialize ns service
+    rc = nsInitialize();
+    if (R_FAILED(rc)) {
+        LOG_ERROR("Failed to initialize ns service: 0x%x", rc);
+        // Fallback to program_id if ns fails
+        return m_program_id.value;
+    }
+
+    // Allocate buffer for control data (NACP + icon)
+    // NsApplicationControlData is large (~128KB) due to the icon, allocate on heap
+    NsApplicationControlData* control_data = static_cast<NsApplicationControlData*>(std::malloc(sizeof(NsApplicationControlData)));
+    if (!control_data) {
+        LOG_ERROR("Failed to allocate memory for NsApplicationControlData");
+        nsExit();
+        return m_program_id.value;
+    }
+
+    std::memset(control_data, 0, sizeof(NsApplicationControlData));
+
+    u64 actual_size = 0;
+    rc = nsGetApplicationControlData(
+        NsApplicationControlSource_Storage,
+        m_program_id.value,
+        control_data,
+        sizeof(NsApplicationControlData),
+        &actual_size
+    );
+
+    if (R_SUCCEEDED(rc) && actual_size >= sizeof(NacpStruct)) {
+        // Get the first LocalCommunicationId from NACP
+        local_comm_id = control_data->nacp.local_communication_id[0];
+        LOG_INFO("Read LocalCommunicationId[0] from NACP: 0x%016lx", local_comm_id);
+
+        // Log other LocalCommunicationIds if present (for debugging)
+        for (int i = 1; i < 8; i++) {
+            u64 other_id = control_data->nacp.local_communication_id[i];
+            if (other_id != 0) {
+                LOG_VERBOSE("LocalCommunicationId[%d]: 0x%016lx", i, other_id);
+            }
+        }
+    } else {
+        LOG_ERROR("Failed to get application control data: 0x%x (size=%lu)", rc, actual_size);
+        // Fallback to program_id
+        local_comm_id = m_program_id.value;
+    }
+
+    std::free(control_data);
+    nsExit();
+
+    // If LocalCommunicationId is 0 in NACP, fallback to program_id
+    if (local_comm_id == 0) {
+        LOG_INFO("NACP LocalCommunicationId is 0, using program_id as fallback");
+        local_comm_id = m_program_id.value;
+    }
+
+    return local_comm_id;
+}
+
+// ============================================================================
 // Server Connection Helpers
 // ============================================================================
 
 Result ICommunicationService::ConnectToServer() {
-    if (m_server_connected) {
+    // Check if already connected and connection is still alive
+    if (m_server_connected && m_server_client.is_ready()) {
         LOG_VERBOSE("Already connected to server");
         R_SUCCEED();
     }
 
+    // If m_server_connected is true but connection died, clean up first
+    if (m_server_connected && !m_server_client.is_ready()) {
+        LOG_INFO("Previous connection dead, reconnecting...");
+        m_server_client.disconnect();
+        m_server_connected = false;
+    }
+
     LOG_INFO("Connecting to RyuLdn server...");
 
+    // Handshake ALWAYS uses 12-byte header (required for Switch compatibility)
+    ryu_ldn::protocol::g_use_10byte_header = false;
+
     // Attempt TCP connection
-    auto result = m_server_client.connect();
-    if (result != ryu_ldn::network::ClientOpResult::Success) {
-        LOG_ERROR("Server connection failed: %s",
-                  ryu_ldn::network::client_op_result_to_string(result));
-        R_RETURN(MAKERESULT(0x10, 2)); // Connection failed
+    {
+        auto result = m_server_client.connect();
+        if (result != ryu_ldn::network::ClientOpResult::Success) {
+            LOG_ERROR("Server connection failed: %s",
+                      ryu_ldn::network::client_op_result_to_string(result));
+            R_RETURN(MAKERESULT(0x10, 2)); // Connection failed
+        }
     }
 
     // Wait for handshake to complete (with timeout)
-    constexpr uint64_t handshake_timeout_ms = 5000;
-    constexpr uint64_t poll_interval_ms = 50;
+    {
+        constexpr uint64_t handshake_timeout_ms = 5000;
+        constexpr uint64_t poll_interval_ms = 50;
 
-    LOG_VERBOSE("Waiting for handshake...");
+        LOG_VERBOSE("Waiting for handshake...");
 
-    uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
-    uint64_t current_time_ms = start_time_ms;
+        uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+        uint64_t current_time_ms = start_time_ms;
 
-    while (!m_server_client.is_ready() && (current_time_ms - start_time_ms) < handshake_timeout_ms) {
-        // Process client state machine (sends handshake, receives response)
-        m_server_client.update(current_time_ms);
+        while (!m_server_client.is_ready() && (current_time_ms - start_time_ms) < handshake_timeout_ms) {
+            // Process client state machine (sends handshake, receives response)
+            m_server_client.update(current_time_ms);
 
-        // Check if connection failed during handshake
-        if (!m_server_client.is_connected()) {
-            LOG_ERROR("Connection lost during handshake");
-            R_RETURN(MAKERESULT(0x10, 3)); // Handshake failed
+            // Check if connection failed during handshake
+            if (!m_server_client.is_connected()) {
+                LOG_ERROR("Connection lost during handshake");
+                R_RETURN(MAKERESULT(0x10, 3)); // Handshake failed
+            }
+
+            // Small delay to avoid busy-waiting
+            svcSleepThread(poll_interval_ms * 1000000ULL); // Convert ms to ns
+            current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
         }
 
-        // Small delay to avoid busy-waiting
-        svcSleepThread(poll_interval_ms * 1000000ULL); // Convert ms to ns
-        current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
-    }
-
-    if (!m_server_client.is_ready()) {
-        LOG_ERROR("Handshake timeout");
-        m_server_client.disconnect();
-        R_RETURN(MAKERESULT(0x10, 4)); // Handshake timeout
+        if (!m_server_client.is_ready()) {
+            LOG_ERROR("Handshake timeout");
+            m_server_client.disconnect();
+            R_RETURN(MAKERESULT(0x10, 4)); // Handshake timeout
+        }
     }
 
     m_server_connected = true;
@@ -415,12 +536,13 @@ Result ICommunicationService::Scan(
 {
     AMS_UNUSED(channel);
 
-    // Replace LocalCommunicationId=-1 or 0 with real program_id (like Ryujinx NeedsRealId handling)
+    // Replace LocalCommunicationId=-1 or 0 with real LocalCommunicationId from NACP
     // Nintendo SDK does this internally, but we intercept before that happens
+    // See Ryujinx NeedsRealId handling - uses NACP LocalCommunicationId[0], not program_id
     u64 local_comm_id = filter.networkId.intentId.localCommunicationId;
     if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
-        local_comm_id = m_program_id.value;
-        LOG_INFO("Scan() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+        local_comm_id = m_local_communication_id;
+        LOG_INFO("Scan() replacing local_comm_id with NACP LocalCommunicationId=0x%016lx", local_comm_id);
     }
 
     LOG_INFO("Scan() called, local_comm_id=0x%016lx, scene_id=%u, flags=0x%x, networkType=0x%x",
@@ -579,11 +701,12 @@ Result ICommunicationService::CloseAccessPoint() {
 }
 
 Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
-    // Replace LocalCommunicationId=-1 with real program_id (like Ryujinx NeedsRealId handling)
+    // Replace LocalCommunicationId=-1 with real LocalCommunicationId from NACP
+    // See Ryujinx NeedsRealId handling - uses NACP LocalCommunicationId[0], not program_id
     u64 local_comm_id = data.networkConfig.intentId.localCommunicationId;
     if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
-        local_comm_id = m_program_id.value;
-        LOG_INFO("CreateNetwork() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+        local_comm_id = m_local_communication_id;
+        LOG_INFO("CreateNetwork() replacing local_comm_id with NACP LocalCommunicationId=0x%016lx", local_comm_id);
     }
 
     LOG_INFO("CreateNetwork called, local_comm_id=0x%016lx", local_comm_id);
@@ -782,8 +905,11 @@ Result ICommunicationService::OpenStation() {
 }
 
 Result ICommunicationService::CloseStation() {
-    // Disconnect from server first
-    DisconnectFromServer();
+    // NOTE: Do NOT disconnect from server here!
+    // The game may call OpenStation/CloseStation many times during scanning.
+    // Disconnecting each time hits the server's firewall rate limit (10/min).
+    // Keep the connection alive - NetworkTimeout will disconnect after 6s of inactivity.
+    // This matches Ryujinx behavior where connection persists until Finalize().
 
     auto result = m_state_machine.CloseStation();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
@@ -798,14 +924,27 @@ Result ICommunicationService::CloseStation() {
 }
 
 Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo& data) {
-    // Replace LocalCommunicationId=-1 with real program_id (like Ryujinx NeedsRealId handling)
+    // Replace LocalCommunicationId=-1 with real LocalCommunicationId from NACP
+    // See Ryujinx NeedsRealId handling - uses NACP LocalCommunicationId[0], not program_id
     u64 local_comm_id = data.networkId.intentId.localCommunicationId;
     if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
-        local_comm_id = m_program_id.value;
-        LOG_INFO("Connect() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+        local_comm_id = m_local_communication_id;
+        LOG_INFO("Connect() replacing local_comm_id with NACP LocalCommunicationId=0x%016lx", local_comm_id);
     }
 
-    LOG_INFO("Connect called, local_comm_id=0x%016lx", local_comm_id);
+    // Log SessionId for debugging (server uses this to find the game)
+    LOG_INFO("Connect called, local_comm_id=0x%016lx, session_id=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+             local_comm_id,
+             data.networkId.sessionId.raw[0], data.networkId.sessionId.raw[1],
+             data.networkId.sessionId.raw[2], data.networkId.sessionId.raw[3],
+             data.networkId.sessionId.raw[4], data.networkId.sessionId.raw[5],
+             data.networkId.sessionId.raw[6], data.networkId.sessionId.raw[7],
+             data.networkId.sessionId.raw[8], data.networkId.sessionId.raw[9],
+             data.networkId.sessionId.raw[10], data.networkId.sessionId.raw[11],
+             data.networkId.sessionId.raw[12], data.networkId.sessionId.raw[13],
+             data.networkId.sessionId.raw[14], data.networkId.sessionId.raw[15]);
+    LOG_INFO("Connect: userName='%.32s', version=%u",
+             dat.userConfig.userName, dat.localCommunicationVersion);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -834,21 +973,20 @@ Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo&
     std::memcpy(&request.network_info, &data, sizeof(request.network_info));
     request.network_info.network_id.intent_id.local_communication_id = local_comm_id;
 
-    // Send to server
+    // Send Connect request (12-byte header)
+    LOG_INFO("Connect: sending request...");
+
     auto send_result = m_server_client.send_connect(request);
     if (send_result != ryu_ldn::network::ClientOpResult::Success) {
-        // Rollback state on send failure
+        LOG_ERROR("Connect: failed to send request: %s",
+                  ryu_ldn::network::client_op_result_to_string(send_result));
         m_state_machine.Disconnect();
-        R_RETURN(MAKERESULT(0x10, 3)); // Send failed
+        R_RETURN(MAKERESULT(0x10, 5));
     }
 
-    LOG_INFO("Connect: sent Connect request, waiting for Connected response...");
-
-    // Wait for Connected response from server (like Ryujinx _apConnected.WaitOne)
-    constexpr uint64_t response_timeout_ms = 4000; // FailureTimeout in Ryujinx
-    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
+    LOG_INFO("Connect: sent request, waiting for Connected response...");
+    if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, 5000)) {
         LOG_ERROR("Connect: did not receive Connected response from server");
-        // Rollback state on timeout/error
         m_state_machine.Disconnect();
         R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
     }
@@ -1277,9 +1415,15 @@ void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, c
                     const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
                     std::memcpy(&m_scan_results[m_scan_result_count], net_info, sizeof(NetworkInfo));
                     m_scan_result_count++;
-                    LOG_INFO("ScanReply: found network #%zu, node_count=%u",
+                    // Log SessionId so we can compare with Connect request
+                    const auto& sid = net_info->network_id.session_id;
+                    LOG_INFO("ScanReply: found network #%zu, node_count=%u, session_id=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
                              m_scan_result_count,
-                             reinterpret_cast<const NetworkInfo*>(net_info)->ldn.nodeCount);
+                             reinterpret_cast<const NetworkInfo*>(net_info)->ldn.nodeCount,
+                             sid.data[0], sid.data[1], sid.data[2], sid.data[3],
+                             sid.data[4], sid.data[5], sid.data[6], sid.data[7],
+                             sid.data[8], sid.data[9], sid.data[10], sid.data[11],
+                             sid.data[12], sid.data[13], sid.data[14], sid.data[15]);
                 } else {
                     LOG_WARN("ScanReply: buffer full, ignoring network");
                 }
@@ -1688,6 +1832,38 @@ void ICommunicationService::HandleExternalProxyToken(
     } else {
         LOG_WARN("HandleExternalProxyToken: P2P server not running");
     }
+}
+
+// ============================================================================
+// Background Thread (for server ping processing)
+// ============================================================================
+
+void ICommunicationService::BackgroundThreadEntry(void* arg) {
+    auto* self = static_cast<ICommunicationService*>(arg);
+    self->BackgroundThreadFunc();
+}
+
+void ICommunicationService::BackgroundThreadFunc() {
+    LOG_VERBOSE("Background thread started");
+
+    while (m_background_thread_running.load()) {
+        // Process incoming packets (including pings) if connected
+        if (m_server_connected) {
+            m_client_mutex.Lock();
+            uint64_t current_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
+            m_server_client.update(current_time_ms);
+
+            // Also check inactivity timeout
+            m_inactivity_timeout.CheckTimeout(current_time_ms);
+            m_client_mutex.Unlock();
+        }
+
+        // Sleep 100ms between checks - fast enough to respond to pings
+        // (server pings after 10s of inactivity, so 100ms is plenty)
+        svcSleepThread(100 * 1000000ULL);  // 100ms
+    }
+
+    LOG_VERBOSE("Background thread stopped");
 }
 
 } // namespace ams::mitm::ldn

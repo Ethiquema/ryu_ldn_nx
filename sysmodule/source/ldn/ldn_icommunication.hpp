@@ -12,6 +12,7 @@
 #pragma once
 
 #include <stratosphere.hpp>
+#include <atomic>
 #include "ldn_types.hpp"
 #include "ldn_state_machine.hpp"
 #include "ldn_node_mapper.hpp"
@@ -410,8 +411,35 @@ private:
     // Inactivity timeout (like Ryujinx _timeout)
     NetworkTimeout m_inactivity_timeout;                    ///< Auto-disconnect after idle period
 
+    // Background thread for processing server pings between game operations
+    os::ThreadType m_background_thread;                     ///< Background packet processing thread
+    std::atomic<bool> m_background_thread_running;          ///< Thread running flag
+    os::Mutex m_client_mutex;                               ///< Mutex for m_server_client access
+
+    /**
+     * @brief Background thread entry point
+     * @param arg Pointer to ICommunicationService instance
+     */
+    static void BackgroundThreadEntry(void* arg);
+
+    /**
+     * @brief Background thread main loop - processes server pings
+     */
+    void BackgroundThreadFunc();
+
     // Program ID for LocalCommunicationId replacement (like Ryujinx NeedsRealId handling)
     ncm::ProgramId m_program_id;                            ///< Client program ID (title ID)
+    u64 m_local_communication_id;                           ///< LocalCommunicationId from NACP (for LDN filtering)
+
+    /**
+     * @brief Load LocalCommunicationId from NACP
+     *
+     * Reads the application's NACP to get the first LocalCommunicationId.
+     * This is the ID used by LDN for game filtering, which may differ from program_id.
+     *
+     * @return First LocalCommunicationId from NACP, or 0 on failure
+     */
+    u64 LoadLocalCommunicationIdFromNacp();
 
     /**
      * @brief Static callback for inactivity timeout
