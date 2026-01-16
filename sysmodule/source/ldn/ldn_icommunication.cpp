@@ -112,6 +112,8 @@ ICommunicationService::ICommunicationService()
     , m_use_p2p_proxy(!ryu_ldn::ipc::g_config.ldn.disable_p2p)
     , m_proxy_config{}
     , m_external_proxy_config{}
+    , m_p2p_client(nullptr)
+    , m_p2p_server(nullptr)
 {
     // Configure packet callback to receive server responses
     // Use static callback with user_data to route to instance method
@@ -127,6 +129,10 @@ ICommunicationService::ICommunicationService()
 ICommunicationService::~ICommunicationService() {
     LOG_INFO("ICommunicationService destructor called (state=%s)",
              LdnStateMachine::StateToString(m_state_machine.GetState()));
+    // Stop P2P server if hosting
+    StopP2pProxyServer();
+    // Ensure P2P proxy client is disconnected
+    DisconnectP2pProxy();
     // Ensure server is disconnected
     DisconnectFromServer();
 }
@@ -197,6 +203,9 @@ Result ICommunicationService::ConnectToServer() {
 }
 
 void ICommunicationService::DisconnectFromServer() {
+    // Disconnect P2P proxy first if connected
+    DisconnectP2pProxy();
+
     if (m_server_connected) {
         LOG_INFO("Disconnecting from RyuLdn server");
 
@@ -511,7 +520,11 @@ Result ICommunicationService::OpenAccessPoint() {
 
 Result ICommunicationService::CloseAccessPoint() {
     LOG_INFO("CloseAccessPoint() called");
-    // Disconnect from server first
+
+    // Stop P2P server if running (host cleanup)
+    StopP2pProxyServer();
+
+    // Disconnect from server
     DisconnectFromServer();
 
     auto result = m_state_machine.CloseAccessPoint();
@@ -519,6 +532,7 @@ Result ICommunicationService::CloseAccessPoint() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_network_connected = false;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Initialized);
@@ -560,6 +574,36 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
     std::memcpy(request.ryu_network_config.game_version, m_game_version,
                 sizeof(request.ryu_network_config.game_version));
 
+    // Start P2P proxy server for hosting (like Ryujinx CreateNetworkAsync)
+    // This allows direct P2P connections from joiners
+    if (m_use_p2p_proxy && StartP2pProxyServer()) {
+        // Attempt UPnP NAT punch to open public port
+        uint16_t public_port = m_p2p_server->NatPunch();
+
+        // Fill RyuNetworkConfig with P2P port information
+        // Like Ryujinx: request.PrivateIp = GetLocalIPv4(), request.ExternalProxyPort = public_port
+        uint32_t local_ip = p2p::UpnpPortMapper::GetInstance().GetLocalIPv4();
+
+        // Store local IP as 16-byte buffer (first 4 bytes for IPv4)
+        std::memset(request.ryu_network_config.private_ip, 0, sizeof(request.ryu_network_config.private_ip));
+        std::memcpy(request.ryu_network_config.private_ip, &local_ip, sizeof(local_ip));
+
+        request.ryu_network_config.address_family = 2;  // AF_INET (IPv4)
+        request.ryu_network_config.external_proxy_port = public_port;
+        request.ryu_network_config.internal_proxy_port = m_p2p_server->GetPrivatePort();
+
+        LOG_INFO("CreateNetwork: P2P enabled, local_ip=0x%08X, public_port=%u, private_port=%u",
+                 local_ip, public_port, m_p2p_server->GetPrivatePort());
+    } else {
+        // P2P disabled or failed - zero out proxy ports
+        std::memset(request.ryu_network_config.private_ip, 0, sizeof(request.ryu_network_config.private_ip));
+        request.ryu_network_config.address_family = 0;
+        request.ryu_network_config.external_proxy_port = 0;
+        request.ryu_network_config.internal_proxy_port = 0;
+
+        LOG_INFO("CreateNetwork: P2P disabled or failed, using relay server only");
+    }
+
     LOG_VERBOSE("CreateNetwork: local_comm_id=0x%lx, scene_id=%u, channel=%u, max_nodes=%u",
                 request.network_config.intent_id.local_communication_id,
                 request.network_config.intent_id.scene_id,
@@ -571,7 +615,8 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
     if (send_result != ryu_ldn::network::ClientOpResult::Success) {
         LOG_ERROR("CreateNetwork: send failed: %s",
                   ryu_ldn::network::client_op_result_to_string(send_result));
-        // Rollback state on send failure
+        // Rollback state and P2P server on send failure
+        StopP2pProxyServer();
         m_state_machine.DestroyNetwork();
         R_RETURN(MAKERESULT(0x10, 3)); // Send failed
     }
@@ -582,7 +627,8 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
     constexpr uint64_t response_timeout_ms = 5000;
     if (!WaitForResponse(ryu_ldn::protocol::PacketId::Connected, response_timeout_ms)) {
         LOG_ERROR("CreateNetwork: did not receive Connected response from server");
-        // Rollback state on timeout/error
+        // Rollback state and P2P server on timeout/error
+        StopP2pProxyServer();
         m_state_machine.DestroyNetwork();
         R_RETURN(MAKERESULT(0x10, 5)); // Response timeout
     }
@@ -599,12 +645,18 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
 }
 
 Result ICommunicationService::DestroyNetwork() {
+    LOG_INFO("DestroyNetwork() called");
+
+    // Stop P2P server if running (host cleanup)
+    StopP2pProxyServer();
+
     auto result = m_state_machine.DestroyNetwork();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
 
     // Server will be notified via disconnect or explicit message
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_network_connected = false;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::AccessPoint);
@@ -1202,11 +1254,23 @@ void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, c
                 if (!m_use_p2p_proxy) {
                     LOG_INFO("P2P proxy disabled, ignoring ExternalProxy");
                 } else {
-                    // On Ryujinx this creates a P2pProxyClient and performs auth.
-                    // On Switch sysmodule, P2P proxy connections are complex and
-                    // require additional socket handling. For now, we just log.
-                    LOG_INFO("ExternalProxy received (P2P proxy not yet implemented on Switch)");
+                    // Create P2pProxyClient and connect to host (like Ryujinx HandleExternalProxy)
+                    HandleExternalProxyConnect(*config);
                 }
+            }
+            break;
+        }
+
+        case ryu_ldn::protocol::PacketId::ExternalProxyToken: {
+            // Server sends token for expected P2P joiner (like Ryujinx HandleExternalProxyToken)
+            // This is sent to the HOST when a joiner is about to connect via P2P
+            if (size >= sizeof(ryu_ldn::protocol::ExternalProxyToken)) {
+                const auto* token = reinterpret_cast<const ryu_ldn::protocol::ExternalProxyToken*>(data);
+                LOG_INFO("Received ExternalProxyToken: virtual_ip=0x%08X",
+                         token->virtual_ip);
+
+                // Add token to P2P server's waiting list for authentication
+                HandleExternalProxyToken(*token);
             }
             break;
         }
@@ -1374,7 +1438,187 @@ ryu_ldn::network::ClientOpResult ICommunicationService::SendProxyDataToServer(
                 header.info.dest_ipv4, header.info.dest_port,
                 static_cast<unsigned>(header.info.protocol), data_len);
 
+    // If P2P client is connected, send through P2P instead of master server
+    if (m_p2p_client != nullptr && m_p2p_client->IsReady()) {
+        LOG_VERBOSE("SendProxyDataToServer: routing via P2P client");
+        if (m_p2p_client->SendProxyData(header, static_cast<const uint8_t*>(data), data_len)) {
+            return ryu_ldn::network::ClientOpResult::Success;
+        }
+        // Fall through to master server if P2P send fails
+        LOG_WARN("P2P send failed, falling back to master server");
+    }
+
     return m_server_client.send_proxy_data(header, static_cast<const uint8_t*>(data), data_len);
+}
+
+// ============================================================================
+// P2P Proxy Methods
+// ============================================================================
+
+void ICommunicationService::HandleExternalProxyConnect(
+    const ryu_ldn::protocol::ExternalProxyConfig& config)
+{
+    // Like Ryujinx HandleExternalProxy - create P2pProxyClient and connect to host
+    LOG_INFO("HandleExternalProxyConnect: connecting to P2P host port=%u", config.proxy_port);
+
+    // Clean up any existing P2P client
+    DisconnectP2pProxy();
+
+    // Create callback to route P2P packets to BSD MITM
+    auto packet_callback = [](ryu_ldn::protocol::PacketId type,
+                              const void* data, size_t size) {
+        // Route packets received from P2P host to BSD MITM
+        // This is called from P2pProxyClient's receive thread
+        if (type == ryu_ldn::protocol::PacketId::ProxyData) {
+            if (size >= sizeof(ryu_ldn::protocol::ProxyDataHeader)) {
+                const auto* proxy_header = reinterpret_cast<const ryu_ldn::protocol::ProxyDataHeader*>(data);
+                const uint8_t* payload = reinterpret_cast<const uint8_t*>(data) + sizeof(ryu_ldn::protocol::ProxyDataHeader);
+                size_t payload_size = size - sizeof(ryu_ldn::protocol::ProxyDataHeader);
+
+                if (payload_size >= proxy_header->data_length) {
+                    // Convert protocol type
+                    ryu_ldn::bsd::ProtocolType bsd_protocol;
+                    switch (proxy_header->info.protocol) {
+                        case ryu_ldn::protocol::ProtocolType::Tcp:
+                            bsd_protocol = ryu_ldn::bsd::ProtocolType::Tcp;
+                            break;
+                        case ryu_ldn::protocol::ProtocolType::Udp:
+                            bsd_protocol = ryu_ldn::bsd::ProtocolType::Udp;
+                            break;
+                        default:
+                            return;
+                    }
+
+                    // Route to BSD MITM
+                    auto& socket_manager = mitm::bsd::ProxySocketManager::GetInstance();
+                    socket_manager.RouteIncomingData(
+                        proxy_header->info.source_ipv4,
+                        proxy_header->info.source_port,
+                        proxy_header->info.dest_ipv4,
+                        proxy_header->info.dest_port,
+                        bsd_protocol,
+                        payload,
+                        proxy_header->data_length
+                    );
+                }
+            }
+        }
+    };
+
+    // Create new P2P client
+    m_p2p_client = new p2p::P2pProxyClient(packet_callback);
+
+    // Connect to P2P host using IP from config
+    // ExternalProxyConfig has proxy_ip[16] for IPv4/IPv6
+    // address_family indicates IPv4 (2) or IPv6 (23)
+    bool connected = false;
+    if (config.address_family == 2) {  // AF_INET
+        // IPv4 address - first 4 bytes of proxy_ip
+        connected = m_p2p_client->Connect(config.proxy_ip, 4, config.proxy_port);
+    } else {
+        LOG_WARN("Unsupported address family: %u", config.address_family);
+    }
+
+    if (!connected) {
+        LOG_ERROR("Failed to connect to P2P host");
+        DisconnectP2pProxy();
+        return;
+    }
+
+    // Perform authentication with ExternalProxyConfig
+    if (!m_p2p_client->PerformAuth(config)) {
+        LOG_ERROR("P2P authentication failed");
+        DisconnectP2pProxy();
+        return;
+    }
+
+    // Wait for ProxyConfig response from host
+    if (!m_p2p_client->EnsureProxyReady()) {
+        LOG_ERROR("P2P proxy not ready (timeout waiting for ProxyConfig)");
+        DisconnectP2pProxy();
+        return;
+    }
+
+    // Store P2P proxy config
+    m_proxy_config = m_p2p_client->GetProxyConfig();
+    LOG_INFO("P2P connection established: virtual_ip=0x%08X",
+             m_proxy_config.proxy_ip);
+}
+
+void ICommunicationService::DisconnectP2pProxy() {
+    if (m_p2p_client != nullptr) {
+        LOG_INFO("Disconnecting P2P proxy client");
+        m_p2p_client->Disconnect();
+        delete m_p2p_client;
+        m_p2p_client = nullptr;
+    }
+}
+
+// ============================================================================
+// P2P Proxy Server Methods (Host Side)
+// ============================================================================
+
+bool ICommunicationService::StartP2pProxyServer() {
+    // Like Ryujinx CreateNetworkAsync - start P2P server for hosting
+    LOG_INFO("StartP2pProxyServer: starting P2P server for hosting");
+
+    // Stop any existing server first
+    StopP2pProxyServer();
+
+    // Check if P2P is disabled
+    if (!m_use_p2p_proxy) {
+        LOG_INFO("P2P proxy disabled, skipping server start");
+        return false;
+    }
+
+    // Create server with callback to send notifications to master server
+    // Like Ryujinx: _hostedProxy = new P2pProxyServer(SendAsync)
+    // Use static callback with user_data pattern (cannot use lambda with capture)
+    auto master_send_callback = [](const void* data, size_t size, void* user_data) {
+        auto* self = static_cast<ICommunicationService*>(user_data);
+        if (self->IsServerConnected()) {
+            self->m_server_client.send_raw_packet(data, size);
+        }
+    };
+    m_p2p_server = new p2p::P2pProxyServer(master_send_callback, this);
+
+    // Start listening on an available port
+    if (!m_p2p_server->Start()) {
+        LOG_ERROR("StartP2pProxyServer: failed to start TCP server");
+        StopP2pProxyServer();
+        return false;
+    }
+
+    LOG_INFO("StartP2pProxyServer: server started on port %u",
+             m_p2p_server->GetPrivatePort());
+    return true;
+}
+
+void ICommunicationService::StopP2pProxyServer() {
+    if (m_p2p_server != nullptr) {
+        LOG_INFO("StopP2pProxyServer: stopping P2P server");
+
+        // Release UPnP port mapping
+        m_p2p_server->ReleaseNatPunch();
+
+        // Stop server and delete
+        m_p2p_server->Stop();
+        delete m_p2p_server;
+        m_p2p_server = nullptr;
+    }
+}
+
+void ICommunicationService::HandleExternalProxyToken(
+    const ryu_ldn::protocol::ExternalProxyToken& token)
+{
+    // Like Ryujinx HandleExternalProxyToken - add token to waiting list
+    // Called when master server notifies us a joiner is about to connect
+    if (m_p2p_server != nullptr && m_p2p_server->IsRunning()) {
+        LOG_INFO("HandleExternalProxyToken: adding token for expected joiner");
+        m_p2p_server->AddWaitingToken(token);
+    } else {
+        LOG_WARN("HandleExternalProxyToken: P2P server not running");
+    }
 }
 
 } // namespace ams::mitm::ldn

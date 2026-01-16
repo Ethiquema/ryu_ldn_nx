@@ -18,6 +18,8 @@
 #include "ldn_proxy_buffer.hpp"
 #include "interfaces/icommunication.hpp"
 #include "../network/client.hpp"
+#include "../p2p/p2p_proxy_client.hpp"
+#include "../p2p/p2p_proxy_server.hpp"
 
 namespace ams::mitm::ldn {
 
@@ -395,10 +397,12 @@ private:
     // Last network error (like Ryujinx _lastError)
     ryu_ldn::protocol::NetworkErrorCode m_last_network_error; ///< Last error from server
 
-    // P2P Proxy support (like Ryujinx _useP2pProxy, Config)
+    // P2P Proxy support (like Ryujinx _useP2pProxy, _connectedProxy, _hostedProxy, Config)
     bool m_use_p2p_proxy;                                   ///< True if P2P proxy enabled
     ryu_ldn::protocol::ProxyConfig m_proxy_config;          ///< Current proxy configuration
     ryu_ldn::protocol::ExternalProxyConfig m_external_proxy_config; ///< External proxy config
+    p2p::P2pProxyClient* m_p2p_client;                      ///< Connected P2P proxy client (joiner side)
+    p2p::P2pProxyServer* m_p2p_server;                      ///< Hosted P2P proxy server (host side)
 
     /**
      * @brief Set game version from local_communication_version
@@ -417,6 +421,46 @@ private:
      * @return Last network error code
      */
     ryu_ldn::protocol::NetworkErrorCode ConsumeNetworkError();
+
+    /**
+     * @brief Handle ExternalProxy packet - connect to P2P host
+     *
+     * Called when server sends ExternalProxyConfig indicating a P2P host
+     * is available. Creates P2pProxyClient and establishes direct connection.
+     *
+     * @param config ExternalProxyConfig from master server
+     */
+    void HandleExternalProxyConnect(const ryu_ldn::protocol::ExternalProxyConfig& config);
+
+    /**
+     * @brief Disconnect from P2P proxy if connected
+     */
+    void DisconnectP2pProxy();
+
+    /**
+     * @brief Start P2P proxy server for hosting
+     *
+     * Called when creating a network. Starts P2pProxyServer and attempts
+     * UPnP NAT punch to allow direct P2P connections.
+     *
+     * @return true if server started (UPnP may or may not succeed)
+     */
+    bool StartP2pProxyServer();
+
+    /**
+     * @brief Stop P2P proxy server if running
+     */
+    void StopP2pProxyServer();
+
+    /**
+     * @brief Handle ExternalProxyToken from master server
+     *
+     * Called when master server notifies us a joiner is about to connect.
+     * Adds token to waiting list for authentication.
+     *
+     * @param token Token for the expected joiner
+     */
+    void HandleExternalProxyToken(const ryu_ldn::protocol::ExternalProxyToken& token);
 
 public:
     /**
