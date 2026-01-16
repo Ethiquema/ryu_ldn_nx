@@ -1,7 +1,7 @@
 # ryu_ldn_nx
 
 [![Build Status](https://github.com/Ethiquema/ryu_ldn_nx/actions/workflows/build.yml/badge.svg)](https://github.com/Ethiquema/ryu_ldn_nx/actions)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: GPL v2](https://img.shields.io/badge/License-GPLv2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0)
 
 Nintendo Switch sysmodule enabling online multiplayer via Ryujinx LDN servers - no complex network setup required.
 
@@ -145,12 +145,12 @@ This certifies that you wrote or have the right to submit the code under the pro
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see [LICENSE](LICENSE) for details.
+This project is licensed under the GNU General Public License v2.0 - see [LICENSE](LICENSE) for details.
 
 ## Credits
 
 - [ldn_mitm](https://github.com/spacemeowx2/ldn_mitm) - Original Switch LDN implementation
-- [Ryujinx](https://ryujinx.org/) - LDN server and protocol
+- [Ryujinx](https://git.ryujinx.app/ryubing/ryujinx) - LDN server and protocol
 - [Atmosphere](https://github.com/Atmosphere-NX/Atmosphere) - Switch CFW and libraries
 - [libnx](https://github.com/switchbrew/libnx) - Switch homebrew library
 
