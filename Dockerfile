@@ -33,6 +33,7 @@ RUN dkp-pacman -Syyu --noconfirm && \
     switch-curl \
     switch-zlib \
     switch-mbedtls \
+    switch-miniupnpc \
     devkitA64-gdb
 
 # Create non-root user (UID/GID will be updated by VSCode's updateRemoteUserUID)
