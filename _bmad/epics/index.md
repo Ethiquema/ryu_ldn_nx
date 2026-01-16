@@ -1,8 +1,8 @@
 # Index des Epics - ryu_ldn_nx
 
 **Date** : 2026-01-15
-**Total Epics** : 8
-**Estimation totale** : ~10-12 sprints
+**Total Epics** : 9
+**Estimation totale** : ~14-17 sprints
 
 ---
 
@@ -65,6 +65,7 @@
 | Epic | Nom | Stories | Estimation | Dépendances |
 |------|-----|---------|------------|-------------|
 | [5](epic-5-docs-release.md) | Documentation & Release | 7 | 1 sprint | Epic 0-4 |
+| **[9](epic-9-p2p-proxy.md)** | **P2P Proxy & BSD Avancé** | **9** | **4-5 sprints** | **Epic 8** |
 
 ### P2 - Nice to have
 

@@ -122,19 +122,41 @@ epics:
     name: "BSD Socket MITM (Proxy Data Routing)"
     priority: P0
     status: in_progress
-    stories_completed: 1
+    stories_completed: 8
     stories_total: 9
     depends_on: [3]
     file: _bmad/epics/epic-8-bsd-mitm.md
     notes: |
-      CRITICAL: Required for game data communication.
-      Current problem: Games create sockets with 10.114.x.x but this network doesn't exist.
-      Solution: Intercept bsd:u service and route LDN sockets via ProxyData.
+      Stories 8.1-8.8 COMPLETE. Story 8.9 (Tests intégration) pending.
+      Implémentation BSD MITM fonctionnelle avec ProxyData routing.
+
+  - id: 9
+    name: "P2P Proxy & BSD Avancé"
+    priority: P1
+    status: in_progress
+    stories_completed: 8
+    stories_total: 9
+    depends_on: [8]
+    file: _bmad/epics/epic-9-p2p-proxy.md
+    notes: |
+      Post-MVP optimization for direct P2P connections.
+      Stories 9.1-9.8 COMPLETE:
+      - ✅ TCP Accept queue (Story 9.1)
+      - ✅ TCP Connect handshake (Story 9.2)
+      - ✅ Broadcast filtering (Story 9.3)
+      - ✅ UPnP wrapper switch-miniupnpc (Story 9.4) - 25 tests
+      - ✅ P2pProxyServer (Story 9.5) - 27 tests
+      - ✅ P2pProxyClient (Story 9.6) - 31 tests
+      - ✅ HandleExternalProxy integration (Story 9.7) - 35 tests
+      - ✅ CreateNetwork avec P2P (Story 9.8) - 40 tests
+
+      Remaining (P2P integration):
+      - Story 9.9: Integration tests
 
 # Execution en cours
 execution:
-  current_epic: 8
-  current_story: "8.2"
+  current_epic: 9
+  current_story: "9.9"
   stories_completed:
     # Epic 0 - Infrastructure
     - "0.1: Docker Build Environment"
@@ -181,17 +203,22 @@ execution:
     - "5.2: Documentation API (Doxygen)"
     - "5.3: Guides utilisateur"
     - "5.4: GitHub Actions docs"
+    # Epic 9 - P2P Proxy
+    - "9.1: TCP Accept queue"
+    - "9.2: TCP Connect handshake"
+    - "9.3: Broadcast filtering"
+    - "9.4: Wrapper UPnP switch-miniupnpc"
+    - "9.5: P2pProxyServer (Host TCP)"
+    - "9.6: P2pProxyClient (Joiner TCP)"
+    - "9.7: HandleExternalProxy integration"
+    - "9.8: CreateNetwork avec P2P"
 
 next_actions:
-  # Epic 8 - BSD MITM (PRIORITY)
-  - "Story 8.2: Interface IPC BSD (structures et commandes)"
-  - "Story 8.3: Service MITM BSD de base (forwarding)"
-  - "Story 8.4: Proxy Socket Manager (détection 10.114.x.x)"
-  - "Story 8.5: Interception Bind/Connect"
-  - "Story 8.6: Interception Send/Recv"
-  - "Story 8.7: Réception ProxyData → ProxySocket"
-  - "Story 8.8: Commandes BSD restantes"
+  # Epic 8 - BSD MITM - ALMOST DONE
   - "Story 8.9: Tests d'intégration MK8DX"
+
+  # Epic 9 - P2P Proxy (en cours)
+  - "Story 9.9: Tests d'intégration P2P"
 
 # Fichiers principaux du projet
 files_created:
@@ -261,13 +288,85 @@ notes: |
   Epic 5 (Documentation) EN COURS - 4/7 stories.
   Epic 6 (Runtime Info) PAUSED - 0/6 stories.
   Epic 7 (Packet Handlers) EN COURS - 3/6 stories.
-  Epic 8 (BSD MITM) DÉMARRÉ - 1/9 stories - CRITIQUE pour MVP.
+  Epic 8 (BSD MITM) PRESQUE COMPLET - 8/9 stories.
+  Epic 9 (P2P Proxy) EN COURS - 7/9 stories - Post-MVP optimization.
 
-  2026-01-15: PROBLÈME IDENTIFIÉ
-  - CreateNetwork fonctionne, GetIpv4Address retourne 10.114.0.1
-  - Le jeu ferme immédiatement (CloseAccessPoint) car les sockets échouent
-  - Les sockets utilisent 10.114.x.x mais ce réseau n'existe pas
-  - SOLUTION: Intercepter bsd:u et router via ProxyData
+  2026-01-15: BSD MITM IMPLEMENTATION COMPLETE
+  Stories 8.2-8.8 implemented:
+  - BSD types and IPC interface
+  - ProxySocket and ProxySocketManager
+  - BSD MITM Service with forwarding
+  - Bind/Connect interception for LDN
+  - Send/Recv routing via ProxyData
+  - Poll/Select/Fcntl/Ioctl support
+  - GetPeerName/GetSockName/GetSockOpt/SetSockOpt
 
-  Total: 369 tests unitaires passent.
+  2026-01-15: EPIC 9 CREATED (P2P Proxy)
+  Analysis of Ryujinx P2P system complete. Stories created for:
+  - TCP Accept queue and Connect handshake
+  - Broadcast filtering
+  - miniupnpc port for Switch (UPnP NAT punch)
+  - P2pProxyServer and P2pProxyClient
+  - Full P2P integration
+
+  2026-01-15: EPIC 9 Stories 9.1-9.3 COMPLETE
+  BSD primitives implementées:
+  - TCP Accept queue (ProxySocket avec queue et Accept())
+  - TCP Connect handshake (ProxyConnect/ProxyConnectReply)
+  - Broadcast filtering (SO_BROADCAST flag)
+  Ces primitives sont nécessaires pour le système P2P complet.
+  switch-miniupnpc disponible via devkitPro (simplifie Story 9.4).
+
+  2026-01-15: Story 9.4 COMPLETE - UPnP Wrapper
+  Implémentation complète avec switch-miniupnpc:
+  - UpnpPortMapper singleton avec Discover/Add/DeletePortMapping
+  - GetExternalIPAddress, GetLocalIPAddress, GetLocalIPv4
+  - RefreshPortMapping pour lease renewal
+  - Thread-safe avec mutex
+  - 25 tests unitaires passent (0 warnings)
+
+  2026-01-15: Story 9.5 COMPLETE - P2pProxyServer
+  Implémentation complète du serveur P2P host:
+  - P2pProxyServer: TCP server sur port 39990-39999
+  - P2pProxySession: gestion connexions clients individuelles
+  - Token-based authentication (ExternalProxyToken)
+  - Message routing: ProxyData, ProxyConnect, ProxyConnectReply, ProxyDisconnect
+  - UPnP NAT punch via UpnpPortMapper
+  - Accept loop + per-session receive threads
+  - Lease renewal thread pour UPnP (50s interval)
+  - 27 tests unitaires passent
+
+  2026-01-16: Story 9.6 COMPLETE - P2pProxyClient
+  Implémentation complète du client P2P joiner:
+  - P2pProxyClient: TCP client avec Connect/Disconnect
+  - PerformAuth: envoi ExternalProxyConfig (0x26 bytes)
+  - EnsureProxyReady: attente ProxyConfig avec timeout
+  - Receive thread pour paquets entrants
+  - ProxyPacketCallback pour routing vers BSD MITM
+  - FAILURE_TIMEOUT_MS = 4000ms (Ryujinx compatible)
+  - CONNECT_TIMEOUT_MS = 5000ms
+  - 31 tests unitaires passent
+
+  2026-01-16: Story 9.7 COMPLETE - HandleExternalProxy Integration
+  Intégration complète P2pProxyClient dans ICommunicationService:
+  - HandleExternalProxyConnect(): création et connexion P2pProxyClient
+  - DisconnectP2pProxy(): cleanup propre du client P2P
+  - SendProxyDataToServer(): routing intelligent P2P vs master server
+  - ProxyPacketCallback: routing paquets P2P vers BSD MITM
+  - Support IPv4 via address_family == 2 (AF_INET)
+  - Cleanup automatique dans destructeur et DisconnectFromServer()
+  - 35 tests unitaires passent
+
+  2026-01-16: Story 9.8 COMPLETE - CreateNetwork avec P2P
+  Intégration complète P2pProxyServer dans CreateNetwork (host-side):
+  - StartP2pProxyServer(): démarrage serveur P2P avec callback user_data pattern
+  - StopP2pProxyServer(): cleanup propre du serveur P2P
+  - HandleExternalProxyToken(): gestion tokens pour joiners attendus
+  - CreateNetwork(): démarre P2P + UPnP, remplit RyuNetworkConfig
+  - DestroyNetwork()/CloseAccessPoint(): cleanup P2P server
+  - MasterSendCallback modifié pour supporter user_data (fonction pointer compatible)
+  - send_raw()/send_raw_packet() ajoutés pour envoi paquets pré-encodés
+  - 40 tests unitaires passent
+
+  Total: 527+ tests unitaires passent.
   Builds: sysmodule.nsp, overlay.ovl, documentation Starlight.
