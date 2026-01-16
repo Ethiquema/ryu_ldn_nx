@@ -841,6 +841,22 @@ ClientOpResult RyuLdnClient::send_reject(uint32_t node_id, protocol::DisconnectR
     return ClientOpResult::Success;
 }
 
+ClientOpResult RyuLdnClient::send_raw_packet(const void* data, size_t size) {
+    if (!is_ready()) {
+        return ClientOpResult::NotReady;
+    }
+
+    ClientResult result = m_tcp_client.send_raw(data, size);
+    if (result != ClientResult::Success) {
+        if (result == ClientResult::ConnectionLost) {
+            m_state_machine.process_event(ConnectionEvent::ConnectionLost);
+        }
+        return ClientOpResult::SendFailed;
+    }
+
+    return ClientOpResult::Success;
+}
+
 // ============================================================================
 // Internal Methods
 // ============================================================================

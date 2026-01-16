@@ -511,6 +511,18 @@ public:
      */
     ClientOpResult send_reject(uint32_t node_id, protocol::DisconnectReason reason);
 
+    /**
+     * @brief Send raw pre-encoded packet
+     *
+     * Sends a packet that has already been encoded. Used by P2P components
+     * to forward notifications to the master server.
+     *
+     * @param data Encoded packet data
+     * @param size Packet size
+     * @return ClientOpResult indicating success or failure
+     */
+    ClientOpResult send_raw_packet(const void* data, size_t size);
+
 private:
     // ========================================================================
     // Internal State

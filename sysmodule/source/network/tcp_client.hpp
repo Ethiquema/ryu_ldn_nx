@@ -246,6 +246,21 @@ public:
     ClientResult send_packet(protocol::PacketId type, const void* payload, size_t payload_size);
 
     /**
+     * @brief Send raw pre-encoded data
+     *
+     * Sends data that has already been encoded with protocol header.
+     * Used by P2P components to forward notifications.
+     *
+     * @param data Pre-encoded packet data
+     * @param size Size of data in bytes
+     *
+     * @return ClientResult::Success if sent
+     * @return ClientResult::NotConnected if not connected
+     * @return ClientResult::ConnectionLost if send failed
+     */
+    ClientResult send_raw(const void* data, size_t size);
+
+    /**
      * @brief Send Initialize message
      *
      * First message to send after connecting. Identifies the client to

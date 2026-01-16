@@ -185,6 +185,28 @@ ClientResult TcpClient::send_packet(protocol::PacketId type, const void* payload
 }
 
 /**
+ * @brief Send raw pre-encoded data
+ */
+ClientResult TcpClient::send_raw(const void* data, size_t size) {
+    if (!m_socket.is_connected()) {
+        return ClientResult::NotConnected;
+    }
+
+    if (data == nullptr || size == 0) {
+        return ClientResult::EncodingError;
+    }
+
+    // Send the already-encoded data directly
+    SocketResult send_result = m_socket.send_all(static_cast<const uint8_t*>(data), size);
+
+    if (send_result != SocketResult::Success) {
+        return socket_to_client_result(send_result);
+    }
+
+    return ClientResult::Success;
+}
+
+/**
  * @brief Send Initialize message
  */
 ClientResult TcpClient::send_initialize(const protocol::InitializeMessage& msg) {
