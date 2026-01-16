@@ -17,7 +17,7 @@ include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/Atmosphere-libs/config/te
 #---------------------------------------------------------------------------------
 TARGET		:=	ryu_ldn_nx
 BUILD		:=	build
-SOURCES		:=	source source/config source/debug source/network source/protocol source/ldn source/bsd
+SOURCES		:=	source source/config source/debug source/network source/protocol source/ldn source/bsd source/p2p
 DATA		:=	data
 INCLUDES	:=	source
 
@@ -33,6 +33,12 @@ VERSION_DEFINES	:= -DRYU_LDN_VERSION="\"${TARGET_VERSION}\""
 
 CFLAGS		+= $(VERSION_DEFINES)
 CXXFLAGS	+= $(VERSION_DEFINES)
+
+#---------------------------------------------------------------------------------
+# Additional libraries for P2P/UPnP support
+# switch-miniupnpc is provided by devkitPro
+#---------------------------------------------------------------------------------
+LIBS		+= -lminiupnpc
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional

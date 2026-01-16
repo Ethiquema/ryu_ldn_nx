@@ -40,7 +40,12 @@ TEST_SOURCES := \
 	ldn_packet_dispatcher_tests.cpp \
 	ldn_session_handler_tests.cpp \
 	ldn_proxy_handler_tests.cpp \
-	ldn_handler_integration_tests.cpp
+	ldn_handler_integration_tests.cpp \
+	upnp_tests.cpp \
+	p2p_proxy_tests.cpp \
+	p2p_proxy_client_tests.cpp \
+	p2p_integration_tests.cpp \
+	p2p_create_network_tests.cpp
 
 # Implementation sources needed for tests
 IMPL_SOURCES := \
@@ -79,14 +84,19 @@ TARGET_PACKET_DISPATCHER := run_packet_dispatcher_tests
 TARGET_SESSION_HANDLER := run_session_handler_tests
 TARGET_PROXY_HANDLER := run_proxy_handler_tests
 TARGET_HANDLER_INTEGRATION := run_handler_integration_tests
+TARGET_UPNP := run_upnp_tests
+TARGET_P2P_PROXY := run_p2p_proxy_tests
+TARGET_P2P_CLIENT := run_p2p_proxy_client_tests
+TARGET_P2P_INTEGRATION := run_p2p_integration_tests
+TARGET_P2P_CREATE_NETWORK := run_p2p_create_network_tests
 TARGET_ALL := run_all_tests
 
 #---------------------------------------------------------------------------------
 # Build rules
 #---------------------------------------------------------------------------------
-.PHONY: all clean test test-protocol test-config test-config-manager test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay test-ipc-config test-config-ipc-service test-shared-state test-packet-dispatcher test-session-handler test-proxy-handler test-handler-integration coverage
+.PHONY: all clean test test-protocol test-config test-config-manager test-log test-socket test-tcp-client test-connection-state test-reconnect test-client test-ldn-types test-ldn-state-machine test-ldn-proxy test-ldn-error test-ldn-integration test-overlay test-ipc-config test-config-ipc-service test-shared-state test-packet-dispatcher test-session-handler test-proxy-handler test-handler-integration test-upnp test-p2p-proxy test-p2p-client test-p2p-integration test-p2p-create-network coverage
 
-all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION)
+all: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION) $(TARGET_UPNP) $(TARGET_P2P_PROXY) $(TARGET_P2P_CLIENT) $(TARGET_P2P_INTEGRATION)
 
 # Protocol tests (header-only, no impl needed)
 $(TARGET_PROTOCOL): protocol_tests.o
@@ -176,6 +186,26 @@ $(TARGET_PROXY_HANDLER): ldn_proxy_handler_tests.o ldn_proxy_handler.o
 $(TARGET_HANDLER_INTEGRATION): ldn_handler_integration_tests.o ldn_packet_dispatcher.o ldn_session_handler.o ldn_proxy_handler.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+# UPnP tests (standalone, no miniupnpc needed for mock tests)
+$(TARGET_UPNP): upnp_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+# P2P Proxy tests (standalone, tests constants and logic)
+$(TARGET_P2P_PROXY): p2p_proxy_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+# P2P Proxy Client tests (standalone, tests constants and logic)
+$(TARGET_P2P_CLIENT): p2p_proxy_client_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+# P2P Integration tests (Story 9.7 - HandleExternalProxy integration)
+$(TARGET_P2P_INTEGRATION): p2p_integration_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+# P2P CreateNetwork tests (Story 9.8 - CreateNetwork with P2P)
+$(TARGET_P2P_CREATE_NETWORK): p2p_create_network_tests.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Compile test sources
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
@@ -215,7 +245,7 @@ ldn_proxy_handler.o: ../sysmodule/source/ldn/ldn_proxy_handler.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Run all tests
-test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION)
+test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION) $(TARGET_UPNP) $(TARGET_P2P_PROXY) $(TARGET_P2P_CLIENT) $(TARGET_P2P_INTEGRATION) $(TARGET_P2P_CREATE_NETWORK)
 	@echo "=== Running Protocol Tests ==="
 	./$(TARGET_PROTOCOL)
 	@echo ""
@@ -281,6 +311,21 @@ test: $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG)
 	@echo ""
 	@echo "=== Running Handler Integration Tests ==="
 	./$(TARGET_HANDLER_INTEGRATION)
+	@echo ""
+	@echo "=== Running UPnP Tests ==="
+	./$(TARGET_UPNP)
+	@echo ""
+	@echo "=== Running P2P Proxy Tests ==="
+	./$(TARGET_P2P_PROXY)
+	@echo ""
+	@echo "=== Running P2P Proxy Client Tests ==="
+	./$(TARGET_P2P_CLIENT)
+	@echo ""
+	@echo "=== Running P2P Integration Tests ==="
+	./$(TARGET_P2P_INTEGRATION)
+	@echo ""
+	@echo "=== Running P2P CreateNetwork Tests ==="
+	./$(TARGET_P2P_CREATE_NETWORK)
 
 test-protocol: $(TARGET_PROTOCOL)
 	./$(TARGET_PROTOCOL)
@@ -348,13 +393,28 @@ test-proxy-handler: $(TARGET_PROXY_HANDLER)
 test-handler-integration: $(TARGET_HANDLER_INTEGRATION)
 	./$(TARGET_HANDLER_INTEGRATION)
 
+test-upnp: $(TARGET_UPNP)
+	./$(TARGET_UPNP)
+
+test-p2p-proxy: $(TARGET_P2P_PROXY)
+	./$(TARGET_P2P_PROXY)
+
+test-p2p-client: $(TARGET_P2P_CLIENT)
+	./$(TARGET_P2P_CLIENT)
+
+test-p2p-integration: $(TARGET_P2P_INTEGRATION)
+	./$(TARGET_P2P_INTEGRATION)
+
+test-p2p-create-network: $(TARGET_P2P_CREATE_NETWORK)
+	./$(TARGET_P2P_CREATE_NETWORK)
+
 coverage: clean
 	$(MAKE) COVERAGE=1 test
 	gcov $(TEST_SOURCES)
 	@echo "Coverage report generated"
 
 clean:
-	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION)
+	rm -f *.o $(TARGET_PROTOCOL) $(TARGET_CONFIG) $(TARGET_CONFIG_MANAGER) $(TARGET_LOG) $(TARGET_SOCKET) $(TARGET_TCP_CLIENT) $(TARGET_CONNECTION_STATE) $(TARGET_RECONNECT) $(TARGET_CLIENT) $(TARGET_LDN_TYPES) $(TARGET_LDN_STATE_MACHINE) $(TARGET_LDN_PROXY) $(TARGET_LDN_ERROR) $(TARGET_LDN_INTEGRATION) $(TARGET_OVERLAY) $(TARGET_IPC_CONFIG) $(TARGET_CONFIG_IPC_SERVICE) $(TARGET_SHARED_STATE) $(TARGET_PACKET_DISPATCHER) $(TARGET_SESSION_HANDLER) $(TARGET_PROXY_HANDLER) $(TARGET_HANDLER_INTEGRATION) $(TARGET_UPNP) $(TARGET_P2P_PROXY) $(TARGET_P2P_CLIENT) $(TARGET_P2P_INTEGRATION) $(TARGET_P2P_CREATE_NETWORK)
 	rm -f *.gcno *.gcda *.gcov
 
 #---------------------------------------------------------------------------------
