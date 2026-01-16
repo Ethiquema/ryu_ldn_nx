@@ -413,7 +413,22 @@ Result ICommunicationService::Scan(
 {
     AMS_UNUSED(channel);
 
-    LOG_INFO("Scan() called, local_comm_id=0x%lx", filter.networkId.intentId.localCommunicationId);
+    // Debug: dump raw filter bytes to understand structure alignment
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&filter);
+    LOG_INFO("Scan() raw bytes [0-15]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
+             raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
+             raw[8], raw[9], raw[10], raw[11], raw[12], raw[13], raw[14], raw[15]);
+    LOG_INFO("Scan() raw bytes [16-31]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
+             raw[16], raw[17], raw[18], raw[19], raw[20], raw[21], raw[22], raw[23],
+             raw[24], raw[25], raw[26], raw[27], raw[28], raw[29], raw[30], raw[31]);
+    LOG_INFO("Scan() raw bytes [32-47]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
+             raw[32], raw[33], raw[34], raw[35], raw[36], raw[37], raw[38], raw[39],
+             raw[40], raw[41], raw[42], raw[43], raw[44], raw[45], raw[46], raw[47]);
+    LOG_INFO("Scan() local_comm_id=0x%016llx, scene_id=0x%x, flags=0x%x, networkType=0x%x",
+             static_cast<unsigned long long>(filter.networkId.intentId.localCommunicationId),
+             filter.networkId.intentId.sceneId,
+             filter.flag,
+             filter.networkType);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -426,13 +441,16 @@ Result ICommunicationService::Scan(
     // Build scan filter for server
     // Convert from ams::mitm::ldn::ScanFilter to ryu_ldn::protocol::ScanFilterFull
     ryu_ldn::protocol::ScanFilterFull scan_filter{};
-    scan_filter.flag = filter.flag;
-    scan_filter.network_type = static_cast<uint8_t>(filter.networkType);
 
-    // Copy network ID
+    // Force LocalCommunicationId filter to ensure we only receive rooms for this game
+    // Some games don't set this flag, causing the server to return ALL rooms from ALL games
+    scan_filter.flag = filter.flag | ScanFilterFlag_LocalCommunicationId;
+    scan_filter.network_type = filter.networkType;  // Both are uint32_t now
+
+    // Copy network ID - this must be correct for filtering to work
     scan_filter.network_id.intent_id.local_communication_id = filter.networkId.intentId.localCommunicationId;
     scan_filter.network_id.intent_id.scene_id = filter.networkId.intentId.sceneId;
-    // SessionId is stored as a 16-byte blob (high + low as two u64)
+    // SessionId is stored as a 16-byte blob
     std::memcpy(scan_filter.network_id.session_id.data, &filter.networkId.sessionId, 16);
 
     // Copy SSID
@@ -441,6 +459,10 @@ Result ICommunicationService::Scan(
 
     // Copy MAC address (BSSID)
     std::memcpy(scan_filter.mac_address.data, filter.bssid.raw, sizeof(scan_filter.mac_address.data));
+
+    LOG_INFO("Scan: sending to server with flag=0x%x, local_comm_id=0x%016llx",
+             scan_filter.flag,
+             static_cast<unsigned long long>(scan_filter.network_id.intent_id.local_communication_id));
 
     // Send scan request
     auto send_result = m_server_client.send_scan(scan_filter);

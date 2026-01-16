@@ -168,8 +168,10 @@ static_assert(sizeof(IntentId) == 16);
 
 /**
  * @brief Network identifier
+ *
+ * Packed to ensure correct IPC layout.
  */
-struct NetworkId {
+struct __attribute__((packed)) NetworkId {
     IntentId intentId;      ///< 16 bytes
     SessionId sessionId;    ///< 16 bytes
 };
@@ -370,8 +372,16 @@ static_assert(sizeof(ConnectPrivateData) == 192);
 
 /**
  * @brief Scan filter configuration
+ *
+ * Must match Nintendo's exact layout from switchbrew:
+ * - 0x00: NetworkId (32 bytes)
+ * - 0x20: NetworkType (4 bytes, u32)
+ * - 0x24: Bssid (6 bytes)
+ * - 0x2A: Ssid (34 bytes)
+ * - 0x4C: Reserved (16 bytes)
+ * - 0x5C: Flag (4 bytes)
  */
-struct ScanFilter {
+struct __attribute__((packed)) ScanFilter {
     NetworkId networkId;
     u32 networkType;
     MacAddress bssid;

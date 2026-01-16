@@ -971,31 +971,27 @@ static_assert(sizeof(ConnectPrivateRequest) == 0xBC, "ConnectPrivateRequest must
 /**
  * @brief Scan Filter (Full) - 0x60 bytes (96 bytes)
  *
- * Complete filter for network scanning. Uses 8-byte alignment
- * to match C# StructLayout with Pack=8.
+ * Complete filter for network scanning. Must match the server's ScanFilter
+ * structure exactly (C# StructLayout with Pack=8 and NetworkType as uint).
  *
- * ## Wire Format (with alignment padding)
+ * ## Wire Format (matching server LdnServer/Types/ScanFilter.cs)
  * ```
  * Offset  Size  Field         Description
  * 0x00    32    network_id    Network ID filter (NetworkId)
- * 0x20    1     network_type  Network type filter (NetworkType enum)
- * 0x21    6     mac_address   MAC address filter (MacAddress)
- * 0x27    1     _pad1         Alignment padding
- * 0x28    34    ssid          SSID filter (Ssid)
- * 0x4A    2     _pad2         Alignment padding
+ * 0x20    4     network_type  Network type filter (NetworkType enum as uint32)
+ * 0x24    6     mac_address   MAC address filter (MacAddress)
+ * 0x2A    34    ssid          SSID filter (Ssid)
  * 0x4C    16    reserved      Reserved
  * 0x5C    4     flag          Filter flags (ScanFilterFlag)
  * ```
  *
  * Total: 96 bytes (0x60)
  */
-struct __attribute__((aligned(8))) ScanFilterFull {
+struct __attribute__((packed)) ScanFilterFull {
     NetworkId  network_id;      // 0x00: 32 bytes
-    uint8_t    network_type;    // 0x20: 1 byte
-    MacAddress mac_address;     // 0x21: 6 bytes
-    uint8_t    _pad1;           // 0x27: 1 byte padding
-    Ssid       ssid;            // 0x28: 34 bytes
-    uint16_t   _pad2;           // 0x4A: 2 bytes padding
+    uint32_t   network_type;    // 0x20: 4 bytes (matches server's NetworkType : uint)
+    MacAddress mac_address;     // 0x24: 6 bytes
+    Ssid       ssid;            // 0x2A: 34 bytes
     uint8_t    reserved[16];    // 0x4C: 16 bytes
     uint32_t   flag;            // 0x5C: 4 bytes
 };
