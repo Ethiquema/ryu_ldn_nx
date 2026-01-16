@@ -215,3 +215,6 @@ release/
 
 # Docker
 .docker/
+
+# Lock Files (For build priorities)
+.lock-*

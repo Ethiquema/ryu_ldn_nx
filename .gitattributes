@@ -1,0 +1,15 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Force LF line endings for shell scripts (critical for Docker on Windows)
+*.sh text eol=lf
+
+# Force LF for other scripts that may run in containers
+Makefile text eol=lf
+*.mk text eol=lf
+Dockerfile text eol=lf
+docker-compose.yml text eol=lf
+
+# Keep Windows batch files with CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
