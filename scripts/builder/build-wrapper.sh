@@ -128,8 +128,6 @@ done
 #   3. The build wrapper preserves the make process exit code
 
 if [ -n "$LOCK_FILES" ]; then
-    FD=8  # File descriptor counter (starts at 8, increments per lock)
-
     # CLEANUP HANDLER: Executed on EXIT, INT, TERM signals
     # Removes all acquired lock files, unblocking waiting builds
     cleanup_lock() {
@@ -139,13 +137,11 @@ if [ -n "$LOCK_FILES" ]; then
             rm -f "$LOCK_PATH"
         done
     }
-    
+
     # Register cleanup as exit handler for all termination scenarios
     trap cleanup_lock EXIT INT TERM
 
     # LOCK ACQUISITION: Sequential flock on each lock file
-    # Each lock uses a unique file descriptor (8, 9, 10, ...)
-    # flock -x = exclusive lock (wait if already held)
     for LOCK_FILE in $LOCK_FILES; do
         LOCK_PATH="/workspace/$LOCK_FILE"
 
@@ -155,14 +151,12 @@ if [ -n "$LOCK_FILES" ]; then
             log_message "[$COMPONENT]    A previous build is currently in progress. This build will resume once it completes..."
         fi
 
-        # Assign unique file descriptor and open lock file
-        FD=$((FD + 1))
-        eval "exec $FD>\"$LOCK_PATH\""
+        # Create lock file and wait for exclusive lock
+        touch "$LOCK_PATH"
 
-        # Attempt exclusive lock - blocks until available
-        flock -x $FD || {
+        # Use flock with file path (simpler approach)
+        flock -x "$LOCK_PATH" -c "echo locked" > /dev/null || {
             log_message "[$COMPONENT] ✗ Failed to acquire lock: $LOCK_FILE"
-            log_message "[$COMPONENT]    Possible causes: file system error, permission denied, or timeout"
             exit 1
         }
 

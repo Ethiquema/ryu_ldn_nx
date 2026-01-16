@@ -18,8 +18,8 @@ services:
     volumes:
       - .:/workspace
     working_dir: /workspace/sysmodule
-    entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "build", ".", "--lock", ".lock-libstratosphere-build", "--lock", ".lock-sysmodule-build"]
-    command: []
+    entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "build", "--lock", ".lock-libstratosphere-build", "--lock", ".lock-sysmodule-build"]
+    command: ["all"]
     depends_on:
       - libstratosphere
 
@@ -43,6 +43,16 @@ services:
     working_dir: /workspace/overlay
     entrypoint: ["/workspace/scripts/builder/build-wrapper.sh", "overlay", ".", "--lock", ".lock-overlay-build"]
     command: []
+
+  # Clean sysmodule build artifacts
+  clean:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace/sysmodule
+    command: make clean
 
   # Build all targets
   all:
