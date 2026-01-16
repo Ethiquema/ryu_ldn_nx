@@ -46,8 +46,10 @@ class ICommunicationService {
 public:
     /**
      * @brief Constructor
+     *
+     * @param program_id Program ID of the client process (used to replace LocalCommunicationId=-1)
      */
-    ICommunicationService();
+    explicit ICommunicationService(ncm::ProgramId program_id);
 
     /**
      * @brief Destructor
@@ -407,6 +409,9 @@ private:
 
     // Inactivity timeout (like Ryujinx _timeout)
     NetworkTimeout m_inactivity_timeout;                    ///< Auto-disconnect after idle period
+
+    // Program ID for LocalCommunicationId replacement (like Ryujinx NeedsRealId handling)
+    ncm::ProgramId m_program_id;                            ///< Client program ID (title ID)
 
     /**
      * @brief Static callback for inactivity timeout

@@ -25,6 +25,9 @@ namespace ams::mitm::ldn {
  * instead of the original Nintendo service.
  */
 class LdnMitMService : public sf::MitmServiceImplBase {
+private:
+    ncm::ProgramId m_program_id;  ///< Program ID of the client process
+
 public:
     /**
      * @brief Constructor

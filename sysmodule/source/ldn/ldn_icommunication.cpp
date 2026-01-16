@@ -101,7 +101,7 @@ static_assert(sizeof(NetworkInfo) == 0x480, "sizeof(NetworkInfo) should be 0x480
 static_assert(sizeof(ConnectNetworkData) == 0x7C, "sizeof(ConnectNetworkData) should be 0x7C");
 static_assert(sizeof(ScanFilter) == 0x60, "sizeof(ScanFilter) should be 0x60");
 
-ICommunicationService::ICommunicationService()
+ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     : m_state_machine()
     , m_error_state(0)
     , m_client_process_id(0)
@@ -131,7 +131,9 @@ ICommunicationService::ICommunicationService()
     , m_p2p_client(nullptr)
     , m_p2p_server(nullptr)
     , m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
+    , m_program_id(program_id)
 {
+    LOG_INFO("ICommunicationService created with program_id=0x%016lx", m_program_id.value);
     // Configure packet callback to receive server responses
     // Use static callback with user_data to route to instance method
     m_server_client.set_packet_callback(
@@ -413,22 +415,16 @@ Result ICommunicationService::Scan(
 {
     AMS_UNUSED(channel);
 
-    // Debug: dump raw filter bytes to understand structure alignment
-    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&filter);
-    LOG_INFO("Scan() raw bytes [0-15]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
-             raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7],
-             raw[8], raw[9], raw[10], raw[11], raw[12], raw[13], raw[14], raw[15]);
-    LOG_INFO("Scan() raw bytes [16-31]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
-             raw[16], raw[17], raw[18], raw[19], raw[20], raw[21], raw[22], raw[23],
-             raw[24], raw[25], raw[26], raw[27], raw[28], raw[29], raw[30], raw[31]);
-    LOG_INFO("Scan() raw bytes [32-47]: %02x %02x %02x %02x %02x %02x %02x %02x  %02x %02x %02x %02x %02x %02x %02x %02x",
-             raw[32], raw[33], raw[34], raw[35], raw[36], raw[37], raw[38], raw[39],
-             raw[40], raw[41], raw[42], raw[43], raw[44], raw[45], raw[46], raw[47]);
-    LOG_INFO("Scan() local_comm_id=0x%016llx, scene_id=0x%x, flags=0x%x, networkType=0x%x",
-             static_cast<unsigned long long>(filter.networkId.intentId.localCommunicationId),
-             filter.networkId.intentId.sceneId,
-             filter.flag,
-             filter.networkType);
+    // Replace LocalCommunicationId=-1 or 0 with real program_id (like Ryujinx NeedsRealId handling)
+    // Nintendo SDK does this internally, but we intercept before that happens
+    u64 local_comm_id = filter.networkId.intentId.localCommunicationId;
+    if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
+        local_comm_id = m_program_id.value;
+        LOG_INFO("Scan() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+    }
+
+    LOG_INFO("Scan() called, local_comm_id=0x%016lx, scene_id=%u, flags=0x%x, networkType=0x%x",
+             local_comm_id, filter.networkId.intentId.sceneId, filter.flag, filter.networkType);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -445,10 +441,10 @@ Result ICommunicationService::Scan(
     // Force LocalCommunicationId filter to ensure we only receive rooms for this game
     // Some games don't set this flag, causing the server to return ALL rooms from ALL games
     scan_filter.flag = filter.flag | ScanFilterFlag_LocalCommunicationId;
-    scan_filter.network_type = filter.networkType;  // Both are uint32_t now
+    scan_filter.network_type = filter.networkType;
 
-    // Copy network ID - this must be correct for filtering to work
-    scan_filter.network_id.intent_id.local_communication_id = filter.networkId.intentId.localCommunicationId;
+    // Copy network ID (use potentially replaced local_comm_id)
+    scan_filter.network_id.intent_id.local_communication_id = local_comm_id;
     scan_filter.network_id.intent_id.scene_id = filter.networkId.intentId.sceneId;
     // SessionId is stored as a 16-byte blob
     std::memcpy(scan_filter.network_id.session_id.data, &filter.networkId.sessionId, 16);
@@ -583,7 +579,14 @@ Result ICommunicationService::CloseAccessPoint() {
 }
 
 Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
-    LOG_INFO("CreateNetwork called");
+    // Replace LocalCommunicationId=-1 with real program_id (like Ryujinx NeedsRealId handling)
+    u64 local_comm_id = data.networkConfig.intentId.localCommunicationId;
+    if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
+        local_comm_id = m_program_id.value;
+        LOG_INFO("CreateNetwork() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+    }
+
+    LOG_INFO("CreateNetwork called, local_comm_id=0x%016lx", local_comm_id);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -604,8 +607,8 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
     std::memcpy(request.user_config.user_name, data.userConfig.userName,
                 sizeof(request.user_config.user_name));
 
-    // Network config
-    request.network_config.intent_id.local_communication_id = data.networkConfig.intentId.localCommunicationId;
+    // Network config (use potentially replaced local_comm_id)
+    request.network_config.intent_id.local_communication_id = local_comm_id;
     request.network_config.intent_id.scene_id = data.networkConfig.intentId.sceneId;
     request.network_config.channel = data.networkConfig.channel;
     request.network_config.node_count_max = data.networkConfig.nodeCountMax;
@@ -795,6 +798,15 @@ Result ICommunicationService::CloseStation() {
 }
 
 Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo& data) {
+    // Replace LocalCommunicationId=-1 with real program_id (like Ryujinx NeedsRealId handling)
+    u64 local_comm_id = data.networkId.intentId.localCommunicationId;
+    if (local_comm_id == static_cast<u64>(-1) || local_comm_id == 0) {
+        local_comm_id = m_program_id.value;
+        LOG_INFO("Connect() replacing local_comm_id with program_id=0x%016lx", local_comm_id);
+    }
+
+    LOG_INFO("Connect called, local_comm_id=0x%016lx", local_comm_id);
+
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
     auto result = m_state_machine.Connect();
@@ -818,8 +830,9 @@ Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo&
     request.local_communication_version = dat.localCommunicationVersion;
     request.option_unknown = dat.option;
 
-    // Network info - copy the full structure (compatible layout)
+    // Network info - copy the full structure, then fix LocalCommunicationId
     std::memcpy(&request.network_info, &data, sizeof(request.network_info));
+    request.network_info.network_id.intent_id.local_communication_id = local_comm_id;
 
     // Send to server
     auto send_result = m_server_client.send_connect(request);

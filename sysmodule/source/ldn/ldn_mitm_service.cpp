@@ -13,6 +13,7 @@ namespace ams::mitm::ldn {
 
 LdnMitMService::LdnMitMService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)
     : MitmServiceImplBase(std::forward<std::shared_ptr<::Service>>(s), c)
+    , m_program_id(c.program_id)
 {
     LOG_INFO("LDN MITM service created for program_id=0x%016lx", c.program_id.value);
 }
@@ -27,9 +28,10 @@ bool LdnMitMService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
 Result LdnMitMService::CreateUserLocalCommunicationService(
     sf::Out<sf::SharedPointer<ICommunicationInterface>> out)
 {
-    LOG_INFO("Creating UserLocalCommunicationService");
-    // Create our custom communication service
-    auto service = sf::CreateSharedObjectEmplaced<ICommunicationInterface, ICommunicationService>();
+    LOG_INFO("Creating UserLocalCommunicationService for program_id=0x%016lx", m_program_id.value);
+    // Create our custom communication service with the client's program ID
+    // The program_id is used to replace LocalCommunicationId=-1 with the real title ID
+    auto service = sf::CreateSharedObjectEmplaced<ICommunicationInterface, ICommunicationService>(m_program_id);
     out.SetValue(std::move(service));
     R_SUCCEED();
 }
