@@ -30,6 +30,22 @@ static ICommunicationService* g_active_ldn_service = nullptr;
 static os::Mutex g_active_service_mutex{false};
 
 /**
+ * @brief Static callback for inactivity timeout
+ *
+ * Called when the NetworkTimeout expires (no network activity for 6 seconds).
+ * Disconnects from the server to save resources.
+ * Like Ryujinx _timeout callback that calls DisconnectInternal().
+ */
+void ICommunicationService::OnInactivityTimeout() {
+    std::scoped_lock lock(g_active_service_mutex);
+
+    if (g_active_ldn_service != nullptr && !g_active_ldn_service->m_network_connected) {
+        LOG_INFO("Inactivity timeout - disconnecting from server");
+        g_active_ldn_service->DisconnectFromServer();
+    }
+}
+
+/**
  * @brief Callback for BSD MITM to send ProxyData through LDN server
  *
  * This function is registered with ProxySocketManager and called when
@@ -114,6 +130,7 @@ ICommunicationService::ICommunicationService()
     , m_external_proxy_config{}
     , m_p2p_client(nullptr)
     , m_p2p_server(nullptr)
+    , m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
 {
     // Configure packet callback to receive server responses
     // Use static callback with user_data to route to instance method
@@ -493,6 +510,9 @@ Result ICommunicationService::Scan(
     count.SetValue(static_cast<u32>(result_count));
     LOG_INFO("Scan: returning %zu networks", result_count);
 
+    // Refresh inactivity timeout after scan (like Ryujinx)
+    m_inactivity_timeout.RefreshTimeout();
+
     R_SUCCEED();
 }
 
@@ -635,6 +655,10 @@ Result ICommunicationService::CreateNetwork(CreateNetworkConfig data) {
 
     LOG_INFO("CreateNetwork: received Connected response, network created successfully");
 
+    // Mark as connected to network and disable inactivity timeout (like Ryujinx)
+    m_network_connected = true;
+    m_inactivity_timeout.DisableTimeout();
+
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::AccessPointCreated);
 
@@ -657,6 +681,9 @@ Result ICommunicationService::DestroyNetwork() {
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_network_connected = false;
+
+    // Refresh inactivity timeout after leaving network (like Ryujinx)
+    m_inactivity_timeout.RefreshTimeout();
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::AccessPoint);
@@ -793,6 +820,10 @@ Result ICommunicationService::Connect(ConnectNetworkData dat, const NetworkInfo&
 
     LOG_INFO("Connect: received Connected response, connected to network");
 
+    // Mark as connected to network and disable inactivity timeout (like Ryujinx)
+    m_network_connected = true;
+    m_inactivity_timeout.DisableTimeout();
+
     // Store network info
     std::memcpy(&m_network_info, &data, sizeof(m_network_info));
 
@@ -825,6 +856,9 @@ Result ICommunicationService::Disconnect() {
 
     m_network_connected = false;
     m_disconnect_reason = DisconnectReason::User;
+
+    // Refresh inactivity timeout after leaving network (like Ryujinx)
+    m_inactivity_timeout.RefreshTimeout();
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));

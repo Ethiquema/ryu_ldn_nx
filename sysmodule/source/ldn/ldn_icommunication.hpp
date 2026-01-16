@@ -16,6 +16,7 @@
 #include "ldn_state_machine.hpp"
 #include "ldn_node_mapper.hpp"
 #include "ldn_proxy_buffer.hpp"
+#include "ldn_network_timeout.hpp"
 #include "interfaces/icommunication.hpp"
 #include "../network/client.hpp"
 #include "../p2p/p2p_proxy_client.hpp"
@@ -403,6 +404,16 @@ private:
     ryu_ldn::protocol::ExternalProxyConfig m_external_proxy_config; ///< External proxy config
     p2p::P2pProxyClient* m_p2p_client;                      ///< Connected P2P proxy client (joiner side)
     p2p::P2pProxyServer* m_p2p_server;                      ///< Hosted P2P proxy server (host side)
+
+    // Inactivity timeout (like Ryujinx _timeout)
+    NetworkTimeout m_inactivity_timeout;                    ///< Auto-disconnect after idle period
+
+    /**
+     * @brief Static callback for inactivity timeout
+     *
+     * Called when the timeout expires. Disconnects from server.
+     */
+    static void OnInactivityTimeout();
 
     /**
      * @brief Set game version from local_communication_version
