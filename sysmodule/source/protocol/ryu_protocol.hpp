@@ -21,28 +21,6 @@
 namespace ryu_ldn::protocol {
 
 // ============================================================================
-// DEBUG: Header size testing
-// ============================================================================
-
-// Set to true to use 10-byte header (standard Ryujinx), false for 12-byte (Switch compat)
-// This is for testing purposes - to revert, set back to false
-inline bool g_use_10byte_header = false;
-
-// 10-byte header structure (standard Ryujinx server format)
-struct __attribute__((packed)) LdnHeader10 {
-    uint32_t magic;
-    uint8_t  type;
-    uint8_t  version;
-    int32_t  data_size;
-};
-static_assert(sizeof(LdnHeader10) == 0xA, "LdnHeader10 must be 10 bytes");
-
-// Get current header size based on mode
-inline size_t get_header_size() {
-    return g_use_10byte_header ? sizeof(LdnHeader10) : sizeof(LdnHeader);
-}
-
-// ============================================================================
 // Result Codes
 // ============================================================================
 
@@ -86,32 +64,25 @@ constexpr size_t get_packet_size() {
 
 /**
  * @brief Encode a packet header into buffer
- * @param buffer Output buffer (must be at least get_header_size())
+ *
+ * Writes a 12-byte LdnHeader to the buffer matching the C# server's actual
+ * memory layout. The C# server uses StructLayout without Pack=1, so int32
+ * fields are aligned to 4-byte boundaries, placing DataSize at offset 8.
+ *
+ * @param buffer Output buffer (must be at least 12 bytes)
  * @param type Packet type
  * @param data_size Size of payload following header
- * @return Number of bytes written (10 or 12 depending on g_use_10byte_header)
+ * @return Number of bytes written (always 12)
  */
 inline size_t encode_header(uint8_t* buffer, PacketId type, int32_t data_size) {
-    if (g_use_10byte_header) {
-        // 10-byte header (standard Ryujinx format)
-        LdnHeader10 header{};
-        header.magic = PROTOCOL_MAGIC;
-        header.type = static_cast<uint8_t>(type);
-        header.version = PROTOCOL_VERSION;
-        header.data_size = data_size;
-        std::memcpy(buffer, &header, sizeof(LdnHeader10));
-        return sizeof(LdnHeader10);
-    } else {
-        // 12-byte header (Switch compatibility)
-        LdnHeader header{};
-        header.magic = PROTOCOL_MAGIC;
-        header.type = static_cast<uint8_t>(type);
-        header.version = PROTOCOL_VERSION;
-        header.reserved = 0;
-        header.data_size = data_size;
-        std::memcpy(buffer, &header, sizeof(LdnHeader));
-        return sizeof(LdnHeader);
-    }
+    LdnHeader header{};  // Zero-initializes reserved field
+    header.magic = PROTOCOL_MAGIC;
+    header.type = static_cast<uint8_t>(type);
+    header.version = PROTOCOL_VERSION;
+    // header.reserved is already 0 from zero-initialization
+    header.data_size = data_size;
+    std::memcpy(buffer, &header, sizeof(LdnHeader));
+    return sizeof(LdnHeader);  // 12 bytes (matches C# layout)
 }
 
 /**

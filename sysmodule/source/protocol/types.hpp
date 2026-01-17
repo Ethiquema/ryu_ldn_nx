@@ -178,23 +178,23 @@ enum class PacketId : uint8_t {
 // =============================================================================
 
 /**
- * @brief LDN Protocol Header - 12 bytes
+ * @brief LDN Protocol Header - 10 bytes (0x0A)
  *
  * Every packet in the RyuLdn protocol starts with this header.
  * The header contains identification, versioning, and size information.
  *
- * ## Wire Format
+ * ## Wire Format (standard Ryujinx server format)
  * ```
  * Offset  Size  Field       Description
  * 0x00    4     magic       Protocol magic (0x4E444C52 = "RLDN")
  * 0x04    1     type        Packet type (PacketId enum)
  * 0x05    1     version     Protocol version (must be 1)
- * 0x06    2     reserved    Padding for Switch compatibility (must be 0)
- * 0x08    4     data_size   Payload size in bytes (signed for compatibility)
+ * 0x06    4     data_size   Payload size in bytes (signed for compatibility)
  * ```
  *
- * NOTE: The 2-byte reserved field is required for Switch compatibility.
- * DO NOT change this to 10 bytes - it breaks communication.
+ * IMPORTANT: This struct MUST use __attribute__((packed)) to prevent the
+ * compiler from adding padding before data_size. Without packed, C++ would
+ * add 2 bytes of padding to align data_size on a 4-byte boundary.
  *
  * ## Validation
  * When receiving a packet, validate:
@@ -202,14 +202,34 @@ enum class PacketId : uint8_t {
  * 2. version == PROTOCOL_VERSION
  * 3. data_size >= 0 && data_size <= MAX_PACKET_SIZE
  */
-struct LdnHeader {
-    uint32_t magic;      ///< Must be PROTOCOL_MAGIC (0x4E444C52 = "RLDN")
-    uint8_t  type;       ///< Packet type from PacketId enum
-    uint8_t  version;    ///< Protocol version (must be PROTOCOL_VERSION = 1)
-    uint16_t reserved;   ///< Padding for Switch compatibility (must be 0)
-    int32_t  data_size;  ///< Size of payload following header (may be 0)
+/**
+ * @brief Network packet header - 12 bytes (matches C# layout)
+ *
+ * IMPORTANT: The C# server uses [StructLayout(LayoutKind.Sequential, Size = 0xA)]
+ * WITHOUT Pack=1. This means the C# runtime aligns DataSize (int32) on a 4-byte
+ * boundary, placing it at offset 8, not offset 6.
+ *
+ * C# actual layout (without Pack=1):
+ * - Offset 0-3:  Magic (uint)
+ * - Offset 4:    Type (byte)
+ * - Offset 5:    Version (byte)
+ * - Offset 6-7:  Padding (implicit, for int32 alignment)
+ * - Offset 8-11: DataSize (int)
+ *
+ * The Size=0xA in C# only affects marshaling/array copy sizes, NOT the internal
+ * struct layout. When C# uses MemoryMarshal.Read<LdnHeader>(), it reads DataSize
+ * from offset 8.
+ *
+ * We must match this layout for compatibility.
+ */
+struct __attribute__((packed)) LdnHeader {
+    uint32_t magic;      ///< Offset 0: Must be PROTOCOL_MAGIC (0x4E444C52 = "RLDN")
+    uint8_t  type;       ///< Offset 4: Packet type from PacketId enum
+    uint8_t  version;    ///< Offset 5: Protocol version (must be PROTOCOL_VERSION = 1)
+    uint16_t reserved;   ///< Offset 6: Padding to align data_size on 4-byte boundary
+    int32_t  data_size;  ///< Offset 8: Size of payload following header (may be 0)
 };
-static_assert(sizeof(LdnHeader) == 0xC, "LdnHeader must be 12 bytes - DO NOT CHANGE");
+static_assert(sizeof(LdnHeader) == 0x0C, "LdnHeader must be 12 bytes to match C# server layout");
 
 /**
  * @brief MAC Address - 6 bytes
@@ -1001,17 +1021,25 @@ struct __attribute__((packed)) ScanFilterFull {
 static_assert(sizeof(ScanFilterFull) == 0x60, "ScanFilterFull must be 96 bytes (0x60)");
 
 /**
- * @brief Connect Request - 0x4FC bytes (1276 bytes)
+ * @brief Connect Request - 0x500 bytes (1280 bytes)
  * Request to connect to a network
+ *
+ * IMPORTANT: The C# server uses StructLayout without Pack, so NetworkInfo
+ * (which contains a long/int64 in IntentId) gets aligned to 8 bytes.
+ * Offset of NetworkInfo = 0x7C (124) which is NOT aligned to 8.
+ * C# adds 4 bytes padding to align NetworkInfo to offset 0x80 (128).
+ *
+ * We must add explicit padding to match the C# layout.
  */
 struct __attribute__((packed)) ConnectRequest {
-    SecurityConfig security_config;
-    UserConfig     user_config;
-    uint32_t       local_communication_version;
-    uint32_t       option_unknown;
-    NetworkInfo    network_info;
+    SecurityConfig security_config;             // 0x00: 0x44 bytes (68)
+    UserConfig     user_config;                 // 0x44: 0x30 bytes (48)
+    uint32_t       local_communication_version; // 0x74: 4 bytes
+    uint32_t       option_unknown;              // 0x78: 4 bytes
+    uint32_t       _padding;                    // 0x7C: 4 bytes padding for 8-byte alignment
+    NetworkInfo    network_info;                // 0x80: 0x480 bytes (1152)
 };
-static_assert(sizeof(ConnectRequest) == 0x4FC, "ConnectRequest must be 0x4FC bytes");
+static_assert(sizeof(ConnectRequest) == 0x500, "ConnectRequest must be 0x500 bytes (1280) to match C# alignment");
 
 /**
  * @brief Set Accept Policy Request - 1 byte
