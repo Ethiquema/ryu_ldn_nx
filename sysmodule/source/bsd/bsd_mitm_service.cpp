@@ -51,6 +51,7 @@
 #include "proxy_socket_manager.hpp"
 #include "bsd_types.hpp"
 #include "../debug/log.hpp"
+#include "../ldn/ldn_shared_state.hpp"
 
 // Atmosphere MITM dispatch macros for IPC forwarding
 #include <stratosphere/sf/sf_mitm_dispatch.h>
@@ -147,24 +148,46 @@ BsdMitmService::~BsdMitmService() {
  * Atmosphere calls this for each process that opens bsd:u.
  * If we return true, our MITM service handles all their BSD calls.
  *
- * ## Current Behavior
+ * ## Strategy
  *
- * We intercept ALL processes to ensure we catch any LDN traffic.
- * This is safe because we forward all calls transparently to the
- * real service, adding minimal overhead.
+ * We intercept ALL application processes (program_id >= 0x0100000000000000).
+ * This is necessary because games typically open bsd:u BEFORE ldn:u, so we
+ * can't know at this point if they will use LDN.
  *
- * ## Future Optimization
- *
- * We could filter by title ID to only intercept known LDN games,
- * reducing overhead for system services and non-LDN applications.
- * Example: Only intercept Mario Kart 8, Animal Crossing, etc.
+ * The overhead is minimal because:
+ * 1. We only intercept applications, not system services
+ * 2. All calls are forwarded transparently to the real service
+ * 3. Proxy sockets are only created when LDN addresses are detected
  *
  * @param client_info Process information (PID, program ID, etc.)
- * @return true Always intercept for now
+ * @return true For application processes, false for system services
  */
 bool BsdMitmService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
-    LOG_VERBOSE("BSD ShouldMitm called for program_id=0x%016lx", client_info.program_id.value);
-    return true;
+    // Our sysmodule's program_id - do not intercept ourselves
+    constexpr u64 OUR_PROGRAM_ID = 0x4200000000000010ULL;
+
+    // Skip our own sysmodule to avoid infinite recursion
+    if (client_info.program_id.value == OUR_PROGRAM_ID) {
+        return false;
+    }
+
+    // Application program IDs start at 0x0100000000000000
+    // System services have lower program IDs
+    constexpr u64 APPLICATION_PROGRAM_ID_BASE = 0x0100000000000000ULL;
+
+    u64 program_id = client_info.program_id.value;
+
+    // Intercept all application processes (games, homebrew)
+    // Skip system services to save memory
+    if (program_id >= APPLICATION_PROGRAM_ID_BASE) {
+        LOG_INFO("BSD ShouldMitm: intercepting application pid=%lu, program_id=0x%016lx",
+                 client_info.process_id.value, program_id);
+        return true;
+    }
+
+    LOG_VERBOSE("BSD ShouldMitm: skipping system service pid=%lu, program_id=0x%016lx",
+                client_info.process_id.value, program_id);
+    return false;
 }
 
 // =============================================================================
@@ -1176,7 +1199,7 @@ Result BsdMitmService::SendTo(
                             local_addr.sin_family = static_cast<uint8_t>(ryu_ldn::bsd::AddressFamily::Inet);
                             local_addr.sin_port = __builtin_bswap16(ephemeral);
                             local_addr.sin_addr = __builtin_bswap32(manager.GetLocalIp());
-                            proxy->Bind(local_addr);
+                            R_TRY(proxy->Bind(local_addr));
                         }
                     }
                 }
