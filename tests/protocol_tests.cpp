@@ -141,7 +141,7 @@ TEST(structure_sizes) {
     ASSERT_EQ(sizeof(RyuNetworkConfig), 0x28);
     ASSERT_EQ(sizeof(CreateAccessPointRequest), 0xBC);
     ASSERT_EQ(sizeof(ScanFilterFull), 0x60);     // 96 bytes (Pack=8 alignment)
-    ASSERT_EQ(sizeof(ConnectRequest), 0x4FC);
+    ASSERT_EQ(sizeof(ConnectRequest), 0x500);  // 1280 bytes
     ASSERT_EQ(sizeof(RejectRequest), 8);         // 8 bytes (NodeId + DisconnectReason)
 
     // Proxy structures

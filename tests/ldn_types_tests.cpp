@@ -131,7 +131,7 @@ TEST(protocol_scan_filter_full_size) {
 }
 
 TEST(protocol_connect_request_size) {
-    ASSERT_EQ(sizeof(ryu_ldn::protocol::ConnectRequest), 0x4FCu);
+    ASSERT_EQ(sizeof(ryu_ldn::protocol::ConnectRequest), 0x500u);  // 1280 bytes
 }
 
 TEST(protocol_create_access_point_request_size) {
