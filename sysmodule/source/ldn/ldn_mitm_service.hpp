@@ -27,6 +27,7 @@ namespace ams::mitm::ldn {
 class LdnMitMService : public sf::MitmServiceImplBase {
 private:
     ncm::ProgramId m_program_id;  ///< Program ID of the client process
+    u64 m_client_pid;             ///< Process ID of the client (for BSD MITM tracking)
 
 public:
     /**
@@ -36,6 +37,11 @@ public:
      * @param c MITM process info for the client
      */
     LdnMitMService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c);
+
+    /**
+     * @brief Destructor
+     */
+    ~LdnMitMService();
 
     /**
      * @brief Determine if we should MITM this process

@@ -115,6 +115,32 @@ public:
      */
     u64 GetActiveProcessId() const;
 
+    /**
+     * @brief Set the PID that has opened ldn:u service
+     *
+     * Called immediately when LdnMitMService is created, BEFORE Initialize().
+     * This allows BSD MITM to know which process to intercept even before
+     * the game calls Initialize().
+     *
+     * @param pid Process ID that opened ldn:u, or 0 to clear
+     */
+    void SetLdnPid(u64 pid);
+
+    /**
+     * @brief Get the PID that has opened ldn:u service
+     *
+     * @return Process ID, or 0 if no process has opened ldn:u
+     */
+    u64 GetLdnPid() const;
+
+    /**
+     * @brief Check if a PID has opened ldn:u
+     *
+     * @param pid Process ID to check
+     * @return true if this PID has opened ldn:u
+     */
+    bool IsLdnPid(u64 pid) const;
+
     // =========================================================================
     // LDN State
     // =========================================================================
@@ -217,6 +243,7 @@ private:
     mutable ams::os::SdkMutex m_mutex{};
     bool m_game_active = false;
     u64 m_process_id = 0;
+    u64 m_ldn_pid = 0;  ///< PID that opened ldn:u (set before Initialize)
     CommState m_ldn_state = static_cast<CommState>(0); // CommState::None
     u8 m_node_count = 0;
     u8 m_max_nodes = 0;

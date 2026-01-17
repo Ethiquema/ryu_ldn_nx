@@ -59,6 +59,21 @@ u64 SharedState::GetActiveProcessId() const {
     return m_process_id;
 }
 
+void SharedState::SetLdnPid(u64 pid) {
+    std::scoped_lock lk(m_mutex);
+    m_ldn_pid = pid;
+}
+
+u64 SharedState::GetLdnPid() const {
+    std::scoped_lock lk(m_mutex);
+    return m_ldn_pid;
+}
+
+bool SharedState::IsLdnPid(u64 pid) const {
+    std::scoped_lock lk(m_mutex);
+    return m_ldn_pid != 0 && m_ldn_pid == pid;
+}
+
 // =============================================================================
 // LDN State
 // =============================================================================

@@ -7,6 +7,7 @@
  */
 
 #include "ldn_mitm_service.hpp"
+#include "ldn_shared_state.hpp"
 #include "../debug/log.hpp"
 
 namespace ams::mitm::ldn {
@@ -14,14 +15,27 @@ namespace ams::mitm::ldn {
 LdnMitMService::LdnMitMService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)
     : MitmServiceImplBase(std::forward<std::shared_ptr<::Service>>(s), c)
     , m_program_id(c.program_id)
+    , m_client_pid(c.process_id.value)
 {
-    LOG_INFO("LDN MITM service created for program_id=0x%016lx", c.program_id.value);
+    LOG_INFO("LDN MITM service created for program_id=0x%016lx, pid=%lu",
+             c.program_id.value, m_client_pid);
+
+    // Register PID immediately so BSD MITM can intercept this process
+    // This happens BEFORE Initialize() is called
+    SharedState::GetInstance().SetLdnPid(m_client_pid);
+}
+
+LdnMitMService::~LdnMitMService() {
+    LOG_INFO("LDN MITM service destroyed for program_id=0x%016lx, pid=%lu",
+             m_program_id.value, m_client_pid);
+
+    // Clear LDN PID so BSD MITM stops intercepting
+    SharedState::GetInstance().SetLdnPid(0);
 }
 
 bool LdnMitMService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
     // We always want to intercept LDN calls
-    // In the future, we could add filtering by title ID if needed
-    LOG_VERBOSE("ShouldMitm called for program_id=0x%016lx", client_info.program_id.value);
+    LOG_VERBOSE("LDN ShouldMitm called for program_id=0x%016lx", client_info.program_id.value);
     return true;
 }
 
