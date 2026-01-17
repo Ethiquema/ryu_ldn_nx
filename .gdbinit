@@ -211,31 +211,362 @@ Ajouter des breakpoints sur les fonctions de configuration.
 end
 
 # ============================================================================
+# BSD MITM Breakpoints
+# ============================================================================
+
+define bp-bsd-mitm
+    echo Ajout breakpoints BSD MITM (auto-continue)...\n
+
+    # ShouldMitm - called to decide if we intercept a process
+    break ams::mitm::bsd::BsdMitmService::ShouldMitm
+    commands
+        silent
+        printf "[BSD] ShouldMitm pid=%lu\n", $x1
+        continue
+    end
+
+    # Socket creation
+    break ams::mitm::bsd::BsdMitmService::Socket
+    commands
+        silent
+        printf "[BSD] Socket(domain=%d, type=%d, proto=%d)\n", $x4, $x5, $x6
+        continue
+    end
+
+    # Bind
+    break ams::mitm::bsd::BsdMitmService::Bind
+    commands
+        silent
+        printf "[BSD] Bind(fd=%d)\n", $x3
+        continue
+    end
+
+    # Connect
+    break ams::mitm::bsd::BsdMitmService::Connect
+    commands
+        silent
+        printf "[BSD] Connect(fd=%d)\n", $x3
+        continue
+    end
+
+    # SendTo
+    break ams::mitm::bsd::BsdMitmService::SendTo
+    commands
+        silent
+        printf "[BSD] SendTo(fd=%d)\n", $x4
+        continue
+    end
+
+    # RecvFrom
+    break ams::mitm::bsd::BsdMitmService::RecvFrom
+    commands
+        silent
+        printf "[BSD] RecvFrom(fd=%d)\n", $x4
+        continue
+    end
+
+    # Close
+    break ams::mitm::bsd::BsdMitmService::Close
+    commands
+        silent
+        printf "[BSD] Close(fd=%d)\n", $x3
+        continue
+    end
+
+    info breakpoints
+end
+document bp-bsd-mitm
+Breakpoints sur le BSD MITM service (trace automatique).
+Les appels sont loggues et l'execution continue.
+end
+
+define bp-bsd-verbose
+    echo Ajout breakpoints BSD MITM (mode verbose - arret a chaque appel)...\n
+    break ams::mitm::bsd::BsdMitmService::ShouldMitm
+    break ams::mitm::bsd::BsdMitmService::Socket
+    break ams::mitm::bsd::BsdMitmService::Bind
+    break ams::mitm::bsd::BsdMitmService::Connect
+    break ams::mitm::bsd::BsdMitmService::SendTo
+    break ams::mitm::bsd::BsdMitmService::RecvFrom
+    break ams::mitm::bsd::BsdMitmService::Close
+    info breakpoints
+end
+document bp-bsd-verbose
+Breakpoints BSD MITM en mode verbose (arret a chaque appel).
+end
+
+# ============================================================================
+# Proxy Socket Breakpoints
+# ============================================================================
+
+define bp-proxy-socket
+    echo Ajout breakpoints Proxy Socket...\n
+
+    break ams::mitm::bsd::ProxySocketManager::CreateProxySocket
+    commands
+        silent
+        printf "[ProxySocket] CreateProxySocket\n"
+        continue
+    end
+
+    break ams::mitm::bsd::ProxySocketManager::FindSocketByDestination
+    commands
+        silent
+        printf "[ProxySocket] FindSocketByDest(ip=0x%x, port=%d)\n", $x1, $x2
+        continue
+    end
+
+    break ams::mitm::bsd::ProxySocketManager::DeliverProxyData
+    commands
+        silent
+        printf "[ProxySocket] DeliverProxyData\n"
+        continue
+    end
+
+    info breakpoints
+end
+document bp-proxy-socket
+Breakpoints sur le ProxySocketManager (trace automatique).
+end
+
+# ============================================================================
+# LDN MITM Breakpoints
+# ============================================================================
+
+define bp-ldn-mitm
+    echo Ajout breakpoints LDN MITM...\n
+
+    break ams::mitm::ldn::LdnMitMService::ShouldMitm
+    commands
+        silent
+        printf "[LDN] ShouldMitm program_id=0x%lx\n", $x1
+        continue
+    end
+
+    break ams::mitm::ldn::LdnMitMService::LdnMitMService
+    commands
+        silent
+        printf "[LDN] Constructor\n"
+        continue
+    end
+
+    break ams::mitm::ldn::LdnMitMService::~LdnMitMService
+    commands
+        silent
+        printf "[LDN] Destructor\n"
+        continue
+    end
+
+    break ams::mitm::ldn::LdnMitMService::CreateUserLocalCommunicationService
+    commands
+        silent
+        printf "[LDN] CreateUserLocalCommunicationService\n"
+        continue
+    end
+
+    info breakpoints
+end
+document bp-ldn-mitm
+Breakpoints sur le LDN MITM service (trace automatique).
+end
+
+# ============================================================================
+# PID Tracker Breakpoints
+# ============================================================================
+
+define bp-pid-tracker
+    echo Ajout breakpoints PID Tracker...\n
+
+    break ryu_ldn::LdnPidTracker::RegisterPid
+    commands
+        silent
+        printf "[PidTracker] RegisterPid(pid=%lu)\n", $x1
+        continue
+    end
+
+    break ryu_ldn::LdnPidTracker::UnregisterPid
+    commands
+        silent
+        printf "[PidTracker] UnregisterPid(pid=%lu)\n", $x1
+        continue
+    end
+
+    break ryu_ldn::LdnPidTracker::IsLdnPid
+    commands
+        silent
+        printf "[PidTracker] IsLdnPid(pid=%lu)\n", $x1
+        continue
+    end
+
+    info breakpoints
+end
+document bp-pid-tracker
+Breakpoints sur le LdnPidTracker (trace automatique).
+end
+
+# ============================================================================
+# Communication Service Breakpoints
+# ============================================================================
+
+define bp-comm-service
+    echo Ajout breakpoints ICommunicationService...\n
+
+    break ams::mitm::ldn::ICommunicationService::ICommunicationService
+    commands
+        silent
+        printf "[CommSvc] Constructor\n"
+        continue
+    end
+
+    break ams::mitm::ldn::ICommunicationService::Initialize
+    commands
+        silent
+        printf "[CommSvc] Initialize\n"
+        continue
+    end
+
+    break ams::mitm::ldn::ICommunicationService::Scan
+    commands
+        silent
+        printf "[CommSvc] Scan\n"
+        continue
+    end
+
+    break ams::mitm::ldn::ICommunicationService::Connect
+    commands
+        silent
+        printf "[CommSvc] Connect\n"
+        continue
+    end
+
+    break ams::mitm::ldn::ICommunicationService::ConnectToServer
+    commands
+        silent
+        printf "[CommSvc] ConnectToServer\n"
+        continue
+    end
+
+    break ams::mitm::ldn::ICommunicationService::DisconnectFromServer
+    commands
+        silent
+        printf "[CommSvc] DisconnectFromServer\n"
+        continue
+    end
+
+    info breakpoints
+end
+document bp-comm-service
+Breakpoints sur ICommunicationService (trace automatique).
+end
+
+# ============================================================================
+# Quick Debug Setups
+# ============================================================================
+
+define quick-bsd
+    echo === Quick BSD MITM Debug Setup ===\n
+    catch signal SIGABRT
+    catch signal SIGSEGV
+    bp-bsd-mitm
+    bp-proxy-socket
+    bp-pid-tracker
+    echo \nPret! Tapez 'continue' pour lancer.\n
+end
+document quick-bsd
+Setup rapide pour debugger le BSD MITM.
+Inclut: BSD MITM + Proxy Socket + PID Tracker.
+end
+
+define quick-ldn
+    echo === Quick LDN Debug Setup ===\n
+    catch signal SIGABRT
+    catch signal SIGSEGV
+    bp-ldn-mitm
+    bp-comm-service
+    echo \nPret! Tapez 'continue' pour lancer.\n
+end
+document quick-ldn
+Setup rapide pour debugger le LDN MITM.
+Inclut: LDN MITM + Communication Service.
+end
+
+define quick-full
+    echo === Full Debug Setup ===\n
+    catch signal SIGABRT
+    catch signal SIGSEGV
+    bp-bsd-mitm
+    bp-proxy-socket
+    bp-ldn-mitm
+    bp-pid-tracker
+    bp-comm-service
+    echo \nPret! Tapez 'continue' pour lancer.\n
+end
+document quick-full
+Setup complet pour debugger tout ryu_ldn_nx.
+end
+
+# ============================================================================
+# Memory Info
+# ============================================================================
+
+define ryu-meminfo
+    printf "=== ryu_ldn_nx Memory Layout ===\n\n"
+    printf "Static allocations:\n"
+    printf "  MallocBufferSize:    256 KB\n"
+    printf "  g_heap_memory:        64 KB\n"
+    printf "  PacketBuffer:          8 KB\n"
+    printf "  LdnProxyBuffer:      ~8.5 KB\n"
+    printf "  ScanResults:          ~9 KB (8 x NetworkInfo)\n"
+    printf "  Thread stacks:       ~48 KB (3 x 16 KB)\n"
+    printf "  Socket buffers:      ~32 KB\n"
+    printf "\n"
+    printf "Total estimate: ~425 KB\n"
+    printf "(Switch sysmodules share ~10 MB)\n"
+end
+document ryu-meminfo
+Afficher les tailles memoire du sysmodule.
+end
+
+# ============================================================================
 # Message d'accueil
 # ============================================================================
 
 echo \n
-echo ╔══════════════════════════════════════════════════════════════╗\n
-echo ║              ryu_ldn_nx GDB Debugger                         ║\n
-echo ╠══════════════════════════════════════════════════════════════╣\n
-echo ║ Connexion:                                                   ║\n
-echo ║   connect <IP>              Connecter a la Switch            ║\n
-echo ║   lsproc                    Lister les processus             ║\n
-echo ║                                                              ║\n
-echo ║ ASLR (adresse de base):                                      ║\n
-echo ║   autobase                  Auto-detect base via PC          ║\n
-echo ║   getbase                   Afficher mappings memoire        ║\n
-echo ║                                                              ║\n
-echo ║ Symboles (automatique):                                      ║\n
-echo ║   autoload-sysmodule        Auto-detect + charger sysmodule  ║\n
-echo ║   autoload-overlay          Auto-detect + charger overlay    ║\n
-echo ║                                                              ║\n
-echo ║ Symboles (manuel):                                           ║\n
-echo ║   loadsym-sysmodule <OFF>   Charger avec offset manuel       ║\n
-echo ║   loadsym-overlay <OFF>     Charger avec offset manuel       ║\n
-echo ║                                                              ║\n
-echo ║ Workflow:                                                    ║\n
-echo ║   debug-sysmodule <IP> <PID>  Connexion + attach             ║\n
-echo ║   bp-config                   Breakpoints config             ║\n
-echo ╚══════════════════════════════════════════════════════════════╝\n
+echo ╔═══════════════════════════════════════════════════════════════════╗\n
+echo ║                   ryu_ldn_nx GDB Debugger                         ║\n
+echo ╠═══════════════════════════════════════════════════════════════════╣\n
+echo ║ CONNEXION:                                                        ║\n
+echo ║   connect <IP>               Connecter a la Switch                ║\n
+echo ║   lsproc                     Lister les processus                 ║\n
+echo ║   attach <PID>               Attacher au processus                ║\n
+echo ║                                                                   ║\n
+echo ║ ASLR + SYMBOLES (automatique):                                    ║\n
+echo ║   autoload-sysmodule         Auto-detect base + charger symboles  ║\n
+echo ║   autobase                   Juste afficher la base detectee      ║\n
+echo ║                                                                   ║\n
+echo ║ QUICK DEBUG (recommande):                                         ║\n
+echo ║   quick-bsd                  BSD MITM + Proxy + PID tracker       ║\n
+echo ║   quick-ldn                  LDN MITM + Communication service     ║\n
+echo ║   quick-full                 Tous les breakpoints                 ║\n
+echo ║                                                                   ║\n
+echo ║ BREAKPOINTS INDIVIDUELS:                                          ║\n
+echo ║   bp-bsd-mitm                BSD MITM (trace auto)                ║\n
+echo ║   bp-bsd-verbose             BSD MITM (arret a chaque appel)      ║\n
+echo ║   bp-proxy-socket            ProxySocketManager                   ║\n
+echo ║   bp-ldn-mitm                LDN MITM service                     ║\n
+echo ║   bp-pid-tracker             PID tracker                          ║\n
+echo ║   bp-comm-service            ICommunicationService                ║\n
+echo ║   bp-config                  ConfigManager                        ║\n
+echo ║                                                                   ║\n
+echo ║ INFO:                                                             ║\n
+echo ║   ryu-meminfo                Afficher layout memoire              ║\n
+echo ╚═══════════════════════════════════════════════════════════════════╝\n
+echo \n
+echo Workflow typique:\n
+echo   1. connect 192.168.1.x       <- IP de la Switch\n
+echo   2. lsproc                    <- trouver PID de ryu_ldn_nx\n
+echo   3. attach <PID>\n
+echo   4. autoload-sysmodule        <- charger symboles\n
+echo   5. quick-bsd                 <- setup breakpoints BSD\n
+echo   6. continue                  <- lancer\n
 echo \n
