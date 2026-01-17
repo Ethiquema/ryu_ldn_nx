@@ -66,4 +66,24 @@ services:
     depends_on:
       - build
       - overlay
+
+  # GDB debugger for Switch (interactive)
+  # Usage: docker compose run --rm gdb
+  # Then:  connect 192.168.1.X
+  #        lsproc
+  #        attach <PID>
+  #        autoload-sysmodule
+  #        quick-bsd
+  #        continue
+  gdb:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    network_mode: host
+    stdin_open: true
+    tty: true
+    command: ["/opt/devkitpro/devkitA64/bin/aarch64-none-elf-gdb", "-x", ".gdbinit"]
     
