@@ -68,14 +68,8 @@ services:
       - overlay
 
   # GDB debugger for Switch (interactive)
-  # Usage: docker compose run --rm gdb
-  # Then:  connect 192.168.1.X
-  #        lsproc
-  #        attach <PID>
-  #        autoload-sysmodule
-  #        quick-bsd
-  #        continue
-  gdb:
+  # Usage: docker compose run --rm debugger <SWITCH_IP> [PROCESS_ID]
+  debugger:
     build:
       context: .
       dockerfile: Dockerfile
@@ -85,5 +79,5 @@ services:
     network_mode: host
     stdin_open: true
     tty: true
-    command: ["/opt/devkitpro/devkitA64/bin/aarch64-none-elf-gdb", "-x", ".gdbinit"]
+    entrypoint: ["/workspace/scripts/debugger/debug.sh"]
     

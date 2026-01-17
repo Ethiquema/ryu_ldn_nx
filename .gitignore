@@ -206,6 +206,9 @@ vgcore.*
 # Project specific
 # =============================================================================
 
+# Debug Logs
+debug_logs
+
 # Local configuration overrides
 config.local.ini
 *.local.ini
