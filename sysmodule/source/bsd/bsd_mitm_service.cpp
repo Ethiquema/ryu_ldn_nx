@@ -171,23 +171,28 @@ bool BsdMitmService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
         return false;
     }
 
-    // Application program IDs start at 0x0100000000000000
-    // System services have lower program IDs
-    constexpr u64 APPLICATION_PROGRAM_ID_BASE = 0x0100000000000000ULL;
+    // Games/applications start at 0100000000010000
+    // System titles are below this threshold
+    constexpr u64 MIN_APPLICATION_ID = 0x0100000000010000ULL;
+
+    // Upper bound - titles above 0200000000000000 are not applications
+    // (This range is used for other purposes)
+    constexpr u64 MAX_APPLICATION_ID = 0x01FFFFFFFFFFFFFFULL;
 
     u64 program_id = client_info.program_id.value;
+    bool is_app = (program_id >= MIN_APPLICATION_ID && program_id <= MAX_APPLICATION_ID);
 
     // Intercept all application processes (games, homebrew)
     // Skip system services to save memory
-    if (program_id >= APPLICATION_PROGRAM_ID_BASE) {
+    if (is_app) {
         LOG_INFO("BSD ShouldMitm: intercepting application pid=%lu, program_id=0x%016lx",
                  client_info.process_id.value, program_id);
-        return true;
+    } else {
+        LOG_VERBOSE("BSD ShouldMitm: skipping system service pid=%lu, program_id=0x%016lx",
+                    client_info.process_id.value, program_id);
     }
 
-    LOG_VERBOSE("BSD ShouldMitm: skipping system service pid=%lu, program_id=0x%016lx",
-                client_info.process_id.value, program_id);
-    return false;
+    return is_app;
 }
 
 // =============================================================================

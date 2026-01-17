@@ -34,7 +34,8 @@ namespace ams {
 
         /// Main malloc buffer size
         /// NOTE: Switch sysmodules share ~10MB total, keep this small!
-        constexpr size_t MallocBufferSize = 256_KB;
+        /// 512KB is the minimum for TlsHeapCentral to initialize properly
+        constexpr size_t MallocBufferSize = 1_MB;
         alignas(os::MemoryPageSize) constinit u8 g_malloc_buffer[MallocBufferSize];
 
         /// Socket buffer configuration
@@ -144,7 +145,8 @@ namespace ams {
             };
 
             /// Maximum concurrent sessions
-            constexpr size_t MaxSessions = 8;
+            /// Higher value needed when intercepting all applications for BSD MITM
+            constexpr size_t MaxSessions = 16;
 
             /// Port indices for MITM services
             constexpr int PortIndex_LdnMitm = 0;
