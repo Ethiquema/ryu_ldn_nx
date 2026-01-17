@@ -58,13 +58,13 @@ namespace ams::mitm::ldn {
 class LdnProxyBuffer {
 public:
     /// Maximum size of a single proxy data packet (data only, not header)
-    static constexpr size_t MaxPacketDataSize = 0x1000;  // 4KB
+    static constexpr size_t MaxPacketDataSize = 0x800;  // 2KB (reduced from 4KB)
 
     /// Total buffer size (fits ~4 max-size packets)
-    static constexpr size_t BufferSize = MaxPacketDataSize * 4 + 256;
+    static constexpr size_t BufferSize = MaxPacketDataSize * 4 + 256;  // ~8.5KB (reduced from 16.5KB)
 
     /// Maximum number of packets that can be queued
-    static constexpr size_t MaxQueuedPackets = 32;
+    static constexpr size_t MaxQueuedPackets = 16;  // Reduced from 32
 
     /**
      * @brief Constructor - initializes empty buffer

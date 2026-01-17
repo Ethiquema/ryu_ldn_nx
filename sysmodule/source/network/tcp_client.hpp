@@ -476,9 +476,9 @@ public:
     ClientResult set_nodelay(bool enable);
 
 private:
-    Socket m_socket;                         ///< Underlying TCP socket
-    protocol::PacketBuffer<> m_recv_buffer;  ///< Buffer for TCP stream reassembly (64KB default)
-    uint8_t m_send_buffer[2048];             ///< Buffer for encoding outgoing packets
+    Socket m_socket;                                 ///< Underlying TCP socket
+    protocol::PacketBuffer<0x2000> m_recv_buffer;    ///< Buffer for TCP stream reassembly (8KB - saves 56KB!)
+    uint8_t m_send_buffer[2048];                     ///< Buffer for encoding outgoing packets
 
     /**
      * @brief Convert SocketResult to ClientResult

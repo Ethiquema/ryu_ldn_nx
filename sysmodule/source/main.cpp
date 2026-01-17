@@ -19,6 +19,7 @@ extern "C" {
 }
 
 #include "ldn/ldn_mitm_service.hpp"
+#include "bsd/bsd_mitm_service.hpp"
 #include "config/config.hpp"
 #include "config/config_ipc_service.hpp"
 #include "debug/log.hpp"
@@ -32,7 +33,8 @@ namespace ams {
         // ====================================================================
 
         /// Main malloc buffer size
-        constexpr size_t MallocBufferSize = 1_MB;
+        /// NOTE: Switch sysmodules share ~10MB total, keep this small!
+        constexpr size_t MallocBufferSize = 256_KB;
         alignas(os::MemoryPageSize) constinit u8 g_malloc_buffer[MallocBufferSize];
 
         /// Socket buffer configuration
@@ -101,7 +103,8 @@ namespace ams {
         os::ThreadType g_thread;
 
         // Heap for dynamic allocations
-        alignas(0x40) constinit u8 g_heap_memory[128_KB];
+        // NOTE: Keep small to avoid memory exhaustion
+        alignas(0x40) constinit u8 g_heap_memory[64_KB];
         constinit lmem::HeapHandle g_heap_handle;
         constinit bool g_heap_initialized;
         constinit os::SdkMutex g_heap_init_mutex;
@@ -141,10 +144,14 @@ namespace ams {
             };
 
             /// Maximum concurrent sessions
-            constexpr size_t MaxSessions = 3;
+            constexpr size_t MaxSessions = 8;
 
-            /// Custom server manager for MITM
-            class ServerManager final : public sf::hipc::ServerManager<1, LdnMitmManagerOptions, MaxSessions> {
+            /// Port indices for MITM services
+            constexpr int PortIndex_LdnMitm = 0;
+            constexpr int PortIndex_BsdMitm = 1;
+
+            /// Custom server manager for MITM (2 ports: ldn:u and bsd:u)
+            class ServerManager final : public sf::hipc::ServerManager<2, LdnMitmManagerOptions, MaxSessions> {
             private:
                 virtual ams::Result OnNeedsToAccept(int port_index, Server* server) override;
             };
@@ -152,20 +159,33 @@ namespace ams {
             ServerManager g_server_manager;
 
             Result ServerManager::OnNeedsToAccept(int port_index, Server* server) {
-                AMS_UNUSED(port_index);
-
                 // Acknowledge the MITM session
                 std::shared_ptr<::Service> fsrv;
                 sm::MitmProcessInfo client_info;
                 server->AcknowledgeMitmSession(std::addressof(fsrv), std::addressof(client_info));
 
-                // Create and accept our MITM service
-                return this->AcceptMitmImpl(
-                    server,
-                    sf::CreateSharedObjectEmplaced<
-                        mitm::ldn::ILdnMitMService,
-                        mitm::ldn::LdnMitMService>(decltype(fsrv)(fsrv), client_info),
-                    fsrv);
+                switch (port_index) {
+                    case PortIndex_LdnMitm:
+                        // LDN MITM service (ldn:u)
+                        return this->AcceptMitmImpl(
+                            server,
+                            sf::CreateSharedObjectEmplaced<
+                                mitm::ldn::ILdnMitMService,
+                                mitm::ldn::LdnMitMService>(decltype(fsrv)(fsrv), client_info),
+                            fsrv);
+
+                    case PortIndex_BsdMitm:
+                        // BSD MITM service (bsd:u)
+                        return this->AcceptMitmImpl(
+                            server,
+                            sf::CreateSharedObjectEmplaced<
+                                mitm::bsd::IBsdMitmService,
+                                mitm::bsd::BsdMitmService>(decltype(fsrv)(fsrv), client_info),
+                            fsrv);
+
+                    default:
+                        AMS_ABORT("Unknown port index");
+                }
             }
 
             // Extra threads for parallel request handling
@@ -377,13 +397,23 @@ namespace ams {
         os::StartThread(&cfg::g_log_thread);
 
         // ====================================================================
-        // Register ldn:u MITM service
+        // Register MITM services
         // ====================================================================
+
+        // Register ldn:u MITM service (port 0)
         LOG_INFO("Registering ldn:u MITM service");
-        constexpr sm::ServiceName MitmServiceName = sm::ServiceName::Encode("ldn:u");
+        constexpr sm::ServiceName LdnMitmServiceName = sm::ServiceName::Encode("ldn:u");
         R_ABORT_UNLESS((mitm::g_server_manager.RegisterMitmServer<
-            mitm::ldn::LdnMitMService>(0, MitmServiceName)));
-        LOG_INFO("MITM service registered successfully");
+            mitm::ldn::LdnMitMService>(mitm::PortIndex_LdnMitm, LdnMitmServiceName)));
+        LOG_INFO("ldn:u MITM service registered successfully");
+
+        // Register bsd:u MITM service (port 1)
+        // This allows us to intercept game sockets that target LDN addresses (10.114.x.x)
+        LOG_INFO("Registering bsd:u MITM service");
+        constexpr sm::ServiceName BsdMitmServiceName = sm::ServiceName::Encode("bsd:u");
+        R_ABORT_UNLESS((mitm::g_server_manager.RegisterMitmServer<
+            mitm::bsd::BsdMitmService>(mitm::PortIndex_BsdMitm, BsdMitmServiceName)));
+        LOG_INFO("bsd:u MITM service registered successfully");
 
         // Create MITM processing thread
         R_ABORT_UNLESS(os::CreateThread(

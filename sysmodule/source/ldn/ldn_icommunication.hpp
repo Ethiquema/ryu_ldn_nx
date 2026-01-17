@@ -383,8 +383,8 @@ private:
     os::Event m_reject_event;               ///< Signaled when reject reply received
     ryu_ldn::protocol::PacketId m_last_response_id; ///< Last received packet ID
 
-    // Scan results buffer
-    static constexpr size_t MAX_SCAN_RESULTS = 24;  ///< Max networks from scan
+    // Scan results buffer (reduced to save ~18KB of memory)
+    static constexpr size_t MAX_SCAN_RESULTS = 8;   ///< Max networks from scan (reduced from 24)
     NetworkInfo m_scan_results[MAX_SCAN_RESULTS];   ///< Scan results buffer
     size_t m_scan_result_count;                     ///< Number of scan results
 
