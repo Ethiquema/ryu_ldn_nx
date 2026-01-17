@@ -291,6 +291,11 @@ ProxySocket* ProxySocketManager::FindSocketByDestination(uint32_t dest_ip, uint1
                                                           ryu_ldn::bsd::ProtocolType protocol) {
     // Caller must hold m_mutex
 
+    // Check if dest_ip is a broadcast address (ends in .255 or .255.255)
+    // LDN subnet is 10.114.x.x with mask 255.255.0.0, so broadcast is 10.114.255.255
+    bool is_broadcast = ((dest_ip & 0xFF) == 0xFF) ||     // x.x.x.255
+                        ((dest_ip & 0xFFFF) == 0xFFFF);   // x.x.255.255
+
     for (auto& [fd, socket] : m_sockets) {
         if (socket == nullptr) {
             continue;
@@ -309,16 +314,26 @@ ProxySocket* ProxySocketManager::FindSocketByDestination(uint32_t dest_ip, uint1
             continue;
         }
 
-        // IP can be:
-        // 1. Exact match (bound to specific IP)
-        // 2. INADDR_ANY (bound to 0.0.0.0 - accepts any local IP)
+        // IP matching:
+        // 1. INADDR_ANY (bound to 0.0.0.0 - accepts any destination)
+        // 2. Exact match (bound to specific IP)
+        // 3. Broadcast: any socket on the same port receives broadcast packets
         uint32_t local_ip = local_addr.GetAddr();
-        if (local_ip != 0 && local_ip != dest_ip) {
-            continue;
+        if (local_ip == 0) {
+            // Bound to INADDR_ANY - accepts all
+            return socket.get();
         }
-
-        // Match found
-        return socket.get();
+        if (local_ip == dest_ip) {
+            // Exact match
+            return socket.get();
+        }
+        if (is_broadcast) {
+            // Broadcast packet - deliver to any socket bound on this port
+            // Check if socket is in the same subnet (10.114.x.x)
+            if ((local_ip & 0xFFFF0000) == (dest_ip & 0xFFFF0000)) {
+                return socket.get();
+            }
+        }
     }
 
     return nullptr;

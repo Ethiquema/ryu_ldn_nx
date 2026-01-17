@@ -282,9 +282,6 @@ Result ICommunicationService::ConnectToServer() {
 
     LOG_INFO("Connecting to RyuLdn server...");
 
-    // Handshake ALWAYS uses 12-byte header (required for Switch compatibility)
-    ryu_ldn::protocol::g_use_10byte_header = false;
-
     // Attempt TCP connection
     {
         auto result = m_server_client.connect();
@@ -547,6 +544,29 @@ Result ICommunicationService::Scan(
 
     LOG_INFO("Scan() called, local_comm_id=0x%016lx, scene_id=%u, flags=0x%x, networkType=0x%x",
              local_comm_id, filter.networkId.intentId.sceneId, filter.flag, filter.networkType);
+
+    // Debug: dump raw filter bytes to understand what the game sends
+    {
+        const uint8_t* raw = reinterpret_cast<const uint8_t*>(&filter);
+        LOG_INFO("ScanFilter raw[0-31]: %08X %08X %08X %08X %08X %08X %08X %08X",
+                 *reinterpret_cast<const uint32_t*>(raw + 0),
+                 *reinterpret_cast<const uint32_t*>(raw + 4),
+                 *reinterpret_cast<const uint32_t*>(raw + 8),
+                 *reinterpret_cast<const uint32_t*>(raw + 12),
+                 *reinterpret_cast<const uint32_t*>(raw + 16),
+                 *reinterpret_cast<const uint32_t*>(raw + 20),
+                 *reinterpret_cast<const uint32_t*>(raw + 24),
+                 *reinterpret_cast<const uint32_t*>(raw + 28));
+        LOG_INFO("ScanFilter raw[32-63]: %08X %08X %08X %08X %08X %08X %08X %08X",
+                 *reinterpret_cast<const uint32_t*>(raw + 32),
+                 *reinterpret_cast<const uint32_t*>(raw + 36),
+                 *reinterpret_cast<const uint32_t*>(raw + 40),
+                 *reinterpret_cast<const uint32_t*>(raw + 44),
+                 *reinterpret_cast<const uint32_t*>(raw + 48),
+                 *reinterpret_cast<const uint32_t*>(raw + 52),
+                 *reinterpret_cast<const uint32_t*>(raw + 56),
+                 *reinterpret_cast<const uint32_t*>(raw + 60));
+    }
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -1569,10 +1589,22 @@ bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected
     LOG_VERBOSE("Waiting for response: type=%u, timeout=%lu ms",
                 static_cast<unsigned>(expected_id), timeout_ms);
 
+    // Special case: if waiting for Connected and m_network_connected is already true,
+    // the Connected packet was processed during send_connect (before this call)
+    if (expected_id == ryu_ldn::protocol::PacketId::Connected && m_network_connected) {
+        LOG_VERBOSE("Already received Connected response (m_network_connected=true)");
+        return true;
+    }
+
+    // Check if we already have the expected response (before clearing)
+    if (m_last_response_id == expected_id) {
+        LOG_VERBOSE("Already have expected response: type=%u", static_cast<unsigned>(expected_id));
+        return true;
+    }
+
     // Clear events before waiting
     m_response_event.Clear();
     m_error_event.Clear();
-    m_last_response_id = ryu_ldn::protocol::PacketId::Initialize; // Reset to invalid
 
     // Wait with polling for network updates (required because we don't have async receive)
     uint64_t start_time_ms = armTicksToNs(armGetSystemTick()) / 1000000ULL;
@@ -1581,6 +1613,12 @@ bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected
     while ((current_time_ms - start_time_ms) < timeout_ms) {
         // Process incoming packets
         m_server_client.update(current_time_ms);
+
+        // Special case: Connected may have been processed by HandlePacket during update()
+        if (expected_id == ryu_ldn::protocol::PacketId::Connected && m_network_connected) {
+            LOG_VERBOSE("Received Connected response (m_network_connected=true)");
+            return true;
+        }
 
         // Check if we received a response
         if (m_response_event.TryWait()) {
@@ -1596,8 +1634,13 @@ bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected
                 return false;
             }
 
-            LOG_WARN("Received unexpected response: expected=%u, got=%u",
-                     static_cast<unsigned>(expected_id), static_cast<unsigned>(m_last_response_id));
+            // ProxyData and other packets are expected during connection - don't warn
+            if (m_last_response_id != ryu_ldn::protocol::PacketId::ProxyData &&
+                m_last_response_id != ryu_ldn::protocol::PacketId::SyncNetwork &&
+                m_last_response_id != ryu_ldn::protocol::PacketId::Ping) {
+                LOG_WARN("Received unexpected response: expected=%u, got=%u",
+                         static_cast<unsigned>(expected_id), static_cast<unsigned>(m_last_response_id));
+            }
             // Continue waiting for the expected response
             m_response_event.Clear();
         }
