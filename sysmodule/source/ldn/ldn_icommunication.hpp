@@ -431,6 +431,28 @@ private:
      */
     void HandleProxyDataPacket(const uint8_t* data, size_t size);
 
+    /**
+     * @brief Handle NetworkError packet from server
+     *
+     * Server reports a network error. Disables P2P on PortUnreachable
+     * and signals the error event.
+     *
+     * @param data Packet payload
+     * @param size Payload size
+     */
+    void HandleNetworkErrorPacket(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Handle ScanReply packet from server
+     *
+     * Server sends one network info for each discovered network.
+     * Results are stored in the scan buffer and sceneId/localCommId
+     * are fixed for Ryujinx compatibility.
+     *
+     * @param data Packet payload
+     * @param size Payload size
+     */
+    void HandleScanReplyPacket(const uint8_t* data, size_t size);
 
     /**
      * @brief Wait for a specific packet response from server

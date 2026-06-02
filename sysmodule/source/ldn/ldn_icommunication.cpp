@@ -1600,77 +1600,12 @@ void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, c
         }
 
         case ryu_ldn::protocol::PacketId::NetworkError: {
-            // Server reports an error - like Ryujinx HandleNetworkError
-            if (size >= sizeof(ryu_ldn::protocol::NetworkErrorMessage)) {
-                const auto* err = reinterpret_cast<const ryu_ldn::protocol::NetworkErrorMessage*>(data);
-                auto error_code = static_cast<ryu_ldn::protocol::NetworkErrorCode>(err->error_code);
-
-                // PortUnreachable from the upstream NetworkError enum
-                // (LdnServer/Network/Types/NetworkError.cs in ryuldn-server):
-                //   None=0, PortUnreachable=1, TooManyPlayers=2, ...
-                // Our local NetworkErrorCode happens to use 1 for an
-                // unrelated `VersionMismatch`, so match against the wire
-                // value directly to stay correct against the upstream
-                // protocol regardless of our local naming.
-                constexpr uint32_t kPortUnreachableWire = 1;
-
-                if (err->error_code == kPortUnreachableWire) {
-                    // Mirror Ryujinx LdnMasterProxyClient.HandleNetworkError
-                    // exactly: just flag P2P off. Don't touch the proxy
-                    // server here — calling Stop() synchronously from the
-                    // master TCP recv thread joins the P2pProxyServer accept
-                    // thread, and on Switch close(listen_fd) does not always
-                    // wake the blocked accept() the way it does on Linux,
-                    // leaving the loop spinning on errno=113 forever. The
-                    // proxy cleanup is handled later in the CreateNetwork
-                    // flow on the game IPC thread (mirrors upstream's
-                    // CreateNetworkCommon `if (!_useP2pProxy && _hostedProxy != null) DisposeProxy();`).
-                    LOG_WARN("Received NetworkError: PortUnreachable — disabling P2P (cleanup deferred)");
-                    m_use_p2p_proxy = false;
-                } else {
-                    m_last_network_error = error_code;
-                    LOG_ERROR("Received NetworkError: code=%u", err->error_code);
-                }
-            }
-            // Signal error event (like Ryujinx _error.Set())
-            m_error_event.Signal();
+            HandleNetworkErrorPacket(data, size);
             break;
         }
 
         case ryu_ldn::protocol::PacketId::ScanReply: {
-            // Server sends one network info for each discovered network
-            if (size >= sizeof(ryu_ldn::protocol::NetworkInfo)) {
-                if (m_scan_result_count < MAX_SCAN_RESULTS) {
-                    const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
-                    std::memcpy(&m_scan_results[m_scan_result_count], net_info, sizeof(NetworkInfo));
-
-                    // Fix sceneId and localCommunicationId in scan results (Ryujinx compatibility)
-                    // Ryujinx creates networks with sceneId=0, but the game expects its own sceneId
-                    auto& result = m_scan_results[m_scan_result_count];
-                    if (m_expected_scene_id != 0 && result.networkId.intentId.sceneId != m_expected_scene_id) {
-                        LOG_INFO("ScanReply: fixing sceneId %u -> %u",
-                                 result.networkId.intentId.sceneId, m_expected_scene_id);
-                        result.networkId.intentId.sceneId = m_expected_scene_id;
-                    }
-                    if (m_local_communication_id != 0 &&
-                        result.networkId.intentId.localCommunicationId != m_local_communication_id) {
-                        result.networkId.intentId.localCommunicationId = m_local_communication_id;
-                    }
-
-                    m_scan_result_count++;
-                    // Log SessionId so we can compare with Connect request
-                    const auto& sid = net_info->network_id.session_id;
-                    LOG_INFO("ScanReply: found network #%zu, node_count=%u, session_id=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-                             m_scan_result_count,
-                             reinterpret_cast<const NetworkInfo*>(net_info)->ldn.nodeCount,
-                             sid.data[0], sid.data[1], sid.data[2], sid.data[3],
-                             sid.data[4], sid.data[5], sid.data[6], sid.data[7],
-                             sid.data[8], sid.data[9], sid.data[10], sid.data[11],
-                             sid.data[12], sid.data[13], sid.data[14], sid.data[15]);
-                } else {
-                    LOG_WARN("ScanReply: buffer full, ignoring network");
-                }
-            }
+            HandleScanReplyPacket(data, size);
             break;
         }
 
@@ -2098,6 +2033,82 @@ void ICommunicationService::HandleProxyDataPacket(const uint8_t* data, size_t si
         }
     }
 }
+
+void ICommunicationService::HandleNetworkErrorPacket(const uint8_t* data, size_t size) {
+    // Server reports an error - like Ryujinx HandleNetworkError
+    if (size >= sizeof(ryu_ldn::protocol::NetworkErrorMessage)) {
+        const auto* err = reinterpret_cast<const ryu_ldn::protocol::NetworkErrorMessage*>(data);
+        auto error_code = static_cast<ryu_ldn::protocol::NetworkErrorCode>(err->error_code);
+
+        // PortUnreachable from the upstream NetworkError enum
+        // (LdnServer/Network/Types/NetworkError.cs in ryuldn-server):
+        //   None=0, PortUnreachable=1, TooManyPlayers=2, ...
+        // Our local NetworkErrorCode happens to use 1 for an
+        // unrelated `VersionMismatch`, so match against the wire
+        // value directly to stay correct against the upstream
+        // protocol regardless of our local naming.
+        constexpr uint32_t kPortUnreachableWire = 1;
+
+        if (err->error_code == kPortUnreachableWire) {
+            // Mirror Ryujinx LdnMasterProxyClient.HandleNetworkError
+            // exactly: just flag P2P off. Don't touch the proxy
+            // server here — calling Stop() synchronously from the
+            // master TCP recv thread joins the P2pProxyServer accept
+            // thread, and on Switch close(listen_fd) does not always
+            // wake the blocked accept() the way it does on Linux,
+            // leaving the loop spinning on errno=113 forever. The
+            // proxy cleanup is handled later in the CreateNetwork
+            // flow on the game IPC thread (mirrors upstream's
+            // CreateNetworkCommon `if (!_useP2pProxy && _hostedProxy != null) DisposeProxy();`).
+            LOG_WARN("Received NetworkError: PortUnreachable — disabling P2P (cleanup deferred)");
+            m_use_p2p_proxy = false;
+        } else {
+            m_last_network_error = error_code;
+            LOG_ERROR("Received NetworkError: code=%u", err->error_code);
+        }
+    }
+    // Signal error event (like Ryujinx _error.Set())
+    m_error_event.Signal();
+}
+
+
+void ICommunicationService::HandleScanReplyPacket(const uint8_t* data, size_t size) {
+    // Server sends one network info for each discovered network
+    if (size >= sizeof(ryu_ldn::protocol::NetworkInfo)) {
+        if (m_scan_result_count < MAX_SCAN_RESULTS) {
+            const auto* net_info = reinterpret_cast<const ryu_ldn::protocol::NetworkInfo*>(data);
+            std::memcpy(&m_scan_results[m_scan_result_count], net_info, sizeof(NetworkInfo));
+
+            // Fix sceneId and localCommunicationId in scan results (Ryujinx compatibility)
+            // Ryujinx creates networks with sceneId=0, but the game expects its own sceneId
+            auto& result = m_scan_results[m_scan_result_count];
+            if (m_expected_scene_id != 0 && result.networkId.intentId.sceneId != m_expected_scene_id) {
+                LOG_INFO("ScanReply: fixing sceneId %u -> %u",
+                         result.networkId.intentId.sceneId, m_expected_scene_id);
+                result.networkId.intentId.sceneId = m_expected_scene_id;
+            }
+            if (m_local_communication_id != 0 &&
+                result.networkId.intentId.localCommunicationId != m_local_communication_id) {
+                result.networkId.intentId.localCommunicationId = m_local_communication_id;
+            }
+
+            m_scan_result_count++;
+            // Log SessionId so we can compare with Connect request
+            const auto& sid = net_info->network_id.session_id;
+            LOG_INFO("ScanReply: found network #%zu, node_count=%u, session_id=%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
+                     m_scan_result_count,
+                     reinterpret_cast<const NetworkInfo*>(net_info)->ldn.nodeCount,
+                     sid.data[0], sid.data[1], sid.data[2], sid.data[3],
+                     sid.data[4], sid.data[5], sid.data[6], sid.data[7],
+                     sid.data[8], sid.data[9], sid.data[10], sid.data[11],
+                     sid.data[12], sid.data[13], sid.data[14], sid.data[15]);
+        } else {
+            LOG_WARN("ScanReply: buffer full, ignoring network");
+        }
+    }
+}
+
+
 
 bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected_id, uint64_t timeout_ms) {
     LOG_VERBOSE("Waiting for response: type=%u, timeout=%lu ms",

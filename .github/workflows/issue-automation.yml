@@ -28,7 +28,7 @@ jobs:
        contains(github.event.issue.labels.*.name, 'game-issue'))
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -344,7 +344,7 @@ jobs:
           echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
 
       - name: Checkout base branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.classify.outputs.base_branch }}
           fetch-depth: 0
@@ -476,7 +476,7 @@ jobs:
        startsWith(github.ref, 'refs/heads/hotfix/'))
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -799,7 +799,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
