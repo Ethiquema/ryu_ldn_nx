@@ -216,6 +216,7 @@ BsdMitmService::~BsdMitmService() {
     }
 
     // Decrement the session count for this PID
+    bool was_last_session = false;
     {
         std::scoped_lock lock(g_mitm_pids_mutex);
         auto it = g_mitm_pid_count.find(m_client_pid);
@@ -225,8 +226,23 @@ BsdMitmService::~BsdMitmService() {
             }
             if (it->second == 0) {
                 g_mitm_pid_count.erase(it);
+                was_last_session = true;
             }
         }
+    }
+
+    // FIX v3 (#44): If this was the last BSD session for this process,
+    // clean up abandoned forward services immediately.
+    // Previously we relied on CleanupAbandonedServices() being called
+    // from ~ICommunicationService() / DisconnectFromServer(), but if
+    // the game crashes before opening ldn:u (or never opens it), those
+    // paths are never hit. Abandoned bsd:u handles accumulate and can
+    // exhaust the global bsd:u session pool, causing the next game's
+    // nn::socket::Initialize (and CreateTransferMemory) to fail.
+    if (was_last_session) {
+        LOG_INFO("[BSD#%u] Last BSD session for pid=%lu — cleaning up abandoned services",
+                 m_session_id, m_client_pid);
+        CleanupAbandonedServices();
     }
 
     ::Service* fwd = m_forward_service.get();
