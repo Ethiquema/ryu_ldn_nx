@@ -246,10 +246,39 @@ ICommunicationService::~ICommunicationService() {
     LOG_INFO("ICommunicationService destructor called (state=%s)",
              LdnStateMachine::StateToString(m_state_machine.GetState()));
 
-    // Stop receive thread first
+    // ── Shutdown order (fixes #44 v2: destructor deadlock) ─────────────
+    // The receive thread blocks in recv() on the TCP socket. When the OS
+    // destroys this IPC session (game exit), the destructor must unblock
+    // that thread before joining it, otherwise WaitThread hangs forever
+    // and the MITM service never destroys — the next game launch freezes
+    // on a black screen because it cannot open ldn:u.
+    //
+    // Correct order:
+    //   1. Signal the receive thread to stop
+    //   2. Close the TCP socket (shutdown+close) — this unblocks recv()
+    //      so the receive thread exits its polling loop immediately
+    //   3. Join the now-exited receive thread (no blocking)
+    //   4. Join the P2P connect worker (uses its own socket, no dependency)
+    //   5. Stop P2P server and disconnect P2P proxy
+    //
+    // DisconnectFromServer() calls disconnect() on the RyuLdnClient which
+    // calls TcpClient::disconnect() which calls Socket::close() — that does
+    // shutdown(SHUT_WR) + close(fd), causing recv() to return immediately
+    // with an error, breaking the receive thread out of its loop.
+
+    // Step 1: Signal the receive thread to stop
     m_recv_thread_running = false;
-    // Signal error event to unblock receive thread if it's waiting
     m_error_event.Signal();
+
+    // Step 2: Close the TCP socket BEFORE joining the receive thread.
+    // This unblocks recv() so the thread exits immediately.
+    // DisconnectFromServer() always calls m_server_client.disconnect()
+    // (even when m_server_connected is false) to close any TCP socket
+    // that auto-reconnect may have opened. It also disconnects P2P proxy
+    // and resets ProxySocketManager when m_server_connected was true.
+    DisconnectFromServer();
+
+    // Step 3: Join the receive thread (now unblocked, exits quickly)
     os::WaitThread(&m_recv_thread);
     os::DestroyThread(&m_recv_thread);
 
@@ -261,13 +290,10 @@ ICommunicationService::~ICommunicationService() {
         m_p2p_connect_thread_initialized = false;
     }
 
-    // Stop P2P server if hosting
+    // Step 5: Stop P2P server if hosting.
+    // DisconnectFromServer() already disconnected the P2P proxy client,
+    // but StopP2pProxyServer() still needs to stop the server listener.
     StopP2pProxyServer();
-    // Ensure P2P proxy client is disconnected
-    DisconnectP2pProxy();
-    // Ensure server is disconnected (also resets ProxySocketManager and
-    // cleans up abandoned BSD forward services)
-    DisconnectFromServer();
 
     // ── Full cleanup on service destruction (fixes #44) ──────────────────
     // When a game exits (crash, Home button close, process killed), the OS
@@ -458,9 +484,19 @@ void ICommunicationService::DisconnectFromServer() {
         // This is safe to do now because we're disconnecting from LDN
         mitm::bsd::BsdMitmService::CleanupAbandonedServices();
 
-        m_server_client.disconnect();
         m_server_connected = false;
     }
+
+    // Always close the TCP connection, even when m_server_connected is false.
+    // After CloseAccessPoint() or Finalize() calls DisconnectFromServer() and
+    // sets m_server_connected=false, the RyuLdnClient's auto-reconnect can
+    // establish a NEW TCP connection via update()->try_connect(). If we skip
+    // disconnect() here (because m_server_connected was false), that new
+    // socket stays open and the receive thread blocks in recv() on it.
+    // WaitThread in the destructor then hangs forever, and the next game
+    // launch freezes on a black screen because the MITM service is stuck.
+    // disconnect() is idempotent — safe to call when already disconnected.
+    m_server_client.disconnect();
 }
 
 bool ICommunicationService::IsServerConnected() const {
