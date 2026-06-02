@@ -346,34 +346,18 @@ ICommunicationService::~ICommunicationService() {
     // Flush logger to ensure destructor messages reach disk
     ryu_ldn::debug::g_logger.flush();
 
-    // FIX v4-v5 (#44): Unregister MITM services then exit the process.
-    // The sysmodule is an immortal boot2 process. UninstallMitm removes
-    // the MITM hooks but the process keeps running in memory. Atmosphere
-    // launches a SECOND instance on the next ldn:u/bsd:u open, creating
-    // a conflict that freezes the console.
+    // ── Process exit handling (fixes #44 v5→v6) ────────────────────────
+    // Previously (v4-v5), the destructor called UninstallMitm + ExitProcess
+    // directly. This was unreliable because the destructor could be called
+    // from multiple contexts, and the process termination logic belonged in
+    // a dedicated watcher rather than a per-session destructor.
     //
-    // The fix: unregister the hooks cleanly, then call ExitProcess() to
-    // terminate this instance. Atmosphere will relaunch a fresh process
-    // automatically on the next ldn:u/bsd:u service open.
-    LOG_INFO("Destructor: unregistering ldn:u and bsd:u MITM services");
-
-    // Unregister ldn:u MITM hook
-    Result ldn_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
-    if (R_FAILED(ldn_rc)) {
-        LOG_WARN("Destructor: failed to uninstall ldn:u MITM (0x%x)", ldn_rc.GetValue());
-    }
-
-    // Unregister bsd:u MITM hook
-    Result bsd_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
-    if (R_FAILED(bsd_rc)) {
-        LOG_WARN("Destructor: failed to uninstall bsd:u MITM (0x%x)", bsd_rc.GetValue());
-    }
-
-    // Terminate the sysmodule process so Atmosphere can restart us cleanly.
-    // ExitProcess() is a SVC that never returns - no code after this runs.
-    LOG_INFO("Destructor: terminating sysmodule process");
-    ryu_ldn::debug::g_logger.flush();
-    svc::ExitProcess();
+    // Now (v6), the pm:shell watcher thread in main.cpp monitors game process
+    // exit events via PmProcessEvent and performs the UninstallMitm +
+    // ExitProcess sequence when the game truly exits. The destructor only
+    // needs to clean up this session's local state (shared state, proxy
+    // sockets, etc.), which is what the code above already does.
+    LOG_INFO("Destructor: local cleanup complete (pm_watcher handles process exit)");
 }
 
 // ============================================================================
