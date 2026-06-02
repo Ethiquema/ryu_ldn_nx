@@ -176,4 +176,24 @@ bool SharedState::ConsumeReconnectRequest() {
     return was_requested;
 }
 
+// =============================================================================
+// Active Session Counting (IPC session exit detection)
+// =============================================================================
+
+void SharedState::IncrementSessionCount() {
+    u32 old_count = m_active_sessions.fetch_add(1, std::memory_order_relaxed);
+    LOG_INFO("SharedState::IncrementSessionCount: %u -> %u", old_count, old_count + 1);
+}
+
+u32 SharedState::DecrementSessionCount() {
+    u32 old_count = m_active_sessions.fetch_sub(1, std::memory_order_acq_rel);
+    u32 new_count = old_count - 1;
+    LOG_INFO("SharedState::DecrementSessionCount: %u -> %u", old_count, new_count);
+    return new_count;
+}
+
+u32 SharedState::GetActiveSessionCount() const {
+    return m_active_sessions.load(std::memory_order_acquire);
+}
+
 } // namespace ams::mitm::ldn

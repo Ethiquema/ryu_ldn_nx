@@ -352,101 +352,6 @@ namespace ams {
 
 
     // ========================================================================
-    // Process Watcher (pm:shell) — Monitors game process exit (#44 fix v5-v6)
-    // ========================================================================
-
-    namespace pm_watcher {
-
-        /// Thread priority for the pm:shell watcher (low priority — only acts on game exit)
-        const s32 ThreadPriority = 16;
-
-        /// Thread stack size (8 KB — minimal, just waits on an event)
-        const size_t ThreadStackSize = 0x2000;
-
-        /// Thread stack
-        alignas(os::MemoryPageSize) u8 g_thread_stack[ThreadStackSize];
-        os::ThreadType g_thread;
-
-        /**
-         * @brief Process watcher thread entry point
-         *
-         * Initializes pm:shell and monitors process events. When the game
-         * process (identified by the LDN PID stored in SharedState) exits,
-         * this thread unregisters both MITM services and terminates the
-         * sysmodule process so Atmosphere can relaunch a fresh instance
-         * on the next ldn:u/bsd:u open.
-         *
-         * This replaces the v4-v5 approach of calling UninstallMitm +
-         * ExitProcess from the ICommunicationService destructor, which
-         * was unreliable because the destructor could be called from
-         * multiple contexts (IPC session close, Finalize, game crash).
-         * The pm:shell approach watches the actual OS process lifecycle
-         * and only terminates the sysmodule when the game is truly gone.
-         */
-        void PmWatcherThreadFunc(void *) {
-            // Get the process event handle from pm:shell.
-            // pm:shell service is initialized on first IPC call (lazy init),
-            // no explicit Initialize/Finalize needed.
-            os::SystemEvent process_event;
-            Result rc = pm::shell::GetProcessEventEvent(std::addressof(process_event));
-            if (R_FAILED(rc)) {
-                LOG_ERROR("pm_watcher: GetProcessEventEvent failed (0x%x)", rc.GetValue());
-                return;
-            }
-
-            LOG_INFO("pm_watcher: monitoring process events");
-
-            while (true) {
-                // Wait for a process event (infinite wait)
-                os::WaitSystemEvent(process_event.GetBase());
-
-                // Get event info
-                pm::ProcessEventInfo info;
-                rc = pm::shell::GetProcessEventInfo(std::addressof(info));
-                if (R_FAILED(rc)) {
-                    LOG_WARN("pm_watcher: GetProcessEventInfo failed (0x%x)", rc.GetValue());
-                    continue;
-                }
-
-                u64 current_ldn_pid = mitm::ldn::SharedState::GetInstance().GetLdnPid();
-                pm::ProcessEvent event = info.GetProcessEvent();
-
-                LOG_INFO("pm_watcher: process event %d for PID %lu (LDN PID is %lu)",
-                         static_cast<u32>(event), info.process_id.value, current_ldn_pid);
-
-                // Only act on process exit of the game we're tracking
-                if (event == pm::ProcessEvent::Exited && current_ldn_pid != 0 &&
-                    info.process_id.value == current_ldn_pid) {
-                    LOG_INFO("pm_watcher: game process %lu exited — terminating sysmodule",
-                             info.process_id.value);
-
-                    // Unregister MITM services cleanly
-                    Result ldn_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
-                    if (R_FAILED(ldn_rc)) {
-                        LOG_WARN("pm_watcher: failed to uninstall ldn:u MITM (0x%x)",
-                                 ldn_rc.GetValue());
-                    }
-
-                    Result bsd_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
-                    if (R_FAILED(bsd_rc)) {
-                        LOG_WARN("pm_watcher: failed to uninstall bsd:u MITM (0x%x)",
-                                 bsd_rc.GetValue());
-                    }
-
-                    // Flush logger to ensure messages reach disk
-                    ryu_ldn::debug::g_logger.flush();
-
-                    // Terminate the sysmodule process so Atmosphere
-                    // can restart us cleanly on next ldn:u/bsd:u open.
-                    // ExitProcess() is a SVC that never returns.
-                    svc::ExitProcess();
-                }
-            }
-        }
-
-    }
-
-
     namespace init {
 
         void InitializeSystemModule() {
@@ -584,24 +489,6 @@ namespace ams {
         LOG_INFO("bsd:u MITM service registered successfully");
 
 
-        // ====================================================================
-        // Start pm:shell watcher thread (game process exit monitor)
-        // ====================================================================
-        // The watcher monitors process exit events via pm:shell. When the
-        // game process that opened ldn:u exits, this thread unregisters
-        // both MITM services and terminates the sysmodule so Atmosphere
-        // can relaunch a fresh instance. This replaces the v4-v5 approach
-        // of doing ExitProcess from the ICommunicationService destructor.
-        R_ABORT_UNLESS(os::CreateThread(
-            &pm_watcher::g_thread,
-            pm_watcher::PmWatcherThreadFunc,
-            nullptr,
-            pm_watcher::g_thread_stack,
-            pm_watcher::ThreadStackSize,
-            pm_watcher::ThreadPriority));
-
-        os::SetThreadNamePointer(&pm_watcher::g_thread, "ryu_ldn::PmWatcher");
-        os::StartThread(&pm_watcher::g_thread);
 
         // Create MITM processing thread
         R_ABORT_UNLESS(os::CreateThread(

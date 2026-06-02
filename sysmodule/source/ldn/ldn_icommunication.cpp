@@ -191,6 +191,9 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_expected_scene_id(0)
 {
     LOG_INFO("ICommunicationService created with program_id=0x%016lx", m_program_id.value);
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // Each ICommunicationService instance is one ldn:u session.
+    SharedState::GetInstance().IncrementSessionCount();
 
     // Use program_id as LocalCommunicationId
     // NOTE: Technically LocalCommunicationId can differ from program_id (stored in NACP),
@@ -343,21 +346,21 @@ ICommunicationService::~ICommunicationService() {
     m_network_connected = false;
     m_disconnect_reason = DisconnectReason::None;
 
-    // Flush logger to ensure destructor messages reach disk
-    ryu_ldn::debug::g_logger.flush();
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // When the game dies, Atmosphere closes all ldn:u/bsd:u sessions.
+    // The destructor runs for each session, decrementing the counter.
+    // When it hits zero, no more sessions exist → the game is gone.
+    // Note: shared_state was declared above for SetGameActive/SetLdnPid.
+    u32 remaining = shared_state.DecrementSessionCount();
+    LOG_INFO("Destructor: active sessions remaining = %u", remaining);
 
-    // ── Process exit handling (fixes #44 v5→v6) ────────────────────────
-    // Previously (v4-v5), the destructor called UninstallMitm + ExitProcess
-    // directly. This was unreliable because the destructor could be called
-    // from multiple contexts, and the process termination logic belonged in
-    // a dedicated watcher rather than a per-session destructor.
-    //
-    // Now (v6), the pm:shell watcher thread in main.cpp monitors game process
-    // exit events via PmProcessEvent and performs the UninstallMitm +
-    // ExitProcess sequence when the game truly exits. The destructor only
-    // needs to clean up this session's local state (shared state, proxy
-    // sockets, etc.), which is what the code above already does.
-    LOG_INFO("Destructor: local cleanup complete (pm_watcher handles process exit)");
+    if (remaining == 0) {
+        LOG_INFO("Destructor: no active sessions — game closed, terminating sysmodule");
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
+        ryu_ldn::debug::g_logger.flush();
+        svc::ExitProcess();
+    }
 }
 
 // ============================================================================
