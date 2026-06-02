@@ -265,15 +265,60 @@ ICommunicationService::~ICommunicationService() {
     StopP2pProxyServer();
     // Ensure P2P proxy client is disconnected
     DisconnectP2pProxy();
-    // Ensure server is disconnected
+    // Ensure server is disconnected (also resets ProxySocketManager and
+    // cleans up abandoned BSD forward services)
     DisconnectFromServer();
 
-    // NOTE: Do NOT clear LDN PID here!
-    // The game may open BSD sockets between LDN sessions (e.g., after connection
-    // failure and retry). If we clear the PID here, BSD MITM won't intercept
-    // those sockets. The PID remains set for the lifetime of the game process.
-    // When the game closes, the PID becomes stale but harmless (new processes
-    // will have different PIDs).
+    // ── Full cleanup on service destruction (fixes #44) ──────────────────
+    // When a game exits (crash, Home button close, process killed), the OS
+    // destroys the IPC session and this destructor runs. Finalize() may not
+    // have been called, so we must clean up all shared state here.
+    //
+    // Previously, we deliberately skipped clearing the LDN PID here because
+    // the game might open BSD sockets between LDN sessions. However, when
+    // this destructor runs, the ICommunicationService is being destroyed —
+    // the game process is no longer using ldn:u. A stale PID in SharedState
+    // causes two problems:
+    //   1. BSD MITM continues intercepting sockets for a dead process, which
+    //      can leak ProxySocket objects and consume heap memory.
+    //   2. On game switch (game A closes, game B opens), the stale PID can
+    //      interfere with the new game's session if PIDs happen to overlap.
+    //
+    // The correct cleanup order mirrors Finalize() but guards against
+    // double-cleanup (Finalize() may have been called before the destructor).
+
+    // Finalize the state machine (any state -> None). No-op if already None.
+    m_state_machine.Finalize();
+
+    // Clear shared state — mark game as inactive and reset LDN PID
+    // so BSD MITM stops intercepting sockets for this process.
+    auto& shared_state = SharedState::GetInstance();
+    shared_state.SetGameActive(false, 0);
+    shared_state.SetLdnPid(0);
+    LOG_INFO("Destructor: cleared LDN PID and game active flag");
+
+    // Ensure ProxySocketManager is fully reset (DisconnectFromServer already
+    // calls Reset() when m_server_connected was true, but if the connection
+    // was already closed, the proxy sockets and callbacks may still be set).
+    // This is idempotent — Reset() clears everything to zero.
+    mitm::bsd::ProxySocketManager::GetInstance().Reset();
+
+    // Clean up abandoned BSD forward services (same reasoning —
+    // DisconnectFromServer only does this when m_server_connected was true,
+    // but abandoned services accumulate regardless of connection state).
+    mitm::bsd::BsdMitmService::CleanupAbandonedServices();
+
+    // Clear client info and network state
+    m_client_process_id = 0;
+    m_error_state = 0;
+    std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_ipv4_address = 0;
+    m_subnet_mask = 0;
+    m_network_connected = false;
+    m_disconnect_reason = DisconnectReason::None;
+
+    // Flush logger to ensure destructor messages reach disk
+    ryu_ldn::debug::g_logger.flush();
 }
 
 // ============================================================================
