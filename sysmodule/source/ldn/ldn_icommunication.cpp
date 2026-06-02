@@ -345,6 +345,23 @@ ICommunicationService::~ICommunicationService() {
 
     // Flush logger to ensure destructor messages reach disk
     ryu_ldn::debug::g_logger.flush();
+
+    // FIX v4 (#44): Unregister MITM services so Atmosphere can restart us cleanly.
+    // The sysmodule is an immortal boot2 process that never exits. After a game
+    // closes, the destructor cleans up internal state but the MITM services remain
+    // registered. When the kernel launches a new game, it sees the still-registered
+    // services and freezes. By unregistering ldn:u and bsd:u here, Atmosphere will
+    // automatically relaunch the sysmodule process on the next ldn:u/bsd:u open,
+    // giving the new game a fresh start.
+    LOG_INFO("Destructor: unregistering ldn:u and bsd:u MITM services");
+    Result ldn_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
+    if (R_FAILED(ldn_rc)) {
+        LOG_WARN("Destructor: failed to uninstall ldn:u MITM (0x%x)", ldn_rc.GetValue());
+    }
+    Result bsd_rc = sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
+    if (R_FAILED(bsd_rc)) {
+        LOG_WARN("Destructor: failed to uninstall bsd:u MITM (0x%x)", bsd_rc.GetValue());
+    }
 }
 
 // ============================================================================
@@ -560,6 +577,7 @@ Result ICommunicationService::Finalize() {
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_ipv4_address = 0;
     m_subnet_mask = 0;
+    m_expected_scene_id = 0;
 
     R_SUCCEED();
 }
@@ -899,6 +917,7 @@ Result ICommunicationService::CloseAccessPoint() {
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_network_connected = false;
+    m_expected_scene_id = 0;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Initialized);
@@ -918,6 +937,10 @@ Result ICommunicationService::CreateNetwork(const CreateNetworkConfig &data) {
     LOG_INFO("CreateNetwork called, local_comm_id=0x%016lx (state before=%s)",
              local_comm_id,
              LdnStateMachine::StateToString(m_state_machine.GetState()));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("CreateNetwork: expected_scene_id=%u", m_expected_scene_id);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -1127,6 +1150,7 @@ Result ICommunicationService::DestroyNetwork() {
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_network_connected = false;
+    m_expected_scene_id = 0;
 
     // Refresh inactivity timeout after leaving network (like Ryujinx)
     m_inactivity_timeout.RefreshTimeout();
@@ -1225,6 +1249,7 @@ Result ICommunicationService::CloseStation() {
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Initialized);
 
+    m_expected_scene_id = 0;
     LOG_INFO("CloseStation: state transitioned to Initialized");
 
     R_SUCCEED();
@@ -1257,6 +1282,11 @@ Result ICommunicationService::Connect(const ConnectNetworkData &dat, const Netwo
 
     auto result = m_state_machine.Connect();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkId.intentId.sceneId;
+    LOG_INFO("Connect: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build Connect request
     // Convert from ams::mitm::ldn types to ryu_ldn::protocol types
@@ -1343,6 +1373,7 @@ Result ICommunicationService::Disconnect() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_expected_scene_id = 0;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Station);
@@ -1384,6 +1415,11 @@ Result ICommunicationService::CreateNetworkPrivate(
                  LdnStateMachine::ResultToString(result));
     }
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("CreateNetworkPrivate: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build CreateAccessPointPrivate request from config
     ryu_ldn::protocol::CreateAccessPointPrivateRequest request{};
@@ -1456,6 +1492,11 @@ Result ICommunicationService::ConnectPrivate(const ConnectPrivateData &data) {
 
     auto result = m_state_machine.Connect();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("ConnectPrivate: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build ConnectPrivate request
     ryu_ldn::protocol::ConnectPrivateRequest request{};
