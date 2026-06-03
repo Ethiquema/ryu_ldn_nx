@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <vector>
 #include "ldn_types.hpp"
+#include <atomic>
 
 namespace ams::mitm::ldn {
 
@@ -271,6 +272,38 @@ public:
     /// @gdb{tag="LDN:STATE", msg="ConsumeReconnectRequest"}
     bool ConsumeReconnectRequest();
 
+    // =========================================================================
+    // Active Session Counting (IPC session exit detection)
+    // =========================================================================
+
+    /**
+     * @brief Increment the active IPC session count
+     *
+     * Called in the constructor of each MITM session (ldn:u and bsd:u).
+     * When the game dies, Atmosphere closes all sessions and the destructor
+     * decrements the counter for each one.
+     */
+    /// @gdb{tag="LDN:STATE", msg="IncrementSessionCount"}
+    void IncrementSessionCount();
+
+    /**
+     * @brief Decrement the active IPC session count
+     *
+     * Called in the destructor of each MITM session.
+     * Returns the new count after decrement.
+     * When it reaches 0, no more sessions exist — the game has exited.
+     */
+    /// @gdb{tag="LDN:STATE", msg="DecrementSessionCount"}
+    u32 DecrementSessionCount();
+
+    /**
+     * @brief Get the current active session count
+     *
+     * @return Number of active IPC sessions (ldn:u + bsd:u)
+     */
+    /// @gdb{tag="LDN:STATE", msg="GetActiveSessionCount"}
+    u32 GetActiveSessionCount() const;
+
 private:
     /// @gdb{tag="LDN:STATE", msg="SharedState: constructor"}
     SharedState() = default;
@@ -288,6 +321,7 @@ private:
     bool m_is_host = false;
     u32 m_last_rtt_ms = 0;
     bool m_reconnect_requested = false;
+    std::atomic<u32> m_active_sessions{0};  ///< Active IPC session count (ldn:u + bsd:u)
     std::unordered_set<u64> m_ldn_games;  ///< Set of program_ids with LDN support
 };
 

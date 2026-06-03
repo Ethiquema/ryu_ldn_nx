@@ -191,6 +191,9 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_expected_scene_id(0)
 {
     LOG_INFO("ICommunicationService created with program_id=0x%016lx", m_program_id.value);
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // Each ICommunicationService instance is one ldn:u session.
+    SharedState::GetInstance().IncrementSessionCount();
 
     // Use program_id as LocalCommunicationId
     // NOTE: Technically LocalCommunicationId can differ from program_id (stored in NACP),
@@ -246,10 +249,39 @@ ICommunicationService::~ICommunicationService() {
     LOG_INFO("ICommunicationService destructor called (state=%s)",
              LdnStateMachine::StateToString(m_state_machine.GetState()));
 
-    // Stop receive thread first
+    // ── Shutdown order (fixes #44 v2: destructor deadlock) ─────────────
+    // The receive thread blocks in recv() on the TCP socket. When the OS
+    // destroys this IPC session (game exit), the destructor must unblock
+    // that thread before joining it, otherwise WaitThread hangs forever
+    // and the MITM service never destroys — the next game launch freezes
+    // on a black screen because it cannot open ldn:u.
+    //
+    // Correct order:
+    //   1. Signal the receive thread to stop
+    //   2. Close the TCP socket (shutdown+close) — this unblocks recv()
+    //      so the receive thread exits its polling loop immediately
+    //   3. Join the now-exited receive thread (no blocking)
+    //   4. Join the P2P connect worker (uses its own socket, no dependency)
+    //   5. Stop P2P server and disconnect P2P proxy
+    //
+    // DisconnectFromServer() calls disconnect() on the RyuLdnClient which
+    // calls TcpClient::disconnect() which calls Socket::close() — that does
+    // shutdown(SHUT_WR) + close(fd), causing recv() to return immediately
+    // with an error, breaking the receive thread out of its loop.
+
+    // Step 1: Signal the receive thread to stop
     m_recv_thread_running = false;
-    // Signal error event to unblock receive thread if it's waiting
     m_error_event.Signal();
+
+    // Step 2: Close the TCP socket BEFORE joining the receive thread.
+    // This unblocks recv() so the thread exits immediately.
+    // DisconnectFromServer() always calls m_server_client.disconnect()
+    // (even when m_server_connected is false) to close any TCP socket
+    // that auto-reconnect may have opened. It also disconnects P2P proxy
+    // and resets ProxySocketManager when m_server_connected was true.
+    DisconnectFromServer();
+
+    // Step 3: Join the receive thread (now unblocked, exits quickly)
     os::WaitThread(&m_recv_thread);
     os::DestroyThread(&m_recv_thread);
 
@@ -261,19 +293,74 @@ ICommunicationService::~ICommunicationService() {
         m_p2p_connect_thread_initialized = false;
     }
 
-    // Stop P2P server if hosting
+    // Step 5: Stop P2P server if hosting.
+    // DisconnectFromServer() already disconnected the P2P proxy client,
+    // but StopP2pProxyServer() still needs to stop the server listener.
     StopP2pProxyServer();
-    // Ensure P2P proxy client is disconnected
-    DisconnectP2pProxy();
-    // Ensure server is disconnected
-    DisconnectFromServer();
 
-    // NOTE: Do NOT clear LDN PID here!
-    // The game may open BSD sockets between LDN sessions (e.g., after connection
-    // failure and retry). If we clear the PID here, BSD MITM won't intercept
-    // those sockets. The PID remains set for the lifetime of the game process.
-    // When the game closes, the PID becomes stale but harmless (new processes
-    // will have different PIDs).
+    // ── Full cleanup on service destruction (fixes #44) ──────────────────
+    // When a game exits (crash, Home button close, process killed), the OS
+    // destroys the IPC session and this destructor runs. Finalize() may not
+    // have been called, so we must clean up all shared state here.
+    //
+    // Previously, we deliberately skipped clearing the LDN PID here because
+    // the game might open BSD sockets between LDN sessions. However, when
+    // this destructor runs, the ICommunicationService is being destroyed —
+    // the game process is no longer using ldn:u. A stale PID in SharedState
+    // causes two problems:
+    //   1. BSD MITM continues intercepting sockets for a dead process, which
+    //      can leak ProxySocket objects and consume heap memory.
+    //   2. On game switch (game A closes, game B opens), the stale PID can
+    //      interfere with the new game's session if PIDs happen to overlap.
+    //
+    // The correct cleanup order mirrors Finalize() but guards against
+    // double-cleanup (Finalize() may have been called before the destructor).
+
+    // Finalize the state machine (any state -> None). No-op if already None.
+    m_state_machine.Finalize();
+
+    // Clear shared state — mark game as inactive and reset LDN PID
+    // so BSD MITM stops intercepting sockets for this process.
+    auto& shared_state = SharedState::GetInstance();
+    shared_state.SetGameActive(false, 0);
+    shared_state.SetLdnPid(0);
+    LOG_INFO("Destructor: cleared LDN PID and game active flag");
+
+    // Ensure ProxySocketManager is fully reset (DisconnectFromServer already
+    // calls Reset() when m_server_connected was true, but if the connection
+    // was already closed, the proxy sockets and callbacks may still be set).
+    // This is idempotent — Reset() clears everything to zero.
+    mitm::bsd::ProxySocketManager::GetInstance().Reset();
+
+    // Clean up abandoned BSD forward services (same reasoning —
+    // DisconnectFromServer only does this when m_server_connected was true,
+    // but abandoned services accumulate regardless of connection state).
+    mitm::bsd::BsdMitmService::CleanupAbandonedServices();
+
+    // Clear client info and network state
+    m_client_process_id = 0;
+    m_error_state = 0;
+    std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_ipv4_address = 0;
+    m_subnet_mask = 0;
+    m_network_connected = false;
+    m_disconnect_reason = DisconnectReason::None;
+
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // When the game dies, Atmosphere closes all ldn:u/bsd:u sessions.
+    // The destructor runs for each session, decrementing the counter.
+    // When it hits zero, no more sessions exist → the game is gone.
+    // Note: shared_state was declared above for SetGameActive/SetLdnPid.
+    u32 remaining = shared_state.DecrementSessionCount();
+    LOG_INFO("Destructor: active sessions remaining = %u", remaining);
+
+    if (remaining == 0) {
+        LOG_INFO("Destructor: no active sessions — game closed, terminating sysmodule");
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
+        ryu_ldn::debug::g_logger.flush();
+        svc::ExitProcess();
+    }
 }
 
 // ============================================================================
@@ -413,9 +500,19 @@ void ICommunicationService::DisconnectFromServer() {
         // This is safe to do now because we're disconnecting from LDN
         mitm::bsd::BsdMitmService::CleanupAbandonedServices();
 
-        m_server_client.disconnect();
         m_server_connected = false;
     }
+
+    // Always close the TCP connection, even when m_server_connected is false.
+    // After CloseAccessPoint() or Finalize() calls DisconnectFromServer() and
+    // sets m_server_connected=false, the RyuLdnClient's auto-reconnect can
+    // establish a NEW TCP connection via update()->try_connect(). If we skip
+    // disconnect() here (because m_server_connected was false), that new
+    // socket stays open and the receive thread blocks in recv() on it.
+    // WaitThread in the destructor then hangs forever, and the next game
+    // launch freezes on a black screen because the MITM service is stuck.
+    // disconnect() is idempotent — safe to call when already disconnected.
+    m_server_client.disconnect();
 }
 
 bool ICommunicationService::IsServerConnected() const {
@@ -479,6 +576,7 @@ Result ICommunicationService::Finalize() {
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_ipv4_address = 0;
     m_subnet_mask = 0;
+    m_expected_scene_id = 0;
 
     R_SUCCEED();
 }
@@ -818,6 +916,7 @@ Result ICommunicationService::CloseAccessPoint() {
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_network_connected = false;
+    m_expected_scene_id = 0;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Initialized);
@@ -837,6 +936,10 @@ Result ICommunicationService::CreateNetwork(const CreateNetworkConfig &data) {
     LOG_INFO("CreateNetwork called, local_comm_id=0x%016lx (state before=%s)",
              local_comm_id,
              LdnStateMachine::StateToString(m_state_machine.GetState()));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("CreateNetwork: expected_scene_id=%u", m_expected_scene_id);
 
     R_UNLESS(IsServerConnected(), MAKERESULT(0x10, 2)); // Not connected
 
@@ -1046,6 +1149,7 @@ Result ICommunicationService::DestroyNetwork() {
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
     m_network_connected = false;
+    m_expected_scene_id = 0;
 
     // Refresh inactivity timeout after leaving network (like Ryujinx)
     m_inactivity_timeout.RefreshTimeout();
@@ -1144,6 +1248,7 @@ Result ICommunicationService::CloseStation() {
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Initialized);
 
+    m_expected_scene_id = 0;
     LOG_INFO("CloseStation: state transitioned to Initialized");
 
     R_SUCCEED();
@@ -1176,6 +1281,11 @@ Result ICommunicationService::Connect(const ConnectNetworkData &dat, const Netwo
 
     auto result = m_state_machine.Connect();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkId.intentId.sceneId;
+    LOG_INFO("Connect: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build Connect request
     // Convert from ams::mitm::ldn types to ryu_ldn::protocol types
@@ -1262,6 +1372,7 @@ Result ICommunicationService::Disconnect() {
 
     // Clear network info
     std::memset(&m_network_info, 0, sizeof(m_network_info));
+    m_expected_scene_id = 0;
 
     // Update shared state
     SharedState::GetInstance().SetLdnState(CommState::Station);
@@ -1303,6 +1414,11 @@ Result ICommunicationService::CreateNetworkPrivate(
                  LdnStateMachine::ResultToString(result));
     }
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("CreateNetworkPrivate: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build CreateAccessPointPrivate request from config
     ryu_ldn::protocol::CreateAccessPointPrivateRequest request{};
@@ -1375,6 +1491,11 @@ Result ICommunicationService::ConnectPrivate(const ConnectPrivateData &data) {
 
     auto result = m_state_machine.Connect();
     R_UNLESS(result == StateTransitionResult::Success, MAKERESULT(0x10, 1));
+
+    // Store expected scene_id for HandleConnectedPacket correction
+    m_expected_scene_id = data.networkConfig.intentId.sceneId;
+    LOG_INFO("ConnectPrivate: expected_scene_id=%u", m_expected_scene_id);
+
 
     // Build ConnectPrivate request
     ryu_ldn::protocol::ConnectPrivateRequest request{};

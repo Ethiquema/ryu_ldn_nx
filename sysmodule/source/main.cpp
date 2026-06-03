@@ -24,6 +24,7 @@ extern "C" {
 #include "config/config_ipc_service.hpp"
 #include "config/game_whitelist.hpp"
 #include "debug/log.hpp"
+#include "ldn/ldn_shared_state.hpp"
 
 namespace ams {
 
@@ -349,6 +350,8 @@ namespace ams {
     // System Module Initialization
     // ========================================================================
 
+
+    // ========================================================================
     namespace init {
 
         void InitializeSystemModule() {
@@ -386,6 +389,7 @@ namespace ams {
                                           LibnxSocketInitConfig.num_bsd_sessions,
                                           LibnxSocketInitConfig.bsd_service_type));
             R_ABORT_UNLESS(socketInitialize(&LibnxSocketInitConfig));
+
         }
 
         void FinalizeSystemModule() {
@@ -483,6 +487,8 @@ namespace ams {
         R_ABORT_UNLESS((mitm::g_server_manager.RegisterMitmServer<
             mitm::bsd::BsdMitmService>(mitm::PortIndex_BsdMitm, BsdMitmServiceName)));
         LOG_INFO("bsd:u MITM service registered successfully");
+
+
 
         // Create MITM processing thread
         R_ABORT_UNLESS(os::CreateThread(

@@ -166,6 +166,9 @@ BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmPro
 
     LOG_INFO("[BSD#%u] CONSTRUCTOR: program_id=0x%016lx, pid=%lu, fwd_srv=%p (handle=0x%x, domain=%d, object_id=%u)",
              m_session_id, c.program_id.value, m_client_pid, fwd, session_handle, is_domain, object_id);
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // Each BsdMitmService instance is one bsd:u session.
+    ams::mitm::ldn::SharedState::GetInstance().IncrementSessionCount();
 }
 
 /**
@@ -216,6 +219,7 @@ BsdMitmService::~BsdMitmService() {
     }
 
     // Decrement the session count for this PID
+    bool was_last_session = false;
     {
         std::scoped_lock lock(g_mitm_pids_mutex);
         auto it = g_mitm_pid_count.find(m_client_pid);
@@ -225,10 +229,40 @@ BsdMitmService::~BsdMitmService() {
             }
             if (it->second == 0) {
                 g_mitm_pid_count.erase(it);
+                was_last_session = true;
             }
         }
     }
 
+    // FIX v3 (#44): If this was the last BSD session for this process,
+    // clean up abandoned forward services immediately.
+    // Previously we relied on CleanupAbandonedServices() being called
+    // from ~ICommunicationService() / DisconnectFromServer(), but if
+    // the game crashes before opening ldn:u (or never opens it), those
+    // paths are never hit. Abandoned bsd:u handles accumulate and can
+    // exhaust the global bsd:u session pool, causing the next game's
+    // nn::socket::Initialize (and CreateTransferMemory) to fail.
+    if (was_last_session) {
+        LOG_INFO("[BSD#%u] Last BSD session for pid=%lu — cleaning up abandoned services",
+                 m_session_id, m_client_pid);
+        CleanupAbandonedServices();
+    }
+
+    // FIX v6-v7 (#44): Count active IPC sessions to detect game exit.
+    // When the game dies, Atmosphere closes all ldn:u/bsd:u sessions.
+    // The destructor runs for each session, decrementing the counter.
+    // When it hits zero, no more sessions exist → the game is gone.
+    auto& shared_state = ams::mitm::ldn::SharedState::GetInstance();
+    u32 remaining = shared_state.DecrementSessionCount();
+    LOG_INFO("[BSD#%u] Destructor: active sessions remaining = %u", m_session_id, remaining);
+
+    if (remaining == 0) {
+        LOG_INFO("[BSD#%u] Destructor: no active sessions — game closed, terminating sysmodule", m_session_id);
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
+        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
+        ryu_ldn::debug::g_logger.flush();
+        svc::ExitProcess();
+    }
     ::Service* fwd = m_forward_service.get();
     Handle session_handle = fwd ? fwd->session : INVALID_HANDLE;
     LOG_INFO("[BSD#%u] DESTRUCTOR: pid=%lu, fwd_srv=%p (handle=0x%x), commands=%u, registered=%d",
