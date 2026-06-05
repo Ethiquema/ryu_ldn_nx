@@ -23,7 +23,6 @@
  * ### Extended Config Commands (65011-65030)
  * - 65011: GetPassphrase / 65012: SetPassphrase
  * - 65013: GetLdnEnabled / 65014: SetLdnEnabled
- * - 65015: GetUseTls / 65016: SetUseTls
  * - 65017: GetConnectTimeout / 65018: SetConnectTimeout
  * - 65019: GetPingInterval / 65020: SetPingInterval
  * - 65021: GetReconnectDelay / 65022: SetReconnectDelay
@@ -243,18 +242,6 @@ public:
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetLdnEnabled"}
     Result SetLdnEnabled(u32 enabled);
-
-    /**
-     * @brief Get TLS enabled state (65015)
-     */
-    /// @gdb{tag="LDN:CONFIG", msg="GetUseTls"}
-    Result GetUseTls(sf::Out<u32> out);
-
-    /**
-     * @brief Set TLS enabled state (65016)
-     */
-    /// @gdb{tag="LDN:CONFIG", msg="SetUseTls"}
-    Result SetUseTls(u32 enabled);
 
     /**
      * @brief Get connect timeout in ms (65017)

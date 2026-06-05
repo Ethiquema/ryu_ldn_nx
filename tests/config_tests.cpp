@@ -115,6 +115,12 @@ TEST(default_values) {
     // Debug defaults
     ASSERT_EQ(config.debug.enabled, false);
     ASSERT_EQ(config.debug.level, 1u);
+
+    // LDN passphrase filtering default
+    ASSERT_EQ(config.ldn.use_passphrase, false);
+
+    // P2P proxy default (disabled by default)
+    ASSERT_EQ(config.ldn.disable_p2p, true);
 }
 
 // ============================================================================
@@ -150,7 +156,9 @@ TEST(parse_ldn_section) {
     const char* content =
         "[ldn]\n"
         "enabled = 0\n"
-        "passphrase = secret123\n";
+        "use_passphrase = 1\n"
+        "passphrase = secret123\n"
+        "disable_p2p = 0\n";
 
     TempConfigFile file(content);
     Config config = get_default_config();
@@ -158,7 +166,9 @@ TEST(parse_ldn_section) {
 
     ASSERT_EQ(result, ConfigResult::Success);
     ASSERT_EQ(config.ldn.enabled, false);
+    ASSERT_EQ(config.ldn.use_passphrase, true);
     ASSERT_STREQ(config.ldn.passphrase, "secret123");
+    ASSERT_EQ(config.ldn.disable_p2p, false);
 }
 
 TEST(parse_debug_section) {
@@ -287,7 +297,9 @@ TEST(full_config_example) {
         "\n"
         "[ldn]\n"
         "enabled = 1\n"
+        "use_passphrase = 0\n"
         "passphrase = myroom\n"
+        "disable_p2p = 0\n"
         "\n"
         "[debug]\n"
         "enabled = 1\n"
@@ -302,6 +314,8 @@ TEST(full_config_example) {
     ASSERT_EQ(config.server.port, 30000);
     ASSERT_EQ(config.ldn.enabled, true);
     ASSERT_STREQ(config.ldn.passphrase, "myroom");
+    ASSERT_EQ(config.ldn.use_passphrase, false);
+    ASSERT_EQ(config.ldn.disable_p2p, false);
     ASSERT_EQ(config.debug.enabled, true);
     ASSERT_EQ(config.debug.level, 2u);
 }
@@ -339,7 +353,9 @@ TEST(save_config_preserves_values) {
     strcpy(config.server.host, "test.example.com");
     config.server.port = 12345;
     config.ldn.enabled = false;
+    config.ldn.use_passphrase = true;
     strcpy(config.ldn.passphrase, "testpass");
+    config.ldn.disable_p2p = false;
     config.debug.enabled = true;
     config.debug.level = 3;
 
@@ -355,6 +371,8 @@ TEST(save_config_preserves_values) {
     ASSERT_EQ(loaded.server.port, 12345);
     ASSERT_EQ(loaded.ldn.enabled, false);
     ASSERT_STREQ(loaded.ldn.passphrase, "testpass");
+    ASSERT_EQ(loaded.ldn.use_passphrase, true);
+    ASSERT_EQ(loaded.ldn.disable_p2p, false);
     ASSERT_EQ(loaded.debug.enabled, true);
     ASSERT_EQ(loaded.debug.level, 3u);
 

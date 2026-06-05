@@ -115,7 +115,7 @@ RyuLdnClientConfig::RyuLdnClientConfig(const config::Config& cfg)
     reconnect.max_delay_ms = 10000;     // 10s max (10x initial)
     reconnect.multiplier_percent = 200;  // 2x
     reconnect.jitter_percent = 10;
-    reconnect.max_retries = 0;  // 0 = unlimited retries
+    reconnect.max_retries = 0;  // 0 disables auto-reconnect (see AGENTS.md: "max_reconnect_attempts = 0 disables auto-reconnect entirely")
 }
 
 // ============================================================================

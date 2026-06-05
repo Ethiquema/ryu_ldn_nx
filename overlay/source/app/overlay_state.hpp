@@ -31,7 +31,8 @@ public:
             strncpy(m_version, v, sizeof(m_version) - 1);
             m_version[sizeof(m_version) - 1] = '\0';
         } else {
-            strncpy(m_version, "Unknown", sizeof(m_version));
+            strncpy(m_version, "Unknown", sizeof(m_version) - 1);
+            m_version[sizeof(m_version) - 1] = '\0';
         }
     }
 

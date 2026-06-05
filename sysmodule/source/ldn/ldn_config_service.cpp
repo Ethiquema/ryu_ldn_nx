@@ -146,20 +146,6 @@ Result LdnConfigService::SetLdnEnabled(u32 enabled) {
     R_SUCCEED();
 }
 
-Result LdnConfigService::GetUseTls(sf::Out<u32> out) {
-    *out = 0;  // TLS is never used — always plain TCP
-    R_SUCCEED();
-}
-
-Result LdnConfigService::SetUseTls(u32 enabled) {
-    // TLS is not implemented. Log warning if enabled is requested.
-    if (enabled != 0) {
-        // TLS not supported — no-op
-    }
-    R_SUCCEED();
-}
-
-
 // ============================================================================
 
 // Network Timeout Stubs (hardcoded values)

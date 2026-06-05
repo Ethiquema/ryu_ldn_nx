@@ -11,36 +11,35 @@
  * ## IPC Command IDs (ryu:cfg service)
  *
  * Command IDs match ConfigCmd in config_ipc_service.hpp.
- * Obsolete commands (UseTls, LogToFile, ConnectTimeout, PingInterval)
- * have been removed from the service.
+ * Get/Set pairs: Get even, Set odd.
  *
  * | ID | Command            | Description                       |
  * |----|--------------------|-----------------------------------|
  * | 0  | GetVersion         | Get sysmodule version string      |
  * | 1  | GetConnectionStatus| Get current connection state      |
- * | 2  | IsServiceActive    | Ping to check service is running  |
- * | 3  | IsGameActive       | Check if game is using LDN        |
- * | 4  | GetLdnState        | Get current LDN CommState (0-6)   |
- * | 5  | GetSessionInfo     | Get session info struct           |
- * | 6  | GetLastRtt         | Get last measured RTT (ms)        |
- * | 7  | ForceReconnect     | Request MITM to reconnect         |
- * | 8  | GetActiveProcessId | Get PID of active game (debug)    |
- * | 9  | GetLdnEnabled      | Check if LDN emulation is on      |
- * | 10 | SetLdnEnabled      | Toggle LDN emulation              |
- * | 11 | GetServerAddress   | Get server host and port          |
- * | 12 | SetServerAddress   | Set server host and port          |
- * | 13 | GetUsePassphrase   | Check passphrase filtering state  |
- * | 14 | SetUsePassphrase   | Toggle passphrase filtering       |
- * | 15 | GetPassphrase      | Get room passphrase               |
- * | 16 | SetPassphrase      | Set room passphrase               |
- * | 17 | GetDisableP2p      | Check P2P proxy disabled state    |
- * | 18 | SetDisableP2p      | Set P2P proxy disabled state      |
- * | 19 | GetDebugEnabled    | Check debug logging state         |
- * | 20 | SetDebugEnabled    | Toggle debug logging              |
- * | 21 | GetDebugLevel      | Get log verbosity (0-3)           |
- * | 22 | SetDebugLevel      | Set log verbosity                 |
- * | 23 | SaveConfig         | Persist config to SD card         |
- * | 24 | ReloadConfig       | Reload config from SD card        | 
+ * | 2  | GetPassphrase      | Get room passphrase               |
+ * | 3  | SetPassphrase      | Set room passphrase               |
+ * | 4  | GetServerAddress   | Get server host and port          |
+ * | 5  | SetServerAddress   | Set server host and port          |
+ * | 6  | GetLdnEnabled      | Check if LDN emulation is on      |
+ * | 7  | SetLdnEnabled      | Toggle LDN emulation              |
+ * | 8  | GetDebugEnabled    | Check debug logging state         |
+ * | 9  | SetDebugEnabled    | Toggle debug logging              |
+ * | 10 | GetDebugLevel      | Get log verbosity (0-3)           |
+ * | 11 | SetDebugLevel      | Set log verbosity                 |
+ * | 12 | SaveConfig         | Persist config to SD card         |
+ * | 13 | ReloadConfig       | Reload config from SD card        |
+ * | 14 | IsServiceActive    | Ping to check service is running  |
+ * | 16 | GetUsePassphrase   | Check passphrase filtering state  |
+ * | 17 | SetUsePassphrase   | Toggle passphrase filtering       |
+ * | 18 | IsGameActive       | Check if game is using LDN        |
+ * | 19 | GetLdnState        | Get current LDN CommState (0-6)   |
+ * | 20 | GetSessionInfo     | Get session info struct           |
+ * | 21 | GetLastRtt         | Get last measured RTT (ms)        |
+ * | 22 | ForceReconnect     | Request MITM to reconnect         |
+ * | 23 | GetActiveProcessId | Get PID of active game (debug)     |
+ * | 24 | GetDisableP2p      | Check P2P proxy disabled state    |
+ * | 25 | SetDisableP2p      | Set P2P proxy disabled state      | 
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -296,7 +295,7 @@ Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
 Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
 
 //=============================================================================
-// Runtime LDN State Commands (17-22)
+// Runtime LDN State Commands (18-23)
 //=============================================================================
 
 /**
@@ -353,7 +352,7 @@ Result ryuLdnForceReconnect(RyuLdnConfigService* s);
 Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid);
 
 //=============================================================================
-// P2P Proxy Control Commands (23-24)
+// P2P Proxy Control Commands (24-25)
 //=============================================================================
 
 /**

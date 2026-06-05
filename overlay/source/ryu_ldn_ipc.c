@@ -16,38 +16,39 @@
  * IPC Command IDs for ryu:cfg service
  *
  * These match the ConfigCmd enum in config_ipc_service.hpp.
- * Obsolete commands (UseTls, LogToFile, ConnectTimeout, PingInterval)
- * have been removed from the service and are no longer available.
+ * Get/Set pairs: Get even, Set odd.
  */
 enum {
-    // Sysmodule Status (0-8)
+    // Configuration commands (0-14)
     RyuCfgCmd_GetVersion          = 0,
     RyuCfgCmd_GetConnectionStatus = 1,
-    RyuCfgCmd_IsServiceActive     = 2,
-    RyuCfgCmd_IsGameActive        = 3,
-    RyuCfgCmd_GetLdnState         = 4,
-    RyuCfgCmd_GetSessionInfo      = 5,
-    RyuCfgCmd_GetLastRtt          = 6,
-    RyuCfgCmd_ForceReconnect      = 7,
-    RyuCfgCmd_GetActiveProcessId  = 8,
+    RyuCfgCmd_GetPassphrase       = 2,
+    RyuCfgCmd_SetPassphrase       = 3,
+    RyuCfgCmd_GetServerAddress    = 4,
+    RyuCfgCmd_SetServerAddress    = 5,
+    RyuCfgCmd_GetLdnEnabled       = 6,
+    RyuCfgCmd_SetLdnEnabled       = 7,
+    RyuCfgCmd_GetDebugEnabled     = 8,
+    RyuCfgCmd_SetDebugEnabled     = 9,
+    RyuCfgCmd_GetDebugLevel       = 10,
+    RyuCfgCmd_SetDebugLevel       = 11,
+    RyuCfgCmd_SaveConfig          = 12,
+    RyuCfgCmd_ReloadConfig        = 13,
+    RyuCfgCmd_IsServiceActive     = 14,
+    RyuCfgCmd_GetUsePassphrase    = 16,
+    RyuCfgCmd_SetUsePassphrase    = 17,
 
-    // Sysmodule Configuration (9-24)
-    RyuCfgCmd_GetLdnEnabled       = 9,
-    RyuCfgCmd_SetLdnEnabled       = 10,
-    RyuCfgCmd_GetServerAddress    = 11,
-    RyuCfgCmd_SetServerAddress    = 12,
-    RyuCfgCmd_GetUsePassphrase    = 13,
-    RyuCfgCmd_SetUsePassphrase    = 14,
-    RyuCfgCmd_GetPassphrase       = 15,
-    RyuCfgCmd_SetPassphrase       = 16,
-    RyuCfgCmd_GetDisableP2p       = 17,
-    RyuCfgCmd_SetDisableP2p       = 18,
-    RyuCfgCmd_GetDebugEnabled     = 19,
-    RyuCfgCmd_SetDebugEnabled     = 20,
-    RyuCfgCmd_GetDebugLevel       = 21,
-    RyuCfgCmd_SetDebugLevel       = 22,
-    RyuCfgCmd_SaveConfig          = 23,
-    RyuCfgCmd_ReloadConfig        = 24,
+    // Runtime LDN state commands (18-23)
+    RyuCfgCmd_IsGameActive        = 18,
+    RyuCfgCmd_GetLdnState         = 19,
+    RyuCfgCmd_GetSessionInfo      = 20,
+    RyuCfgCmd_GetLastRtt          = 21,
+    RyuCfgCmd_ForceReconnect      = 22,
+    RyuCfgCmd_GetActiveProcessId  = 23,
+
+    // P2P Proxy control (24-25)
+    RyuCfgCmd_GetDisableP2p       = 24,
+    RyuCfgCmd_SetDisableP2p       = 25,
 };
 
 /// Global service handle
@@ -204,7 +205,7 @@ Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
 }
 
 //=============================================================================
-// Runtime LDN State Commands (17-22)
+// Runtime LDN State Commands (18-23)
 //=============================================================================
 
 Result ryuLdnIsGameActive(RyuLdnConfigService* s, u32* active) {
@@ -237,7 +238,7 @@ Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid) {
 }
 
 //=============================================================================
-// P2P Proxy Control Commands (23-24)
+// P2P Proxy Control Commands (24-25)
 //=============================================================================
 
 Result ryuLdnGetDisableP2p(RyuLdnConfigService* s, u32* disabled) {

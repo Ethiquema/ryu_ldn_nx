@@ -12,7 +12,7 @@
  * 3. **ConfigService Logic Tests**: Test service method behavior via mock config
  * 4. **ConfigResult Tests**: Verify result code values
  *
- * ## ryu:cfg Command IDs (0-24)
+ * ## ryu:cfg Command IDs (0-25)
  *
  * | ID | Command            | Description                       |
  * |----|--------------------|-----------------------------------|
@@ -31,17 +31,18 @@
  * | 12 | SaveConfig          | Persist config to SD card         |
  * | 13 | ReloadConfig        | Reload config from SD card        |
  * | 14 | IsServiceActive     | Ping to check service is running  |
- * | 15 | GetUsePassphrase    | Check passphrase filtering        |
- * | 16 | SetUsePassphrase    | Toggle passphrase filtering        |
+ * | 15 | (reserved)          | (was GetUsePassphrase before parity fix) |
+ * | 16 | GetUsePassphrase    | Check passphrase filtering        |
+ * | 17 | SetUsePassphrase    | Toggle passphrase filtering        |
  *
- * | 17 | IsGameActive        | Check if game is using LDN        |
- * | 18 | GetLdnState         | Get LDN communication state      |
- * | 19 | GetSessionInfo      | Get session info struct           |
- * | 20 | GetLastRtt          | Get last RTT in milliseconds      |
- * | 21 | ForceReconnect      | Request reconnection             |
- * | 22 | GetActiveProcessId  | Get active game PID               |
- * | 23 | GetDisableP2p       | Check if P2P proxy is disabled   |
- * | 24 | SetDisableP2p       | Toggle P2P proxy                  |
+ * | 18 | IsGameActive        | Check if game is using LDN        |
+ * | 19 | GetLdnState         | Get LDN communication state      |
+ * | 20 | GetSessionInfo      | Get session info struct           |
+ * | 21 | GetLastRtt          | Get last RTT in milliseconds      |
+ * | 22 | ForceReconnect      | Request reconnection             |
+ * | 23 | GetActiveProcessId  | Get active game PID               |
+ * | 24 | GetDisableP2p       | Check if P2P proxy is disabled   |
+ * | 25 | SetDisableP2p       | Toggle P2P proxy                  |
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -79,15 +80,15 @@ typedef int32_t Result;
  * These values must match the enum in config_ipc_service.hpp exactly.
  */
 enum class ConfigCmd : u32 {
-    // Configuration commands (0-16)
+    // Configuration commands (0-17)
     GetVersion          = 0,
     GetConnectionStatus = 1,
     GetPassphrase       = 2,
     SetPassphrase       = 3,
     GetServerAddress    = 4,
     SetServerAddress    = 5,
-    GetLdnEnabled       = 6,
-    SetLdnEnabled       = 7,
+    GetLdnEnabled      = 6,
+    SetLdnEnabled      = 7,
     GetDebugEnabled    = 8,
     SetDebugEnabled    = 9,
     GetDebugLevel       = 10,
@@ -95,20 +96,21 @@ enum class ConfigCmd : u32 {
     SaveConfig          = 12,
     ReloadConfig        = 13,
     IsServiceActive     = 14,
-    GetUsePassphrase    = 15,
-    SetUsePassphrase    = 16,
+    // 15 reserved (was GetUsePassphrase before parity fix)
+    GetUsePassphrase    = 16,
+    SetUsePassphrase    = 17,
 
-    // Runtime LDN state commands (17-22)
-    IsGameActive        = 17,
-    GetLdnState         = 18,
-    GetSessionInfo      = 19,
-    GetLastRtt          = 20,
-    ForceReconnect      = 21,
-    GetActiveProcessId  = 22,
+    // Runtime LDN state commands (18-23)
+    IsGameActive        = 18,
+    GetLdnState         = 19,
+    GetSessionInfo      = 20,
+    GetLastRtt          = 21,
+    ForceReconnect      = 22,
+    GetActiveProcessId  = 23,
 
-    // P2P Proxy control (23-24)
-    GetDisableP2p       = 23,
-    SetDisableP2p       = 24,
+    // P2P Proxy control (24-25)
+    GetDisableP2p       = 24,
+    SetDisableP2p       = 25,
 };
 
 /**
@@ -203,6 +205,12 @@ void init_mock_config() {
     // Debug defaults
     g_mock_config.debug.enabled = false;
     g_mock_config.debug.level = 1;
+
+    // Passphrase filtering default
+    g_mock_config.ldn.use_passphrase = false;
+
+    // P2P proxy default (disabled by default, meaning P2P is off)
+    g_mock_config.ldn.disable_p2p = true;
 }
 
 } // namespace mock
@@ -312,6 +320,28 @@ public:
         out = 1;
         R_SUCCEED();
     }
+
+    // Use passphrase filtering
+    Result GetUsePassphrase(u32& out) {
+        out = g_mock_config.ldn.use_passphrase ? 1 : 0;
+        R_SUCCEED();
+    }
+
+    Result SetUsePassphrase(u32 enabled) {
+        g_mock_config.ldn.use_passphrase = (enabled != 0);
+        R_SUCCEED();
+    }
+
+    // P2P proxy disabled state
+    Result GetDisableP2p(u32& out) {
+        out = g_mock_config.ldn.disable_p2p ? 1 : 0;
+        R_SUCCEED();
+    }
+
+    Result SetDisableP2p(u32 disabled) {
+        g_mock_config.ldn.disable_p2p = (disabled != 0);
+        R_SUCCEED();
+    }
 };
 
 } // namespace mock
@@ -378,14 +408,16 @@ TEST(command_ids_are_sequential) {
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SaveConfig), 12u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::ReloadConfig), 13u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 14u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase), 15u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase), 16u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsGameActive), 17u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnState), 18u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetSessionInfo), 19u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLastRtt), 20u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::ForceReconnect), 21u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetActiveProcessId), 22u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase), 16u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase), 17u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsGameActive), 18u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnState), 19u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetSessionInfo), 20u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLastRtt), 21u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::ForceReconnect), 22u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetActiveProcessId), 23u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p), 24u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 25u);
 }
 
 /**
@@ -398,7 +430,9 @@ TEST(command_ids_get_set_pairing) {
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p) % 2, 1u);  // 23, odd index
+    // Get even, Set odd (convention: Get pair, Set pair)
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase) % 2, 0u);  // 16, even (Get)
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p) % 2, 0u);     // 24, even (Get)
 
     // Config Set commands immediately follow Get
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase),
@@ -420,9 +454,11 @@ TEST(command_ids_get_set_pairing) {
 /**
  * @test Verify total command count
  */
-TEST(command_count_is_25) {
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 24u);
-    // Commands 0-24 = 25 total commands
+TEST(command_count_is_26) {
+    // Commands 0-25 with gap at 15 (reserved from parity swap)
+    // 26 defined values but command 15 is unused/reserved
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 25u);
+    // Total: 26 defined command IDs (0-25, minus reserved 15)
 }
 
 //=============================================================================
@@ -758,6 +794,57 @@ TEST(debug_level_set_get_roundtrip) {
     }
 }
 //=============================================================================
+// Use Passphrase Tests
+//=============================================================================
+
+TEST(use_passphrase_default_false) {
+    mock::MockConfigService svc;
+    u32 enabled = 99;
+    Result r = svc.GetUsePassphrase(enabled);
+    ASSERT_SUCCESS(r);
+    ASSERT_EQ(enabled, 0u);
+}
+
+TEST(use_passphrase_set_get_roundtrip) {
+    mock::MockConfigService svc;
+    svc.SetUsePassphrase(1);
+    u32 enabled = 0;
+    svc.GetUsePassphrase(enabled);
+    ASSERT_EQ(enabled, 1u);
+
+    svc.SetUsePassphrase(0);
+    svc.GetUsePassphrase(enabled);
+    ASSERT_EQ(enabled, 0u);
+}
+
+//=============================================================================
+// Disable P2P Tests
+//=============================================================================
+
+TEST(disable_p2p_default_true) {
+    mock::MockConfigService svc;
+    u32 disabled = 0;
+    Result r = svc.GetDisableP2p(disabled);
+    ASSERT_SUCCESS(r);
+    ASSERT_EQ(disabled, 1u);
+}
+
+TEST(disable_p2p_set_get_roundtrip) {
+    mock::MockConfigService svc;
+
+    // Enable P2P (disable_p2p = 0)
+    svc.SetDisableP2p(0);
+    u32 disabled = 1;
+    svc.GetDisableP2p(disabled);
+    ASSERT_EQ(disabled, 0u);
+
+    // Disable P2P (disable_p2p = 1)
+    svc.SetDisableP2p(1);
+    svc.GetDisableP2p(disabled);
+    ASSERT_EQ(disabled, 1u);
+}
+
+//=============================================================================
 // Main
 //=============================================================================
 
@@ -771,7 +858,7 @@ int main() {
     RUN_TEST(command_ids_start_from_zero);
     RUN_TEST(command_ids_are_sequential);
     RUN_TEST(command_ids_get_set_pairing);
-    RUN_TEST(command_count_is_25);
+    RUN_TEST(command_count_is_26);
 
     printf("\n--- Structure Size Tests ---\n");
     RUN_TEST(server_address_ipc_size);
@@ -805,6 +892,14 @@ int main() {
     printf("\n--- Debug Level Tests ---\n");
     RUN_TEST(debug_level_default_warning);
     RUN_TEST(debug_level_set_get_roundtrip);
+
+    printf("\n--- Use Passphrase Tests ---\n");
+    RUN_TEST(use_passphrase_default_false);
+    RUN_TEST(use_passphrase_set_get_roundtrip);
+
+    printf("\n--- Disable P2P Tests ---\n");
+    RUN_TEST(disable_p2p_default_true);
+    RUN_TEST(disable_p2p_set_get_roundtrip);
 
     printf("\n--- Timeout Tests ---\n");
 

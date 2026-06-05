@@ -18,7 +18,7 @@
  * - 30000ms max delay
  * - 200 (2.0x) multiplier
  * - 10% jitter
- * - 0 (infinite) max retries
+ * - 0 (disabled) max retries
  * - 1 fast retry at 200ms
  *
  * ### Fast Retry Tests
@@ -46,7 +46,7 @@
  *
  * ### Max Retries Tests
  * Test maximum retry limiting:
- * - Infinite retries when max_retries = 0
+ * - Disabled auto-reconnect when max_retries = 0
  * - MaxRetriesReached when limit exceeded
  *
  * ### Custom Configuration Tests
@@ -500,15 +500,11 @@ bool test_jitter_at_high_delay() {
 // Max Retries Tests
 // ============================================================================
 
-bool test_infinite_retries_by_default() {
+bool test_max_retries_zero_disables_retry() {
     ReconnectManager mgr;
 
-    for (int i = 0; i < 100; i++) {
-        ASSERT_EQ(mgr.should_retry(), RetryResult::ShouldRetry);
-        mgr.record_failure();
-    }
-
-    ASSERT_EQ(mgr.should_retry(), RetryResult::ShouldRetry);
+    // max_retries=0 disables auto-reconnect entirely (not infinite retries)
+    ASSERT_EQ(mgr.should_retry(), RetryResult::MaxRetriesReached);
 
     return true;
 }
@@ -904,7 +900,7 @@ int main() {
 
     // Max Retries Tests
     printf("\nMax Retries:\n");
-    RUN_TEST(test_infinite_retries_by_default);
+    RUN_TEST(test_max_retries_zero_disables_retry);
     RUN_TEST(test_max_retries_limit);
     RUN_TEST(test_reset_allows_retries_again);
 

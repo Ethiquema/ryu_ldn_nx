@@ -22,7 +22,7 @@ namespace ryu_ldn::ipc {
  * @brief IPC command IDs for ryu:cfg service
  */
 enum class ConfigCmd : u32 {
-    // Configuration commands (0-16)
+    // Configuration commands (0-17)
     GetVersion          = 0,
     GetConnectionStatus = 1,
     GetPassphrase       = 2,
@@ -38,20 +38,20 @@ enum class ConfigCmd : u32 {
     SaveConfig          = 12,
     ReloadConfig        = 13,
     IsServiceActive     = 14,
-    GetUsePassphrase    = 15,
-    SetUsePassphrase    = 16,
+    GetUsePassphrase    = 16,
+    SetUsePassphrase    = 17,
 
-    // Runtime LDN state commands (17-22)
-    IsGameActive        = 17,  ///< Returns 1 if a game is using LDN
-    GetLdnState         = 18,  ///< Returns CommState (0-6)
-    GetSessionInfo      = 19,  ///< Returns SessionInfoIpc struct (8 bytes)
-    GetLastRtt          = 20,  ///< Returns last RTT in milliseconds
-    ForceReconnect      = 21,  ///< Requests reconnection
-    GetActiveProcessId  = 22,  ///< Returns PID of active game (debug)
+    // Runtime LDN state commands (18-23)
+    IsGameActive        = 18,  ///< Returns 1 if a game is using LDN
+    GetLdnState         = 19,  ///< Returns CommState (0-6)
+    GetSessionInfo      = 20,  ///< Returns SessionInfoIpc struct (8 bytes)
+    GetLastRtt          = 21,  ///< Returns last RTT in milliseconds
+    ForceReconnect      = 22,  ///< Requests reconnection
+    GetActiveProcessId  = 23,  ///< Returns PID of active game (debug)
 
-    // P2P Proxy control (23-24)
-    GetDisableP2p       = 23,  ///< Returns 1 if P2P proxy is disabled
-    SetDisableP2p       = 24,  ///< Sets P2P proxy disabled state
+    // P2P Proxy control (24-25)
+    GetDisableP2p       = 24,  ///< Returns 1 if P2P proxy is disabled
+    SetDisableP2p       = 25,  ///< Sets P2P proxy disabled state
 };
 
 /**
@@ -254,46 +254,39 @@ public:
 /**
  * @brief SF interface macro for ryu:cfg service
  *
- * Defines all IPC commands (0-24) for the configuration service.
- * Commands 0-16: Configuration commands
- * Commands 17-22: Runtime LDN state commands
- * Commands 23-24: P2P proxy control commands
+ * Defines all IPC commands (0-25) for the configuration service.
+ * Command IDs match ConfigCmd in this header.
+ * Get/Set pairs: Get even, Set odd (GetUsePassphrase=16, SetUsePassphrase=17).
+ * Command 15 is reserved (gap from parity swap).
  * Uses 9-arg form of AMS_SF_METHOD_INFO with explicit version range.
  */
 #define AMS_RYU_CFG_SERVICE_INTERFACE(C, H)                                                                                        \
-    /* Sysmodule Status (0-8) */                                                                                                   \
+    /* Configuration (0-14) */                                                                                                      \
     AMS_SF_METHOD_INFO(C, H, 0,  ams::Result, GetVersion,         (ams::sf::Out<std::array<char, 32>> out),             (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
     AMS_SF_METHOD_INFO(C, H, 1,  ams::Result, GetConnectionStatus,(ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 2,  ams::Result, IsServiceActive,    (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 3,  ams::Result, IsGameActive,       (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 4,  ams::Result, GetLdnState,        (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 5,  ams::Result, GetSessionInfo,     (ams::sf::Out<ryu_ldn::ipc::SessionInfoIpc> out),    (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 6,  ams::Result, GetLastRtt,         (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 7,  ams::Result, ForceReconnect,     (),                                                   (),           ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 8,  ams::Result, GetActiveProcessId, (ams::sf::Out<u64> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    /* Sysmodule Configuration (9-24) */                                                                                          \
-    AMS_SF_METHOD_INFO(C, H, 9,  ams::Result, GetLdnEnabled,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 10, ams::Result, SetLdnEnabled,      (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 11, ams::Result, GetServerAddress,   (ams::sf::Out<ryu_ldn::ipc::ServerAddressIpc> out),  (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 12, ams::Result, SetServerAddress,   (const ryu_ldn::ipc::ServerAddressIpc &address),     (address),    ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 13, ams::Result, GetUsePassphrase,   (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 14, ams::Result, SetUsePassphrase,   (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 15, ams::Result, GetPassphrase,      (ams::sf::Out<std::array<char, 64>> out),            (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 16, ams::Result, SetPassphrase,      (std::array<char, 64> passphrase),                   (passphrase), ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 17, ams::Result, GetDisableP2p,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 18, ams::Result, SetDisableP2p,      (u32 disabled),                                       (disabled),   ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 19, ams::Result, GetDebugEnabled,    (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 20, ams::Result, SetDebugEnabled,    (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 21, ams::Result, GetDebugLevel,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 22, ams::Result, SetDebugLevel,      (u32 level),                                          (level),      ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 23, ams::Result, SaveConfig,         (ams::sf::Out<ryu_ldn::ipc::ConfigResult> out),      (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
-    AMS_SF_METHOD_INFO(C, H, 24, ams::Result, ReloadConfig,       (ams::sf::Out<ryu_ldn::ipc::ConfigResult> out),      (out),        ams::hos::Version_Min, ams::hos::Version_Max)                                                                                    \
-    
-/**
- * @brief Define the IConfigService interface
- *
- * Interface ID: 0x52594343 ("RYCC" - RYu Config Controller)
- */
-// codeql[cpp/unused-local-variable,cpp/unused-static-variable] — macro
-// expansion uses `args` via perfect forwarding
-AMS_SF_DEFINE_INTERFACE(ryu_ldn::ipc, IConfigService, AMS_RYU_CFG_SERVICE_INTERFACE, 0x52594343)
+    AMS_SF_METHOD_INFO(C, H, 2,  ams::Result, GetPassphrase,      (ams::sf::Out<std::array<char, 64>> out),            (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 3,  ams::Result, SetPassphrase,      (std::array<char, 64> passphrase),                   (passphrase), ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 4,  ams::Result, GetServerAddress,   (ams::sf::Out<ryu_ldn::ipc::ServerAddressIpc> out),  (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 5,  ams::Result, SetServerAddress,   (const ryu_ldn::ipc::ServerAddressIpc &address),     (address),    ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 6,  ams::Result, GetLdnEnabled,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 7,  ams::Result, SetLdnEnabled,      (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 8,  ams::Result, GetDebugEnabled,    (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 9,  ams::Result, SetDebugEnabled,    (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 10, ams::Result, GetDebugLevel,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 11, ams::Result, SetDebugLevel,      (u32 level),                                          (level),      ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 12, ams::Result, SaveConfig,         (ams::sf::Out<ryu_ldn::ipc::ConfigResult> out),      (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 13, ams::Result, ReloadConfig,       (ams::sf::Out<ryu_ldn::ipc::ConfigResult> out),      (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 14, ams::Result, IsServiceActive,    (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    /* Passphrase filtering (16-17, Get even / Set odd) */                                                                          \
+    AMS_SF_METHOD_INFO(C, H, 16, ams::Result, GetUsePassphrase,   (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 17, ams::Result, SetUsePassphrase,   (u32 enabled),                                        (enabled),    ams::hos::Version_Min, ams::hos::Version_Max) \
+    /* Runtime LDN state (18-23) */                                                                                                 \
+    AMS_SF_METHOD_INFO(C, H, 18, ams::Result, IsGameActive,       (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 19, ams::Result, GetLdnState,        (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 20, ams::Result, GetSessionInfo,     (ams::sf::Out<ryu_ldn::ipc::SessionInfoIpc> out),    (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 21, ams::Result, GetLastRtt,         (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 22, ams::Result, ForceReconnect,     (),                                                   (),           ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 23, ams::Result, GetActiveProcessId, (ams::sf::Out<u64> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    /* P2P Proxy control (24-25) */                                                                                                 \
+    AMS_SF_METHOD_INFO(C, H, 24, ams::Result, GetDisableP2p,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
+    AMS_SF_METHOD_INFO(C, H, 25, ams::Result, SetDisableP2p,      (u32 disabled),                                       (disabled),   ams::hos::Version_Min, ams::hos::Version_Max)

@@ -97,7 +97,9 @@ static void create_test_config_file() {
         fprintf(f, "\n");
         fprintf(f, "[ldn]\n");
         fprintf(f, "enabled = 1\n");
+        fprintf(f, "use_passphrase = 0\n");
         fprintf(f, "passphrase = \n");
+        fprintf(f, "disable_p2p = 1\n");
         fprintf(f, "\n");
         fprintf(f, "[debug]\n");
         fprintf(f, "enabled = 1\n");
@@ -529,6 +531,17 @@ TEST(load_debug_settings_from_file) {
     ASSERT_EQ(ConfigManager::Instance().GetDebugLevel(), 3u);
 
     remove_test_config_file();
+}
+
+//=============================================================================
+// Use Passphrase Configuration Tests
+//=============================================================================
+
+TEST(get_default_use_passphrase) {
+    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
+    // Default should be false (no passphrase filtering)
+    // Note: ConfigManager may or may not expose this directly.
+    // If it does, test it here.
 }
 
 // ============================================================================

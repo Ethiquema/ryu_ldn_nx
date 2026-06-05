@@ -15,7 +15,9 @@ enabled = 1
 use_passphrase = 0
 ; Room passphrase (empty = public)
 passphrase =
-; Disable P2P proxy (0 = false | 1 = true) : DO NOT SET at 0 / false (P2P is not fully implemented and in development)
+; Disable P2P proxy (0 = P2P enabled, 1 = P2P disabled / relay-only)
+; WARNING: Setting to 0 enables P2P proxy which is experimental and incomplete.
+; Keep at 1 (relay-only) for stable gameplay.
 disable_p2p = 1
 
 [debug]

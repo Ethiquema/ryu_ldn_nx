@@ -8,13 +8,11 @@
  * Extended IPC Commands (65011-65030):
  * - 65011: GetPassphrase / 65012: SetPassphrase
  * - 65013: GetLdnEnabled / 65014: SetLdnEnabled
- * - 65015: GetUseTls / 65016: SetUseTls
  * - 65017: GetConnectTimeout / 65018: SetConnectTimeout
  * - 65019: GetPingInterval / 65020: SetPingInterval
  * - 65021: GetReconnectDelay / 65022: SetReconnectDelay
  * - 65023: GetMaxReconnectAttempts / 65024: SetMaxReconnectAttempts
  * - 65025: GetDebugLevel / 65026: SetDebugLevel
- * - 65027: GetLogToFile / 65028: SetLogToFile
  * - 65029: SaveConfig
  * - 65030: ReloadConfig
  *
@@ -61,8 +59,6 @@ constexpr u32 IPC_CMD_GET_PASSPHRASE = 65011;
 constexpr u32 IPC_CMD_SET_PASSPHRASE = 65012;
 constexpr u32 IPC_CMD_GET_LDN_ENABLED = 65013;
 constexpr u32 IPC_CMD_SET_LDN_ENABLED = 65014;
-constexpr u32 IPC_CMD_GET_USE_TLS = 65015;
-constexpr u32 IPC_CMD_SET_USE_TLS = 65016;
 constexpr u32 IPC_CMD_GET_CONNECT_TIMEOUT = 65017;
 constexpr u32 IPC_CMD_SET_CONNECT_TIMEOUT = 65018;
 constexpr u32 IPC_CMD_GET_PING_INTERVAL = 65019;
@@ -73,8 +69,6 @@ constexpr u32 IPC_CMD_GET_MAX_RECONNECT_ATTEMPTS = 65023;
 constexpr u32 IPC_CMD_SET_MAX_RECONNECT_ATTEMPTS = 65024;
 constexpr u32 IPC_CMD_GET_DEBUG_LEVEL = 65025;
 constexpr u32 IPC_CMD_SET_DEBUG_LEVEL = 65026;
-constexpr u32 IPC_CMD_GET_LOG_TO_FILE = 65027;
-constexpr u32 IPC_CMD_SET_LOG_TO_FILE = 65028;
 constexpr u32 IPC_CMD_SAVE_CONFIG = 65029;
 constexpr u32 IPC_CMD_RELOAD_CONFIG = 65030;
 
@@ -211,8 +205,6 @@ TEST(command_ids_are_sequential) {
     ASSERT_EQ(IPC_CMD_SET_PASSPHRASE, 65012u);
     ASSERT_EQ(IPC_CMD_GET_LDN_ENABLED, 65013u);
     ASSERT_EQ(IPC_CMD_SET_LDN_ENABLED, 65014u);
-    ASSERT_EQ(IPC_CMD_GET_USE_TLS, 65015u);
-    ASSERT_EQ(IPC_CMD_SET_USE_TLS, 65016u);
     ASSERT_EQ(IPC_CMD_SAVE_CONFIG, 65029u);
     ASSERT_EQ(IPC_CMD_RELOAD_CONFIG, 65030u);
 }
@@ -226,13 +218,11 @@ TEST(command_ids_paired_get_set) {
     // Verify get/set commands are paired correctly
     ASSERT_EQ(IPC_CMD_SET_PASSPHRASE, IPC_CMD_GET_PASSPHRASE + 1);
     ASSERT_EQ(IPC_CMD_SET_LDN_ENABLED, IPC_CMD_GET_LDN_ENABLED + 1);
-    ASSERT_EQ(IPC_CMD_SET_USE_TLS, IPC_CMD_GET_USE_TLS + 1);
     ASSERT_EQ(IPC_CMD_SET_CONNECT_TIMEOUT, IPC_CMD_GET_CONNECT_TIMEOUT + 1);
     ASSERT_EQ(IPC_CMD_SET_PING_INTERVAL, IPC_CMD_GET_PING_INTERVAL + 1);
     ASSERT_EQ(IPC_CMD_SET_RECONNECT_DELAY, IPC_CMD_GET_RECONNECT_DELAY + 1);
     ASSERT_EQ(IPC_CMD_SET_MAX_RECONNECT_ATTEMPTS, IPC_CMD_GET_MAX_RECONNECT_ATTEMPTS + 1);
     ASSERT_EQ(IPC_CMD_SET_DEBUG_LEVEL, IPC_CMD_GET_DEBUG_LEVEL + 1);
-    ASSERT_EQ(IPC_CMD_SET_LOG_TO_FILE, IPC_CMD_GET_LOG_TO_FILE + 1);
 }
 
 //=============================================================================
