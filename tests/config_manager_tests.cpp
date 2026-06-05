@@ -94,13 +94,6 @@ static void create_test_config_file() {
         fprintf(f, "[server]\n");
         fprintf(f, "host = test.example.com\n");
         fprintf(f, "port = 12345\n");
-        fprintf(f, "use_tls = 0\n");
-        fprintf(f, "\n");
-        fprintf(f, "[network]\n");
-        fprintf(f, "connect_timeout = 8000\n");
-        fprintf(f, "ping_interval = 15000\n");
-        fprintf(f, "reconnect_delay = 5000\n");
-        fprintf(f, "max_reconnect_attempts = 10\n");
         fprintf(f, "\n");
         fprintf(f, "[ldn]\n");
         fprintf(f, "enabled = 1\n");
@@ -109,7 +102,6 @@ static void create_test_config_file() {
         fprintf(f, "[debug]\n");
         fprintf(f, "enabled = 1\n");
         fprintf(f, "level = 3\n");
-        fprintf(f, "log_to_file = 1\n");
         fclose(f);
     }
 }
@@ -187,69 +179,6 @@ TEST(set_server_port) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
     ConfigManager::Instance().SetServerPort(9999);
     ASSERT_EQ(ConfigManager::Instance().GetServerPort(), 9999);
-}
-
-TEST(get_default_use_tls) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetUseTls(), DEFAULT_USE_TLS);
-}
-
-TEST(set_use_tls) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetUseTls(false);
-    ASSERT_FALSE(ConfigManager::Instance().GetUseTls());
-    ConfigManager::Instance().SetUseTls(true);
-    ASSERT_TRUE(ConfigManager::Instance().GetUseTls());
-}
-
-// ============================================================================
-// Network Settings Tests
-// ============================================================================
-
-TEST(get_default_connect_timeout) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetConnectTimeout(), DEFAULT_CONNECT_TIMEOUT_MS);
-}
-
-TEST(set_connect_timeout) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetConnectTimeout(10000);
-    ASSERT_EQ(ConfigManager::Instance().GetConnectTimeout(), 10000u);
-}
-
-TEST(get_default_ping_interval) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetPingInterval(), DEFAULT_PING_INTERVAL_MS);
-}
-
-TEST(set_ping_interval) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetPingInterval(20000);
-    ASSERT_EQ(ConfigManager::Instance().GetPingInterval(), 20000u);
-}
-
-TEST(get_default_reconnect_delay) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetReconnectDelay(), DEFAULT_RECONNECT_DELAY_MS);
-}
-
-TEST(set_reconnect_delay) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetReconnectDelay(6000);
-    ASSERT_EQ(ConfigManager::Instance().GetReconnectDelay(), 6000u);
-}
-
-TEST(get_default_max_reconnect_attempts) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetMaxReconnectAttempts(), DEFAULT_MAX_RECONNECT_ATTEMPTS);
-}
-
-TEST(set_max_reconnect_attempts) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetMaxReconnectAttempts(0);  // Infinite
-    ASSERT_EQ(ConfigManager::Instance().GetMaxReconnectAttempts(), 0u);
-    ConfigManager::Instance().SetMaxReconnectAttempts(20);
-    ASSERT_EQ(ConfigManager::Instance().GetMaxReconnectAttempts(), 20u);
 }
 
 // ============================================================================
@@ -426,16 +355,6 @@ TEST(generate_random_passphrase_only_lowercase_hex) {
     }
 }
 
-TEST(get_default_interface_name) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_STREQ(ConfigManager::Instance().GetInterfaceName(), "");
-}
-
-TEST(set_interface_name) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetInterfaceName("eth0");
-    ASSERT_STREQ(ConfigManager::Instance().GetInterfaceName(), "eth0");
-}
 
 // ============================================================================
 // Debug Settings Tests
@@ -471,19 +390,6 @@ TEST(set_debug_level_clamps_to_max) {
     ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
     ConfigManager::Instance().SetDebugLevel(100);
     ASSERT_TRUE(ConfigManager::Instance().GetDebugLevel() <= 3);
-}
-
-TEST(get_default_log_to_file) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ASSERT_EQ(ConfigManager::Instance().GetLogToFile(), DEFAULT_LOG_TO_FILE);
-}
-
-TEST(set_log_to_file) {
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetLogToFile(true);
-    ASSERT_TRUE(ConfigManager::Instance().GetLogToFile());
-    ConfigManager::Instance().SetLogToFile(false);
-    ASSERT_FALSE(ConfigManager::Instance().GetLogToFile());
 }
 
 // ============================================================================
@@ -551,21 +457,6 @@ TEST(change_callback_invoked_on_server_change) {
     ConfigManager::Instance().SetChangeCallback(nullptr);
 }
 
-TEST(change_callback_invoked_on_network_change) {
-    g_change_callback_count = 0;
-    g_last_changed_section = nullptr;
-
-    ConfigManager::Instance().Initialize("/tmp/nonexistent.ini");
-    ConfigManager::Instance().SetChangeCallback(test_change_callback);
-
-    ConfigManager::Instance().SetConnectTimeout(7777);
-
-    ASSERT_TRUE(g_change_callback_count > 0);
-    ASSERT_STREQ(g_last_changed_section, "network");
-
-    ConfigManager::Instance().SetChangeCallback(nullptr);
-}
-
 TEST(change_callback_invoked_on_ldn_change) {
     g_change_callback_count = 0;
     g_last_changed_section = nullptr;
@@ -616,19 +507,6 @@ TEST(load_server_settings_from_file) {
 
     ASSERT_STREQ(ConfigManager::Instance().GetServerHost(), "test.example.com");
     ASSERT_EQ(ConfigManager::Instance().GetServerPort(), 12345);
-    ASSERT_FALSE(ConfigManager::Instance().GetUseTls());
-
-    remove_test_config_file();
-}
-
-TEST(load_network_settings_from_file) {
-    create_test_config_file();
-    ConfigManager::Instance().Initialize(g_test_config_path);
-
-    ASSERT_EQ(ConfigManager::Instance().GetConnectTimeout(), 8000u);
-    ASSERT_EQ(ConfigManager::Instance().GetPingInterval(), 15000u);
-    ASSERT_EQ(ConfigManager::Instance().GetReconnectDelay(), 5000u);
-    ASSERT_EQ(ConfigManager::Instance().GetMaxReconnectAttempts(), 10u);
 
     remove_test_config_file();
 }
@@ -649,7 +527,6 @@ TEST(load_debug_settings_from_file) {
 
     ASSERT_TRUE(ConfigManager::Instance().GetDebugEnabled());
     ASSERT_EQ(ConfigManager::Instance().GetDebugLevel(), 3u);
-    ASSERT_TRUE(ConfigManager::Instance().GetLogToFile());
 
     remove_test_config_file();
 }

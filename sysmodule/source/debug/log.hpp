@@ -249,6 +249,27 @@ public:
     LogLevel get_level() const { return m_level; }
 
     /**
+     * @brief Enable or disable logging at runtime
+     *
+     * When disabled, all logging calls become no-ops.
+     * When enabled, file output is also activated.
+     *
+     * @param enabled True to enable logging, false to disable
+     */
+    /// @gdb{tag="DEBUG:LOGGER", msg="SetEnabled"}
+    void SetEnabled(bool enabled) { m_enabled = enabled; }
+
+    /**
+     * @brief Set the log level at runtime
+     *
+     * Only messages at or below this level will be logged.
+     *
+     * @param level New log level (0=Error, 1=Warning, 2=Info, 3=Verbose)
+     */
+    /// @gdb{tag="DEBUG:LOGGER", msg="SetLevel"}
+    void SetLevel(uint32_t level) { m_level = (level > 3) ? LogLevel::Verbose : static_cast<LogLevel>(level); }
+
+    /**
      * @brief Check if a message at given level should be logged
      *
      * @param level Log level to check
@@ -314,7 +335,6 @@ private:
 
     bool m_enabled = false;
     LogLevel m_level = LogLevel::Warning;
-    bool m_log_to_file = false;
     char m_log_path[256] = {0};
     LogBuffer m_buffer;
     void* m_file = nullptr;  // FILE* on PC, unused on Switch

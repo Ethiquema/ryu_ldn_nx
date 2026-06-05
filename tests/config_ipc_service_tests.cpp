@@ -12,7 +12,7 @@
  * 3. **ConfigService Logic Tests**: Test service method behavior via mock config
  * 4. **ConfigResult Tests**: Verify result code values
  *
- * ## ryu:cfg Command IDs (0-22)
+ * ## ryu:cfg Command IDs (0-24)
  *
  * | ID | Command            | Description                       |
  * |----|--------------------|-----------------------------------|
@@ -24,21 +24,24 @@
  * | 5  | SetServerAddress   | Set server host and port          |
  * | 6  | GetLdnEnabled      | Check if LDN emulation is on      |
  * | 7  | SetLdnEnabled      | Toggle LDN emulation              |
- * | 8  | GetUseTls          | Check TLS encryption state        |
- * | 9  | SetUseTls          | Toggle TLS encryption             |
- * | 10 | GetDebugEnabled    | Check debug logging state         |
- * | 11 | SetDebugEnabled    | Toggle debug logging              |
- * | 12 | GetDebugLevel      | Get log verbosity (0-3)           |
- * | 13 | SetDebugLevel      | Set log verbosity                 |
- * | 14 | GetLogToFile       | Check file logging state          |
- * | 15 | SetLogToFile       | Toggle file logging               |
- * | 16 | SaveConfig         | Persist config to SD card         |
- * | 17 | ReloadConfig       | Reload config from SD card        |
- * | 18 | GetConnectTimeout  | Get connection timeout (ms)       |
- * | 19 | SetConnectTimeout  | Set connection timeout            |
- * | 20 | GetPingInterval    | Get keepalive interval (ms)       |
- * | 21 | SetPingInterval    | Set keepalive interval            |
- * | 22 | IsServiceActive    | Ping to check service is running  |
+ * | 8  | GetDebugEnabled    | Check debug logging state        |
+ * | 9  | SetDebugEnabled    | Toggle debug logging             |
+ * | 10 | GetDebugLevel       | Get log verbosity (0-3)           |
+ * | 11 | SetDebugLevel       | Set log verbosity                 |
+ * | 12 | SaveConfig          | Persist config to SD card         |
+ * | 13 | ReloadConfig        | Reload config from SD card        |
+ * | 14 | IsServiceActive     | Ping to check service is running  |
+ * | 15 | GetUsePassphrase    | Check passphrase filtering        |
+ * | 16 | SetUsePassphrase    | Toggle passphrase filtering        |
+ *
+ * | 17 | IsGameActive        | Check if game is using LDN        |
+ * | 18 | GetLdnState         | Get LDN communication state      |
+ * | 19 | GetSessionInfo      | Get session info struct           |
+ * | 20 | GetLastRtt          | Get last RTT in milliseconds      |
+ * | 21 | ForceReconnect      | Request reconnection             |
+ * | 22 | GetActiveProcessId  | Get active game PID               |
+ * | 23 | GetDisableP2p       | Check if P2P proxy is disabled   |
+ * | 24 | SetDisableP2p       | Toggle P2P proxy                  |
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -76,6 +79,7 @@ typedef int32_t Result;
  * These values must match the enum in config_ipc_service.hpp exactly.
  */
 enum class ConfigCmd : u32 {
+    // Configuration commands (0-16)
     GetVersion          = 0,
     GetConnectionStatus = 1,
     GetPassphrase       = 2,
@@ -84,21 +88,27 @@ enum class ConfigCmd : u32 {
     SetServerAddress    = 5,
     GetLdnEnabled       = 6,
     SetLdnEnabled       = 7,
-    GetUseTls           = 8,
-    SetUseTls           = 9,
-    GetDebugEnabled     = 10,
-    SetDebugEnabled     = 11,
-    GetDebugLevel       = 12,
-    SetDebugLevel       = 13,
-    GetLogToFile        = 14,
-    SetLogToFile        = 15,
-    SaveConfig          = 16,
-    ReloadConfig        = 17,
-    GetConnectTimeout   = 18,
-    SetConnectTimeout   = 19,
-    GetPingInterval     = 20,
-    SetPingInterval     = 21,
-    IsServiceActive     = 22,
+    GetDebugEnabled    = 8,
+    SetDebugEnabled    = 9,
+    GetDebugLevel       = 10,
+    SetDebugLevel       = 11,
+    SaveConfig          = 12,
+    ReloadConfig        = 13,
+    IsServiceActive     = 14,
+    GetUsePassphrase    = 15,
+    SetUsePassphrase    = 16,
+
+    // Runtime LDN state commands (17-22)
+    IsGameActive        = 17,
+    GetLdnState         = 18,
+    GetSessionInfo      = 19,
+    GetLastRtt          = 20,
+    ForceReconnect      = 21,
+    GetActiveProcessId  = 22,
+
+    // P2P Proxy control (23-24)
+    GetDisableP2p       = 23,
+    SetDisableP2p       = 24,
 };
 
 /**
@@ -142,17 +152,6 @@ namespace mock {
 struct ServerConfig {
     char host[128];
     u16 port;
-    bool use_tls;
-};
-
-/**
- * @brief Mock network configuration
- */
-struct NetworkConfig {
-    u32 connect_timeout_ms;
-    u32 ping_interval_ms;
-    u32 reconnect_delay_ms;
-    u32 max_reconnect_attempts;
 };
 
 /**
@@ -161,7 +160,8 @@ struct NetworkConfig {
 struct LdnConfig {
     bool enabled;
     char passphrase[65];
-    char interface_name[32];
+    bool use_passphrase;
+    bool disable_p2p;
 };
 
 /**
@@ -170,7 +170,6 @@ struct LdnConfig {
 struct DebugConfig {
     bool enabled;
     u32 level;
-    bool log_to_file;
 };
 
 /**
@@ -178,7 +177,6 @@ struct DebugConfig {
  */
 struct Config {
     ServerConfig server;
-    NetworkConfig network;
     LdnConfig ldn;
     DebugConfig debug;
 };
@@ -196,13 +194,7 @@ void init_mock_config() {
     std::strncpy(g_mock_config.server.host, "90.93.156.13",
                  sizeof(g_mock_config.server.host) - 1);
     g_mock_config.server.port = 30456;
-    g_mock_config.server.use_tls = true;
 
-    // Network defaults
-    g_mock_config.network.connect_timeout_ms = 5000;
-    g_mock_config.network.ping_interval_ms = 10000;
-    g_mock_config.network.reconnect_delay_ms = 3000;
-    g_mock_config.network.max_reconnect_attempts = 5;
 
     // LDN defaults
     g_mock_config.ldn.enabled = true;
@@ -211,7 +203,6 @@ void init_mock_config() {
     // Debug defaults
     g_mock_config.debug.enabled = false;
     g_mock_config.debug.level = 1;
-    g_mock_config.debug.log_to_file = false;
 }
 
 } // namespace mock
@@ -293,16 +284,6 @@ public:
         R_SUCCEED();
     }
 
-    // TLS
-    Result GetUseTls(u32& out) {
-        out = g_mock_config.server.use_tls ? 1 : 0;
-        R_SUCCEED();
-    }
-
-    Result SetUseTls(u32 enabled) {
-        g_mock_config.server.use_tls = (enabled != 0);
-        R_SUCCEED();
-    }
 
     // Debug enabled
     Result GetDebugEnabled(u32& out) {
@@ -323,38 +304,6 @@ public:
 
     Result SetDebugLevel(u32 level) {
         g_mock_config.debug.level = level;
-        R_SUCCEED();
-    }
-
-    // Log to file
-    Result GetLogToFile(u32& out) {
-        out = g_mock_config.debug.log_to_file ? 1 : 0;
-        R_SUCCEED();
-    }
-
-    Result SetLogToFile(u32 enabled) {
-        g_mock_config.debug.log_to_file = (enabled != 0);
-        R_SUCCEED();
-    }
-
-    // Timeouts
-    Result GetConnectTimeout(u32& out) {
-        out = g_mock_config.network.connect_timeout_ms;
-        R_SUCCEED();
-    }
-
-    Result SetConnectTimeout(u32 timeout_ms) {
-        g_mock_config.network.connect_timeout_ms = timeout_ms;
-        R_SUCCEED();
-    }
-
-    Result GetPingInterval(u32& out) {
-        out = g_mock_config.network.ping_interval_ms;
-        R_SUCCEED();
-    }
-
-    Result SetPingInterval(u32 interval_ms) {
-        g_mock_config.network.ping_interval_ms = interval_ms;
         R_SUCCEED();
     }
 
@@ -422,55 +371,58 @@ TEST(command_ids_are_sequential) {
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress), 5u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled), 6u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled), 7u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUseTls), 8u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUseTls), 9u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled), 10u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled), 11u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel), 12u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel), 13u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLogToFile), 14u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLogToFile), 15u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SaveConfig), 16u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::ReloadConfig), 17u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetConnectTimeout), 18u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetConnectTimeout), 19u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPingInterval), 20u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPingInterval), 21u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 22u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled), 8u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled), 9u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel), 10u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel), 11u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SaveConfig), 12u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::ReloadConfig), 13u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 14u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase), 15u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase), 16u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsGameActive), 17u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnState), 18u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetSessionInfo), 19u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLastRtt), 20u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::ForceReconnect), 21u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetActiveProcessId), 22u);
 }
 
 /**
  * @test Verify Get/Set commands are paired (Get is even, Set is odd)
  */
 TEST(command_ids_get_set_pairing) {
-    // Get commands should be even
+    // Config Get/Set pairs (Get is even, Set is odd)
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPassphrase) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetServerAddress) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUseTls) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled) % 2, 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLogToFile) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetConnectTimeout) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPingInterval) % 2, 0u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p) % 2, 1u);  // 23, odd index
 
-    // Set commands should be odd and immediately follow Get
+    // Config Set commands immediately follow Get
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase),
               static_cast<u32>(ConfigCmd::GetPassphrase) + 1);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress),
               static_cast<u32>(ConfigCmd::GetServerAddress) + 1);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled),
               static_cast<u32>(ConfigCmd::GetLdnEnabled) + 1);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUseTls),
-              static_cast<u32>(ConfigCmd::GetUseTls) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled),
+              static_cast<u32>(ConfigCmd::GetDebugEnabled) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel),
+              static_cast<u32>(ConfigCmd::GetDebugLevel) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase),
+              static_cast<u32>(ConfigCmd::GetUsePassphrase) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p),
+              static_cast<u32>(ConfigCmd::GetDisableP2p) + 1);
 }
 
 /**
  * @test Verify total command count
  */
-TEST(command_count_is_23) {
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 22u);
-    // Commands 0-22 = 23 total commands
+TEST(command_count_is_25) {
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 24u);
+    // Commands 0-24 = 25 total commands
 }
 
 //=============================================================================
@@ -745,17 +697,6 @@ TEST(ldn_enabled_set_get_roundtrip) {
     ASSERT_EQ(enabled, 1u);
 }
 
-/**
- * @test UseTls default is true
- */
-TEST(use_tls_default_true) {
-    mock::MockConfigService svc;
-    u32 enabled = 0;
-
-    svc.GetUseTls(enabled);
-
-    ASSERT_EQ(enabled, 1u);
-}
 
 /**
  * @test DebugEnabled default is false
@@ -769,17 +710,6 @@ TEST(debug_enabled_default_false) {
     ASSERT_EQ(enabled, 0u);
 }
 
-/**
- * @test LogToFile default is false
- */
-TEST(log_to_file_default_false) {
-    mock::MockConfigService svc;
-    u32 enabled = 1;
-
-    svc.GetLogToFile(enabled);
-
-    ASSERT_EQ(enabled, 0u);
-}
 
 /**
  * @test Non-zero values for Set are treated as true
@@ -827,107 +757,6 @@ TEST(debug_level_set_get_roundtrip) {
         ASSERT_EQ(level, i);
     }
 }
-
-//=============================================================================
-// ConfigService - Timeout Tests
-//=============================================================================
-
-/**
- * @test ConnectTimeout default is 5000ms
- */
-TEST(connect_timeout_default) {
-    mock::MockConfigService svc;
-    u32 timeout = 0;
-
-    svc.GetConnectTimeout(timeout);
-
-    ASSERT_EQ(timeout, 5000u);
-}
-
-/**
- * @test SetConnectTimeout/GetConnectTimeout roundtrip
- */
-TEST(connect_timeout_set_get_roundtrip) {
-    mock::MockConfigService svc;
-
-    svc.SetConnectTimeout(15000);
-    u32 timeout = 0;
-    svc.GetConnectTimeout(timeout);
-
-    ASSERT_EQ(timeout, 15000u);
-}
-
-/**
- * @test PingInterval default is 10000ms
- */
-TEST(ping_interval_default) {
-    mock::MockConfigService svc;
-    u32 interval = 0;
-
-    svc.GetPingInterval(interval);
-
-    ASSERT_EQ(interval, 10000u);
-}
-
-/**
- * @test SetPingInterval/GetPingInterval roundtrip
- */
-TEST(ping_interval_set_get_roundtrip) {
-    mock::MockConfigService svc;
-
-    svc.SetPingInterval(30000);
-    u32 interval = 0;
-    svc.GetPingInterval(interval);
-
-    ASSERT_EQ(interval, 30000u);
-}
-
-//=============================================================================
-// ConfigService - Edge Cases
-//=============================================================================
-
-/**
- * @test Multiple sequential Set calls overwrite previous value
- */
-TEST(multiple_sets_overwrite) {
-    mock::MockConfigService svc;
-
-    svc.SetConnectTimeout(1000);
-    svc.SetConnectTimeout(2000);
-    svc.SetConnectTimeout(3000);
-
-    u32 timeout = 0;
-    svc.GetConnectTimeout(timeout);
-
-    ASSERT_EQ(timeout, 3000u);
-}
-
-/**
- * @test Zero values are valid for timeouts
- */
-TEST(zero_timeout_is_valid) {
-    mock::MockConfigService svc;
-
-    svc.SetConnectTimeout(0);
-    u32 timeout = 99;
-    svc.GetConnectTimeout(timeout);
-
-    ASSERT_EQ(timeout, 0u);
-}
-
-/**
- * @test Maximum u32 values are valid
- */
-TEST(max_u32_values) {
-    mock::MockConfigService svc;
-
-    svc.SetConnectTimeout(0xFFFFFFFF);
-    u32 timeout = 0;
-    svc.GetConnectTimeout(timeout);
-
-    ASSERT_EQ(timeout, 0xFFFFFFFFu);
-}
-
 //=============================================================================
 // Main
 //=============================================================================
@@ -942,7 +771,7 @@ int main() {
     RUN_TEST(command_ids_start_from_zero);
     RUN_TEST(command_ids_are_sequential);
     RUN_TEST(command_ids_get_set_pairing);
-    RUN_TEST(command_count_is_23);
+    RUN_TEST(command_count_is_25);
 
     printf("\n--- Structure Size Tests ---\n");
     RUN_TEST(server_address_ipc_size);
@@ -971,9 +800,6 @@ int main() {
     printf("\n--- Boolean Settings Tests ---\n");
     RUN_TEST(ldn_enabled_default_true);
     RUN_TEST(ldn_enabled_set_get_roundtrip);
-    RUN_TEST(use_tls_default_true);
-    RUN_TEST(debug_enabled_default_false);
-    RUN_TEST(log_to_file_default_false);
     RUN_TEST(boolean_nonzero_is_true);
 
     printf("\n--- Debug Level Tests ---\n");
@@ -981,15 +807,6 @@ int main() {
     RUN_TEST(debug_level_set_get_roundtrip);
 
     printf("\n--- Timeout Tests ---\n");
-    RUN_TEST(connect_timeout_default);
-    RUN_TEST(connect_timeout_set_get_roundtrip);
-    RUN_TEST(ping_interval_default);
-    RUN_TEST(ping_interval_set_get_roundtrip);
-
-    printf("\n--- Edge Cases ---\n");
-    RUN_TEST(multiple_sets_overwrite);
-    RUN_TEST(zero_timeout_is_valid);
-    RUN_TEST(max_u32_values);
 
     printf("\n========================================\n");
     printf("  Results: %d/%d passed\n", g_tests_passed, g_tests_run);

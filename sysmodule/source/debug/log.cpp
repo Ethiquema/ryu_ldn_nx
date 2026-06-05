@@ -170,7 +170,6 @@ Logger::~Logger() {
 void Logger::init(const config::DebugConfig& config, const char* log_path) {
     m_enabled = config.enabled;
     m_level = static_cast<LogLevel>(config.level);
-    m_log_to_file = config.log_to_file;
 
     if (log_path != nullptr) {
         safe_strcpy(m_log_path, log_path, sizeof(m_log_path) - 1);
@@ -191,7 +190,7 @@ void Logger::init(const config::DebugConfig& config, const char* log_path) {
     if (m_enabled) {
         log(LogLevel::Info, "Logger initialized (level=%u, file=%s)",
             static_cast<uint32_t>(m_level),
-            m_log_to_file ? "enabled" : "disabled");
+            m_enabled ? "enabled" : "disabled");
     }
 }
 
@@ -246,7 +245,7 @@ void Logger::output_message(const char* message) {
     std::printf("%s\n", message);
 
     // Output to file if enabled
-    if (m_log_to_file) {
+    if (m_enabled) {
         // Open file on-demand if not already open
         if (!m_file_open) {
             open_file();

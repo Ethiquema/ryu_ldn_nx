@@ -107,13 +107,6 @@ TEST(default_values) {
     // Server defaults
     ASSERT_STREQ(config.server.host, "90.93.156.13");
     ASSERT_EQ(config.server.port, 30456);
-    ASSERT_EQ(config.server.use_tls, false);
-
-    // Network defaults
-    ASSERT_EQ(config.network.connect_timeout_ms, 5000u);
-    ASSERT_EQ(config.network.ping_interval_ms, 10000u);
-    ASSERT_EQ(config.network.reconnect_delay_ms, 3000u);
-    ASSERT_EQ(config.network.max_reconnect_attempts, 5u);
 
     // LDN defaults
     ASSERT_EQ(config.ldn.enabled, true);
@@ -122,7 +115,6 @@ TEST(default_values) {
     // Debug defaults
     ASSERT_EQ(config.debug.enabled, false);
     ASSERT_EQ(config.debug.level, 1u);
-    ASSERT_EQ(config.debug.log_to_file, false);
 }
 
 // ============================================================================
@@ -143,8 +135,7 @@ TEST(parse_server_section) {
     const char* content =
         "[server]\n"
         "host = 192.168.1.100\n"
-        "port = 12345\n"
-        "use_tls = 0\n";
+        "port = 12345\n";
 
     TempConfigFile file(content);
     Config config = get_default_config();
@@ -153,26 +144,6 @@ TEST(parse_server_section) {
     ASSERT_EQ(result, ConfigResult::Success);
     ASSERT_STREQ(config.server.host, "192.168.1.100");
     ASSERT_EQ(config.server.port, 12345);
-    ASSERT_EQ(config.server.use_tls, false);
-}
-
-TEST(parse_network_section) {
-    const char* content =
-        "[network]\n"
-        "connect_timeout = 10000\n"
-        "ping_interval = 5000\n"
-        "reconnect_delay = 1000\n"
-        "max_reconnect_attempts = 10\n";
-
-    TempConfigFile file(content);
-    Config config = get_default_config();
-    ConfigResult result = load_config(file.path(), config);
-
-    ASSERT_EQ(result, ConfigResult::Success);
-    ASSERT_EQ(config.network.connect_timeout_ms, 10000u);
-    ASSERT_EQ(config.network.ping_interval_ms, 5000u);
-    ASSERT_EQ(config.network.reconnect_delay_ms, 1000u);
-    ASSERT_EQ(config.network.max_reconnect_attempts, 10u);
 }
 
 TEST(parse_ldn_section) {
@@ -194,8 +165,7 @@ TEST(parse_debug_section) {
     const char* content =
         "[debug]\n"
         "enabled = 1\n"
-        "level = 3\n"
-        "log_to_file = 1\n";
+        "level = 3\n";
 
     TempConfigFile file(content);
     Config config = get_default_config();
@@ -204,7 +174,6 @@ TEST(parse_debug_section) {
     ASSERT_EQ(result, ConfigResult::Success);
     ASSERT_EQ(config.debug.enabled, true);
     ASSERT_EQ(config.debug.level, 3u);
-    ASSERT_EQ(config.debug.log_to_file, true);
 }
 
 TEST(parse_comments_ignored) {
@@ -315,13 +284,6 @@ TEST(full_config_example) {
         "[server]\n"
         "host = custom.ldn.server\n"
         "port = 30000\n"
-        "use_tls = 1\n"
-        "\n"
-        "[network]\n"
-        "connect_timeout = 8000\n"
-        "ping_interval = 15000\n"
-        "reconnect_delay = 2000\n"
-        "max_reconnect_attempts = 3\n"
         "\n"
         "[ldn]\n"
         "enabled = 1\n"
@@ -329,8 +291,7 @@ TEST(full_config_example) {
         "\n"
         "[debug]\n"
         "enabled = 1\n"
-        "level = 2\n"
-        "log_to_file = 0\n";
+        "level = 2\n";
 
     TempConfigFile file(content);
     Config config = get_default_config();
@@ -339,16 +300,10 @@ TEST(full_config_example) {
     ASSERT_EQ(result, ConfigResult::Success);
     ASSERT_STREQ(config.server.host, "custom.ldn.server");
     ASSERT_EQ(config.server.port, 30000);
-    ASSERT_EQ(config.server.use_tls, true);
-    ASSERT_EQ(config.network.connect_timeout_ms, 8000u);
-    ASSERT_EQ(config.network.ping_interval_ms, 15000u);
-    ASSERT_EQ(config.network.reconnect_delay_ms, 2000u);
-    ASSERT_EQ(config.network.max_reconnect_attempts, 3u);
     ASSERT_EQ(config.ldn.enabled, true);
     ASSERT_STREQ(config.ldn.passphrase, "myroom");
     ASSERT_EQ(config.debug.enabled, true);
     ASSERT_EQ(config.debug.level, 2u);
-    ASSERT_EQ(config.debug.log_to_file, false);
 }
 
 // ============================================================================
@@ -383,8 +338,6 @@ TEST(save_config_preserves_values) {
     // Modify some values
     strcpy(config.server.host, "test.example.com");
     config.server.port = 12345;
-    config.server.use_tls = false;
-    config.network.connect_timeout_ms = 9999;
     config.ldn.enabled = false;
     strcpy(config.ldn.passphrase, "testpass");
     config.debug.enabled = true;
@@ -400,8 +353,6 @@ TEST(save_config_preserves_values) {
     ASSERT_EQ(result, ConfigResult::Success);
     ASSERT_STREQ(loaded.server.host, "test.example.com");
     ASSERT_EQ(loaded.server.port, 12345);
-    ASSERT_EQ(loaded.server.use_tls, false);
-    ASSERT_EQ(loaded.network.connect_timeout_ms, 9999u);
     ASSERT_EQ(loaded.ldn.enabled, false);
     ASSERT_STREQ(loaded.ldn.passphrase, "testpass");
     ASSERT_EQ(loaded.debug.enabled, true);

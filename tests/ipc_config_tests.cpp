@@ -96,23 +96,12 @@ struct IpcServerAddress {
 };
 static_assert(sizeof(IpcServerAddress) == 68, "IpcServerAddress must be 68 bytes");
 
-// Network settings structure (for batch get)
-struct IpcNetworkSettings {
-    u32 connect_timeout_ms;
-    u32 ping_interval_ms;
-    u32 reconnect_delay_ms;
-    u32 max_reconnect_attempts;
-};
-static_assert(sizeof(IpcNetworkSettings) == 16, "IpcNetworkSettings must be 16 bytes");
-
 // Debug settings structure (for batch get)
 struct IpcDebugSettings {
     u32 enabled;      // bool as u32
     u32 level;        // 0-3
-    u32 log_to_file;  // bool as u32
-    u32 reserved;
 };
-static_assert(sizeof(IpcDebugSettings) == 16, "IpcDebugSettings must be 16 bytes");
+static_assert(sizeof(IpcDebugSettings) == 8, "IpcDebugSettings must be 8 bytes");
 
 // Config result codes
 enum class IpcConfigResult : u32 {
@@ -258,12 +247,8 @@ TEST(ipc_server_address_size) {
     ASSERT_EQ(sizeof(IpcServerAddress), 68u);
 }
 
-TEST(ipc_network_settings_size) {
-    ASSERT_EQ(sizeof(IpcNetworkSettings), 16u);
-}
-
 TEST(ipc_debug_settings_size) {
-    ASSERT_EQ(sizeof(IpcDebugSettings), 16u);
+    ASSERT_EQ(sizeof(IpcDebugSettings), 8u);
 }
 
 TEST(structures_are_pod) {
@@ -272,12 +257,6 @@ TEST(structures_are_pod) {
     IpcPassphrase p2;
     memcpy(&p2, &p1, sizeof(IpcPassphrase));
     ASSERT_EQ(p2.passphrase[0], '\0');
-
-    IpcNetworkSettings n1 = {1000, 2000, 3000, 5};
-    IpcNetworkSettings n2;
-    memcpy(&n2, &n1, sizeof(IpcNetworkSettings));
-    ASSERT_EQ(n2.connect_timeout_ms, 1000u);
-    ASSERT_EQ(n2.ping_interval_ms, 2000u);
 }
 
 //=============================================================================
@@ -451,30 +430,6 @@ TEST(config_result_values) {
 }
 
 //=============================================================================
-// Network Settings Tests
-//=============================================================================
-
-TEST(network_settings_zero_init) {
-    IpcNetworkSettings settings = {};
-    ASSERT_EQ(settings.connect_timeout_ms, 0u);
-    ASSERT_EQ(settings.ping_interval_ms, 0u);
-    ASSERT_EQ(settings.reconnect_delay_ms, 0u);
-    ASSERT_EQ(settings.max_reconnect_attempts, 0u);
-}
-
-TEST(network_settings_assignment) {
-    IpcNetworkSettings settings = {};
-    settings.connect_timeout_ms = 5000;
-    settings.ping_interval_ms = 10000;
-    settings.reconnect_delay_ms = 3000;
-    settings.max_reconnect_attempts = 10;
-    ASSERT_EQ(settings.connect_timeout_ms, 5000u);
-    ASSERT_EQ(settings.ping_interval_ms, 10000u);
-    ASSERT_EQ(settings.reconnect_delay_ms, 3000u);
-    ASSERT_EQ(settings.max_reconnect_attempts, 10u);
-}
-
-//=============================================================================
 // Debug Settings Tests
 //=============================================================================
 
@@ -482,19 +437,14 @@ TEST(debug_settings_zero_init) {
     IpcDebugSettings settings = {};
     ASSERT_EQ(settings.enabled, 0u);
     ASSERT_EQ(settings.level, 0u);
-    ASSERT_EQ(settings.log_to_file, 0u);
-    ASSERT_EQ(settings.reserved, 0u);
 }
 
 TEST(debug_settings_assignment) {
     IpcDebugSettings settings = {};
     settings.enabled = 1;
     settings.level = 2;
-    settings.log_to_file = 1;
-    settings.reserved = 0;
     ASSERT_EQ(settings.enabled, 1u);
     ASSERT_EQ(settings.level, 2u);
-    ASSERT_EQ(settings.log_to_file, 1u);
 }
 
 //=============================================================================
@@ -566,7 +516,6 @@ int main() {
     printf("\n--- Structure Size Tests ---\n");
     RUN_TEST(ipc_passphrase_size);
     RUN_TEST(ipc_server_address_size);
-    RUN_TEST(ipc_network_settings_size);
     RUN_TEST(ipc_debug_settings_size);
     RUN_TEST(structures_are_pod);
 
@@ -608,9 +557,6 @@ int main() {
     printf("\n--- Config Result Tests ---\n");
     RUN_TEST(config_result_values);
 
-    printf("\n--- Network Settings Tests ---\n");
-    RUN_TEST(network_settings_zero_init);
-    RUN_TEST(network_settings_assignment);
 
     printf("\n--- Debug Settings Tests ---\n");
     RUN_TEST(debug_settings_zero_init);

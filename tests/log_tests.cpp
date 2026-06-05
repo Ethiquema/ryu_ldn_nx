@@ -105,7 +105,7 @@ TEST(logger_init_disabled) {
     DebugConfig config{};
     config.enabled = false;
     config.level = 3;
-    config.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config);
@@ -117,7 +117,7 @@ TEST(logger_init_enabled) {
     DebugConfig config{};
     config.enabled = true;
     config.level = 2;
-    config.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config);
@@ -130,7 +130,7 @@ TEST(logger_should_log_level_filtering) {
     DebugConfig config{};
     config.enabled = true;
     config.level = 1;  // Warning level
-    config.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config);
@@ -147,7 +147,7 @@ TEST(logger_should_log_all_levels) {
     DebugConfig config{};
     config.enabled = true;
     config.level = 3;  // Verbose (all levels)
-    config.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config);
@@ -162,7 +162,7 @@ TEST(logger_disabled_never_logs) {
     DebugConfig config{};
     config.enabled = false;
     config.level = 3;  // Even at verbose
-    config.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config);
@@ -218,7 +218,7 @@ TEST(logger_file_output_enabled) {
     DebugConfig config{};
     config.enabled = true;
     config.level = 3;
-    config.log_to_file = true;
+    
 
     Logger logger;
     logger.init(config, log_path);
@@ -248,15 +248,15 @@ TEST(logger_file_output_disabled) {
     std::remove(log_path);
 
     DebugConfig config{};
-    config.enabled = true;
+    config.enabled = false;
     config.level = 3;
-    config.log_to_file = false;  // File logging disabled
+    // Debug disabled = no file output
 
     Logger logger;
     logger.init(config, log_path);
 
     // Log a message
-    logger.log(LogLevel::Info, "This should not go to file");
+    logger.log(LogLevel::Info, "This should not be logged");
 
     // File should NOT exist
     std::ifstream f(log_path);
@@ -331,7 +331,7 @@ TEST(logger_from_full_config) {
     Config config = get_default_config();
     config.debug.enabled = true;
     config.debug.level = 2;
-    config.debug.log_to_file = false;
+    
 
     Logger logger;
     logger.init(config.debug);
@@ -424,7 +424,7 @@ TEST(logger_flush_without_file) {
     DebugConfig cfg;
     cfg.enabled = true;
     cfg.level = 3;
-    cfg.log_to_file = false;
+    
     logger.init(cfg);
 
     // flush() without open file should not crash
@@ -436,7 +436,7 @@ TEST(logger_flush_with_file) {
     DebugConfig cfg;
     cfg.enabled = true;
     cfg.level = 3;
-    cfg.log_to_file = true;
+    
     char path[256];
     std::snprintf(path, sizeof(path),
                   "/tmp/test_flush_%d.log", rand());
@@ -454,7 +454,7 @@ TEST(logger_check_idle_timeout_no_file) {
     DebugConfig cfg;
     cfg.enabled = true;
     cfg.level = 3;
-    cfg.log_to_file = false;
+    
     logger.init(cfg);
 
     // check_idle_timeout without open file should not crash
@@ -466,7 +466,7 @@ TEST(logger_check_idle_timeout_with_file) {
     DebugConfig cfg;
     cfg.enabled = true;
     cfg.level = 3;
-    cfg.log_to_file = true;
+    
     char path[256];
     std::snprintf(path, sizeof(path),
                   "/tmp/test_idle_%d.log", rand());

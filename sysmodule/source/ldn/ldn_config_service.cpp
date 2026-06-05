@@ -147,64 +147,71 @@ Result LdnConfigService::SetLdnEnabled(u32 enabled) {
 }
 
 Result LdnConfigService::GetUseTls(sf::Out<u32> out) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetUseTls() ? 1 : 0;
+    *out = 0;  // TLS is never used — always plain TCP
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetUseTls(u32 enabled) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetUseTls(enabled != 0);
+    // TLS is not implemented. Log warning if enabled is requested.
+    if (enabled != 0) {
+        // TLS not supported — no-op
+    }
     R_SUCCEED();
 }
 
+
+// ============================================================================
+
+// Network Timeout Stubs (hardcoded values)
+// ============================================================================
+
 Result LdnConfigService::GetConnectTimeout(sf::Out<u32> out) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetConnectTimeout();
+    *out = 5000;  // Hardcoded: 5s connection timeout
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetConnectTimeout(u32 timeout_ms) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetConnectTimeout(timeout_ms);
+    // Network timeouts are now hardcoded. Kept for IPC protocol compatibility.
+    (void)timeout_ms;  // Suppress unused warning
     R_SUCCEED();
 }
 
 Result LdnConfigService::GetPingInterval(sf::Out<u32> out) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetPingInterval();
+    *out = 0;  // Hardcoded: server drives pings
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetPingInterval(u32 interval_ms) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetPingInterval(interval_ms);
+    // Ping interval is now hardcoded at 0. Kept for IPC protocol compatibility.
+    (void)interval_ms;  // Suppress unused warning
     R_SUCCEED();
 }
 
 Result LdnConfigService::GetReconnectDelay(sf::Out<u32> out) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetReconnectDelay();
+    *out = 1000;  // Hardcoded: 1s initial reconnect delay
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetReconnectDelay(u32 delay_ms) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetReconnectDelay(delay_ms);
+    // Reconnect delay is now hardcoded. Kept for IPC protocol compatibility.
+    (void)delay_ms;  // Suppress unused warning
     R_SUCCEED();
 }
 
 Result LdnConfigService::GetMaxReconnectAttempts(sf::Out<u32> out) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetMaxReconnectAttempts();
+    *out = 0;  // Hardcoded: auto-reconnect disabled
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetMaxReconnectAttempts(u32 attempts) {
-    auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetMaxReconnectAttempts(attempts);
+    // Max reconnect attempts is now hardcoded. Kept for IPC protocol compatibility.
+    (void)attempts;  // Suppress unused warning
     R_SUCCEED();
 }
+
+// ============================================================================
+// Debug Settings
+// ============================================================================
 
 Result LdnConfigService::GetDebugLevel(sf::Out<u32> out) {
     auto& cfg = ryu_ldn::config::ConfigManager::Instance();
@@ -220,13 +227,13 @@ Result LdnConfigService::SetDebugLevel(u32 level) {
 
 Result LdnConfigService::GetLogToFile(sf::Out<u32> out) {
     auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    *out = cfg.GetLogToFile() ? 1 : 0;
+    *out = cfg.GetDebugEnabled() ? 1 : 0;  // Maps to debug.enabled
     R_SUCCEED();
 }
 
 Result LdnConfigService::SetLogToFile(u32 enabled) {
     auto& cfg = ryu_ldn::config::ConfigManager::Instance();
-    cfg.SetLogToFile(enabled != 0);
+    cfg.SetDebugEnabled(enabled != 0);  // Maps to debug.enabled
     R_SUCCEED();
 }
 

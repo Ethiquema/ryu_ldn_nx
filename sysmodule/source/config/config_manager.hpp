@@ -148,64 +148,6 @@ public:
     /// @gdb{tag="CONFIG:MGR", msg="Setting server port"}
     void SetServerPort(uint16_t port);
 
-    /**
-     * @brief Get TLS enabled state
-     */
-    bool GetUseTls() const { return m_config.server.use_tls; }
-
-    /**
-     * @brief Set TLS enabled state
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting TLS enabled state"}
-    void SetUseTls(bool enabled);
-
-    // =========================================================================
-    // Network Settings
-    // =========================================================================
-
-    /**
-     * @brief Get connection timeout (ms)
-     */
-    uint32_t GetConnectTimeout() const { return m_config.network.connect_timeout_ms; }
-
-    /**
-     * @brief Set connection timeout (ms)
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting connect timeout"}
-    void SetConnectTimeout(uint32_t timeout_ms);
-
-    /**
-     * @brief Get ping interval (ms)
-     */
-    uint32_t GetPingInterval() const { return m_config.network.ping_interval_ms; }
-
-    /**
-     * @brief Set ping interval (ms)
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting ping interval"}
-    void SetPingInterval(uint32_t interval_ms);
-
-    /**
-     * @brief Get reconnect delay (ms)
-     */
-    uint32_t GetReconnectDelay() const { return m_config.network.reconnect_delay_ms; }
-
-    /**
-     * @brief Set reconnect delay (ms)
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting reconnect delay"}
-    void SetReconnectDelay(uint32_t delay_ms);
-
-    /**
-     * @brief Get max reconnect attempts
-     */
-    uint32_t GetMaxReconnectAttempts() const { return m_config.network.max_reconnect_attempts; }
-
-    /**
-     * @brief Set max reconnect attempts (0 = infinite)
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting max reconnect attempts"}
-    void SetMaxReconnectAttempts(uint32_t attempts);
 
     // =========================================================================
     // LDN Settings
@@ -240,17 +182,21 @@ public:
     bool SetPassphrase(const char* passphrase);
 
     /**
-     * @brief Get network interface name
+     * @brief Get use_passphrase state
      */
-    const char* GetInterfaceName() const { return m_config.ldn.interface_name; }
+    bool GetUsePassphrase() const { return m_config.ldn.use_passphrase; }
 
     /**
-     * @brief Set network interface name
+     * @brief Set use_passphrase state
      *
-     * @param name Interface name (empty = auto-detect)
+     * When true, LDN rooms are filtered by passphrase. When false,
+     * the sysmodule connects to public rooms regardless of passphrase.
+     *
+     * @param enabled 1 to enable passphrase filtering, 0 for public
      */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting interface name"}
-    void SetInterfaceName(const char* name);
+    /// @gdb{tag="CONFIG:MGR", msg="Setting use_passphrase"}
+    void SetUsePassphrase(bool enabled);
+
 
     // =========================================================================
     // Debug Settings
@@ -278,16 +224,6 @@ public:
     /// @gdb{tag="CONFIG:MGR", msg="Setting debug level"}
     void SetDebugLevel(uint32_t level);
 
-    /**
-     * @brief Get log to file state
-     */
-    bool GetLogToFile() const { return m_config.debug.log_to_file; }
-
-    /**
-     * @brief Set log to file state
-     */
-    /// @gdb{tag="CONFIG:MGR", msg="Setting log to file"}
-    void SetLogToFile(bool enabled);
 
     // =========================================================================
     // Change Notification

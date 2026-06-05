@@ -259,16 +259,13 @@ bool test_config_from_app_config() {
     config::Config app_cfg = config::get_default_config();
     std::strncpy(app_cfg.server.host, "192.168.1.100", sizeof(app_cfg.server.host));
     app_cfg.server.port = 12345;
-    app_cfg.network.connect_timeout_ms = 10000;
-    app_cfg.network.max_reconnect_attempts = 0;
-    app_cfg.network.reconnect_delay_ms = 2000;
 
     RyuLdnClientConfig cfg(app_cfg);
     ASSERT_STREQ(cfg.host, "192.168.1.100");
     ASSERT_EQ(cfg.port, 12345);
-    ASSERT_EQ(cfg.connect_timeout_ms, 10000);
+    ASSERT_EQ(cfg.connect_timeout_ms, 5000);
     ASSERT_EQ(cfg.ping_interval_ms, 0);  // ping_interval is forced to 0
-    ASSERT_EQ(cfg.reconnect.initial_delay_ms, 2000);
+    ASSERT_EQ(cfg.reconnect.initial_delay_ms, 1000);
     return true;
 }
 

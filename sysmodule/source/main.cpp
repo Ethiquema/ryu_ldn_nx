@@ -380,8 +380,7 @@ namespace ams {
 
             // Load game whitelist from file (once at startup)
             ryu_ldn::config::LoadWhitelist();
-            LOG_VERBOSE("Server: %s:%u, TLS: %s", config.server.host, config.server.port,
-                        config.server.use_tls ? "enabled" : "disabled");
+            LOG_VERBOSE("Server: %s:%u", config.server.host, config.server.port);
 
             // Initialize network services
             R_ABORT_UNLESS(nifmInitialize(NifmServiceType_Admin));

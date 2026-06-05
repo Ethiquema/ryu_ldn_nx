@@ -29,7 +29,8 @@ TARGET      := ryu_ldn_nx_overlay
 BUILD       := build
 SOURCES     := source
 DATA        := data
-INCLUDES    := include
+INCLUDES    := include \
+               source
 
 NO_ICON     := 1
 
@@ -96,15 +97,20 @@ ifneq ($(BUILD),$(notdir $(CURDIR)))
 export OUTPUT   := $(CURDIR)/$(TARGET)
 export TOPDIR   := $(CURDIR)
 
-export VPATH    := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-                   $(foreach dir,$(DATA),$(CURDIR)/$(dir))
+# Recherche récursive de tous les dossiers sources
+SOURCE_DIRS := $(shell find $(SOURCES) -type d)
 
-export DEPSDIR  := $(CURDIR)/$(BUILD)
+export VPATH := \
+	$(foreach dir,$(SOURCE_DIRS),$(CURDIR)/$(dir)) \
+	$(foreach dir,$(DATA),$(CURDIR)/$(dir))
 
-CFILES      := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES    := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-SFILES      := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES    := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+export DEPSDIR := $(CURDIR)/$(BUILD)
+
+CFILES := $(foreach dir,$(SOURCE_DIRS),$(notdir $(wildcard $(dir)/*.c)))
+CPPFILES := $(foreach dir,$(SOURCE_DIRS),$(notdir $(wildcard $(dir)/*.cpp)))
+SFILES := $(foreach dir,$(SOURCE_DIRS),$(notdir $(wildcard $(dir)/*.s)))
+
+BINFILES := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 #---------------------------------------------------------------------------------
 # use CXX for linking C++ projects, CC for standard C

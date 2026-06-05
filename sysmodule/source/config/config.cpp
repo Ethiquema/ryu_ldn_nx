@@ -90,7 +90,6 @@ uint16_t parse_uint16(const char* value) {
 enum class Section {
     None,
     Server,
-    Network,
     Ldn,
     Debug,
     Unknown
@@ -101,7 +100,6 @@ enum class Section {
  */
 Section parse_section(const char* line) {
     if (std::strcmp(line, "[server]") == 0) return Section::Server;
-    if (std::strcmp(line, "[network]") == 0) return Section::Network;
     if (std::strcmp(line, "[ldn]") == 0) return Section::Ldn;
     if (std::strcmp(line, "[debug]") == 0) return Section::Debug;
     if (line[0] == '[') return Section::Unknown;
@@ -116,23 +114,6 @@ void process_server_key(const char* key, const char* value, ServerConfig& config
         safe_strcpy(config.host, value, MAX_HOST_LENGTH);
     } else if (std::strcmp(key, "port") == 0) {
         config.port = parse_uint16(value);
-    } else if (std::strcmp(key, "use_tls") == 0) {
-        config.use_tls = parse_bool(value);
-    }
-}
-
-/**
- * @brief Process a key=value line for network section
- */
-void process_network_key(const char* key, const char* value, NetworkConfig& config) {
-    if (std::strcmp(key, "connect_timeout") == 0) {
-        config.connect_timeout_ms = parse_uint32(value);
-    } else if (std::strcmp(key, "ping_interval") == 0) {
-        config.ping_interval_ms = parse_uint32(value);
-    } else if (std::strcmp(key, "reconnect_delay") == 0) {
-        config.reconnect_delay_ms = parse_uint32(value);
-    } else if (std::strcmp(key, "max_reconnect_attempts") == 0) {
-        config.max_reconnect_attempts = parse_uint32(value);
     }
 }
 
@@ -144,8 +125,8 @@ void process_ldn_key(const char* key, const char* value, LdnConfig& config) {
         config.enabled = parse_bool(value);
     } else if (std::strcmp(key, "passphrase") == 0) {
         safe_strcpy(config.passphrase, value, MAX_PASSPHRASE_LENGTH);
-    } else if (std::strcmp(key, "interface") == 0) {
-        safe_strcpy(config.interface_name, value, MAX_INTERFACE_LENGTH);
+    } else if (std::strcmp(key, "use_passphrase") == 0) {
+        config.use_passphrase = parse_bool(value);
     } else if (std::strcmp(key, "disable_p2p") == 0) {
         config.disable_p2p = parse_bool(value);
     }
@@ -159,8 +140,6 @@ void process_debug_key(const char* key, const char* value, DebugConfig& config) 
         config.enabled = parse_bool(value);
     } else if (std::strcmp(key, "level") == 0) {
         config.level = parse_uint32(value);
-    } else if (std::strcmp(key, "log_to_file") == 0) {
-        config.log_to_file = parse_bool(value);
     }
 }
 
@@ -219,9 +198,6 @@ void parse_config_content(const char* content, size_t size, Config& config) {
                                     case Section::Server:
                                         process_server_key(key_buf, trimmed_value, config.server);
                                         break;
-                                    case Section::Network:
-                                        process_network_key(key_buf, trimmed_value, config.network);
-                                        break;
                                     case Section::Ldn:
                                         process_ldn_key(key_buf, trimmed_value, config.ldn);
                                         break;
@@ -270,29 +246,17 @@ size_t format_config_content(char* buffer, size_t buffer_size, const Config& con
     WRITE_LINE("; Server hostname or IP address");
     WRITE_LINE("host = %s", config.server.host);
     WRITE_LINE("; Server port");
-    WRITE_LINE("port = %u", config.server.port);
-    WRITE_LINE("; Use TLS encryption (0/1)");
-    WRITE_LINE("use_tls = %d", config.server.use_tls ? 1 : 0);
     WRITE_LINE("");
 
-    WRITE_LINE("[network]");
-    WRITE_LINE("; Connection timeout in milliseconds");
-    WRITE_LINE("connect_timeout = %u", config.network.connect_timeout_ms);
-    WRITE_LINE("; Ping interval in milliseconds");
-    WRITE_LINE("ping_interval = %u", config.network.ping_interval_ms);
-    WRITE_LINE("; Reconnect delay in milliseconds");
-    WRITE_LINE("reconnect_delay = %u", config.network.reconnect_delay_ms);
-    WRITE_LINE("; Max reconnect attempts (0 = disable auto-reconnect)");
-    WRITE_LINE("max_reconnect_attempts = %u", config.network.max_reconnect_attempts);
     WRITE_LINE("");
 
     WRITE_LINE("[ldn]");
     WRITE_LINE("; Enable LDN emulation (0/1)");
     WRITE_LINE("enabled = %d", config.ldn.enabled ? 1 : 0);
+    WRITE_LINE("; Enable passphrase filtering (0/1)");
+    WRITE_LINE("use_passphrase = %d", config.ldn.use_passphrase ? 1 : 0);
     WRITE_LINE("; Room passphrase (empty = public)");
     WRITE_LINE("passphrase = %s", config.ldn.passphrase);
-    WRITE_LINE("; Network interface (empty = auto)");
-    WRITE_LINE("interface = %s", config.ldn.interface_name);
     WRITE_LINE("; Disable P2P proxy (0/1) - like Ryujinx MultiplayerDisableP2p");
     WRITE_LINE("disable_p2p = %d", config.ldn.disable_p2p ? 1 : 0);
     WRITE_LINE("");
@@ -302,8 +266,6 @@ size_t format_config_content(char* buffer, size_t buffer_size, const Config& con
     WRITE_LINE("enabled = %d", config.debug.enabled ? 1 : 0);
     WRITE_LINE("; Log level (0=errors, 1=warnings, 2=info, 3=verbose)");
     WRITE_LINE("level = %u", config.debug.level);
-    WRITE_LINE("; Log to file (0/1)");
-    WRITE_LINE("log_to_file = %d", config.debug.log_to_file ? 1 : 0);
 
     #undef WRITE_LINE
 
@@ -323,24 +285,16 @@ Config get_default_config() {
     // Server defaults
     safe_strcpy(config.server.host, DEFAULT_HOST, MAX_HOST_LENGTH);
     config.server.port = DEFAULT_PORT;
-    config.server.use_tls = DEFAULT_USE_TLS;
-
-    // Network defaults
-    config.network.connect_timeout_ms = DEFAULT_CONNECT_TIMEOUT_MS;
-    config.network.ping_interval_ms = DEFAULT_PING_INTERVAL_MS;
-    config.network.reconnect_delay_ms = DEFAULT_RECONNECT_DELAY_MS;
-    config.network.max_reconnect_attempts = DEFAULT_MAX_RECONNECT_ATTEMPTS;
 
     // LDN defaults
     config.ldn.enabled = DEFAULT_LDN_ENABLED;
     config.ldn.passphrase[0] = '\0';
-    config.ldn.interface_name[0] = '\0';
+    config.ldn.use_passphrase = DEFAULT_USE_PASSPHRASE;
     config.ldn.disable_p2p = DEFAULT_DISABLE_P2P;
 
     // Debug defaults
     config.debug.enabled = DEFAULT_DEBUG_ENABLED;
     config.debug.level = DEFAULT_DEBUG_LEVEL;
-    config.debug.log_to_file = DEFAULT_LOG_TO_FILE;
 
     return config;
 }
@@ -546,9 +500,6 @@ ConfigResult load_config(const char* path, Config& config) {
             case Section::Server:
                 process_server_key(key_buf, trimmed_value, config.server);
                 break;
-            case Section::Network:
-                process_network_key(key_buf, trimmed_value, config.network);
-                break;
             case Section::Ldn:
                 process_ldn_key(key_buf, trimmed_value, config.ldn);
                 break;
@@ -594,26 +545,15 @@ ConfigResult save_config(const char* path, const Config& config) {
     std::fprintf(file, "host = %s\n", config.server.host);
     std::fprintf(file, "; Server port\n");
     std::fprintf(file, "port = %u\n", config.server.port);
-    std::fprintf(file, "; Use TLS encryption (0/1)\n");
-    std::fprintf(file, "use_tls = %d\n\n", config.server.use_tls ? 1 : 0);
 
-    std::fprintf(file, "[network]\n");
-    std::fprintf(file, "; Connection timeout in milliseconds\n");
-    std::fprintf(file, "connect_timeout = %u\n", config.network.connect_timeout_ms);
-    std::fprintf(file, "; Ping interval in milliseconds\n");
-    std::fprintf(file, "ping_interval = %u\n", config.network.ping_interval_ms);
-    std::fprintf(file, "; Reconnect delay in milliseconds\n");
-    std::fprintf(file, "reconnect_delay = %u\n", config.network.reconnect_delay_ms);
-    std::fprintf(file, "; Max reconnect attempts (0 = disable auto-reconnect)\n");
-    std::fprintf(file, "max_reconnect_attempts = %u\n\n", config.network.max_reconnect_attempts);
 
     std::fprintf(file, "[ldn]\n");
     std::fprintf(file, "; Enable LDN emulation (0/1)\n");
     std::fprintf(file, "enabled = %d\n", config.ldn.enabled ? 1 : 0);
+    std::fprintf(file, "; Enable passphrase filtering (0/1)\n");
+    std::fprintf(file, "use_passphrase = %d\n", config.ldn.use_passphrase ? 1 : 0);
     std::fprintf(file, "; Room passphrase (empty = public)\n");
     std::fprintf(file, "passphrase = %s\n", config.ldn.passphrase);
-    std::fprintf(file, "; Network interface (empty = auto)\n");
-    std::fprintf(file, "interface = %s\n", config.ldn.interface_name);
     std::fprintf(file, "; Disable P2P proxy (0/1) - like Ryujinx MultiplayerDisableP2p\n");
     std::fprintf(file, "disable_p2p = %d\n\n", config.ldn.disable_p2p ? 1 : 0);
 
@@ -622,8 +562,6 @@ ConfigResult save_config(const char* path, const Config& config) {
     std::fprintf(file, "enabled = %d\n", config.debug.enabled ? 1 : 0);
     std::fprintf(file, "; Log level (0=errors, 1=warnings, 2=info, 3=verbose)\n");
     std::fprintf(file, "level = %u\n", config.debug.level);
-    std::fprintf(file, "; Log to file (0/1)\n");
-    std::fprintf(file, "log_to_file = %d\n", config.debug.log_to_file ? 1 : 0);
 
     std::fclose(file);
     return ConfigResult::Success;

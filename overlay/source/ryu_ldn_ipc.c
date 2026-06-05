@@ -3,6 +3,7 @@
  * @brief IPC client implementation for ryu_ldn_nx sysmodule
  *
  * Connects to the standalone ryu:cfg IPC service provided by the sysmodule.
+ * Command IDs match ConfigCmd in config_ipc_service.hpp.
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -14,41 +15,39 @@
 /**
  * IPC Command IDs for ryu:cfg service
  *
- * These are the command IDs for the standalone configuration service.
+ * These match the ConfigCmd enum in config_ipc_service.hpp.
+ * Obsolete commands (UseTls, LogToFile, ConnectTimeout, PingInterval)
+ * have been removed from the service and are no longer available.
  */
 enum {
-    // Configuration commands (0-22)
+    // Sysmodule Status (0-8)
     RyuCfgCmd_GetVersion          = 0,
     RyuCfgCmd_GetConnectionStatus = 1,
-    RyuCfgCmd_GetPassphrase       = 2,
-    RyuCfgCmd_SetPassphrase       = 3,
-    RyuCfgCmd_GetServerAddress    = 4,
-    RyuCfgCmd_SetServerAddress    = 5,
-    RyuCfgCmd_GetLdnEnabled       = 6,
-    RyuCfgCmd_SetLdnEnabled       = 7,
-    RyuCfgCmd_GetUseTls           = 8,
-    RyuCfgCmd_SetUseTls           = 9,
-    RyuCfgCmd_GetDebugEnabled     = 10,
-    RyuCfgCmd_SetDebugEnabled     = 11,
-    RyuCfgCmd_GetDebugLevel       = 12,
-    RyuCfgCmd_SetDebugLevel       = 13,
-    RyuCfgCmd_GetLogToFile        = 14,
-    RyuCfgCmd_SetLogToFile        = 15,
-    RyuCfgCmd_SaveConfig          = 16,
-    RyuCfgCmd_ReloadConfig        = 17,
-    RyuCfgCmd_GetConnectTimeout   = 18,
-    RyuCfgCmd_SetConnectTimeout   = 19,
-    RyuCfgCmd_GetPingInterval     = 20,
-    RyuCfgCmd_SetPingInterval     = 21,
-    RyuCfgCmd_IsServiceActive     = 22,
+    RyuCfgCmd_IsServiceActive     = 2,
+    RyuCfgCmd_IsGameActive        = 3,
+    RyuCfgCmd_GetLdnState         = 4,
+    RyuCfgCmd_GetSessionInfo      = 5,
+    RyuCfgCmd_GetLastRtt          = 6,
+    RyuCfgCmd_ForceReconnect      = 7,
+    RyuCfgCmd_GetActiveProcessId  = 8,
 
-    // Runtime LDN state commands (23-28)
-    RyuCfgCmd_IsGameActive        = 23,
-    RyuCfgCmd_GetLdnState         = 24,
-    RyuCfgCmd_GetSessionInfo      = 25,
-    RyuCfgCmd_GetLastRtt          = 26,
-    RyuCfgCmd_ForceReconnect      = 27,
-    RyuCfgCmd_GetActiveProcessId  = 28,
+    // Sysmodule Configuration (9-24)
+    RyuCfgCmd_GetLdnEnabled       = 9,
+    RyuCfgCmd_SetLdnEnabled       = 10,
+    RyuCfgCmd_GetServerAddress    = 11,
+    RyuCfgCmd_SetServerAddress    = 12,
+    RyuCfgCmd_GetUsePassphrase    = 13,
+    RyuCfgCmd_SetUsePassphrase    = 14,
+    RyuCfgCmd_GetPassphrase       = 15,
+    RyuCfgCmd_SetPassphrase       = 16,
+    RyuCfgCmd_GetDisableP2p       = 17,
+    RyuCfgCmd_SetDisableP2p       = 18,
+    RyuCfgCmd_GetDebugEnabled     = 19,
+    RyuCfgCmd_SetDebugEnabled     = 20,
+    RyuCfgCmd_GetDebugLevel       = 21,
+    RyuCfgCmd_SetDebugLevel       = 22,
+    RyuCfgCmd_SaveConfig          = 23,
+    RyuCfgCmd_ReloadConfig        = 24,
 };
 
 /// Global service handle
@@ -170,28 +169,12 @@ Result ryuLdnSetLdnEnabled(RyuLdnConfigService* s, u32 enabled) {
     return serviceDispatchIn(&s->s, RyuCfgCmd_SetLdnEnabled, enabled);
 }
 
-Result ryuLdnGetUseTls(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetUseTls, *enabled);
+Result ryuLdnGetUsePassphrase(RyuLdnConfigService* s, u32* enabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetUsePassphrase, *enabled);
 }
 
-Result ryuLdnSetUseTls(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetUseTls, enabled);
-}
-
-Result ryuLdnGetConnectTimeout(RyuLdnConfigService* s, u32* timeout_ms) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetConnectTimeout, *timeout_ms);
-}
-
-Result ryuLdnSetConnectTimeout(RyuLdnConfigService* s, u32 timeout_ms) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetConnectTimeout, timeout_ms);
-}
-
-Result ryuLdnGetPingInterval(RyuLdnConfigService* s, u32* interval_ms) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetPingInterval, *interval_ms);
-}
-
-Result ryuLdnSetPingInterval(RyuLdnConfigService* s, u32 interval_ms) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetPingInterval, interval_ms);
+Result ryuLdnSetUsePassphrase(RyuLdnConfigService* s, u32 enabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetUsePassphrase, enabled);
 }
 
 Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level) {
@@ -200,14 +183,6 @@ Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level) {
 
 Result ryuLdnSetDebugLevel(RyuLdnConfigService* s, u32 level) {
     return serviceDispatchIn(&s->s, RyuCfgCmd_SetDebugLevel, level);
-}
-
-Result ryuLdnGetLogToFile(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLogToFile, *enabled);
-}
-
-Result ryuLdnSetLogToFile(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetLogToFile, enabled);
 }
 
 Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
@@ -229,7 +204,7 @@ Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
 }
 
 //=============================================================================
-// Runtime LDN State Commands (23-28)
+// Runtime LDN State Commands (17-22)
 //=============================================================================
 
 Result ryuLdnIsGameActive(RyuLdnConfigService* s, u32* active) {
@@ -259,6 +234,18 @@ Result ryuLdnForceReconnect(RyuLdnConfigService* s) {
 
 Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid) {
     return serviceDispatchOut(&s->s, RyuCfgCmd_GetActiveProcessId, *pid);
+}
+
+//=============================================================================
+// P2P Proxy Control Commands (23-24)
+//=============================================================================
+
+Result ryuLdnGetDisableP2p(RyuLdnConfigService* s, u32* disabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDisableP2p, *disabled);
+}
+
+Result ryuLdnSetDisableP2p(RyuLdnConfigService* s, u32 disabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDisableP2p, disabled);
 }
 
 const char* ryuLdnStateToString(RyuLdnState state) {
