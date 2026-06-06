@@ -359,7 +359,7 @@ SocketResult Socket::create() {
  * 6. Verify connection succeeded
  * 7. Restore blocking mode
  *
- * @param host IP address (e.g., "90.93.156.13")
+ * @param host IP address (e.g., "ryuldnnx.ddns.net")
  * @param port TCP port number (e.g., 30456)
  * @param timeout_ms Connection timeout in milliseconds (0 = blocking/no timeout)
  *

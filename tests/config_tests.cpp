@@ -105,7 +105,7 @@ TEST(default_values) {
     Config config = get_default_config();
 
     // Server defaults
-    ASSERT_STREQ(config.server.host, "90.93.156.13");
+    ASSERT_STREQ(config.server.host, "ryuldnnx.ddns.net");
     ASSERT_EQ(config.server.port, 30456);
 
     // LDN defaults
@@ -134,7 +134,7 @@ TEST(parse_empty_file) {
 
     ASSERT_EQ(result, ConfigResult::Success);
     // Should have defaults
-    ASSERT_STREQ(config.server.host, "90.93.156.13");
+    ASSERT_STREQ(config.server.host, "ryuldnnx.ddns.net");
 }
 
 TEST(parse_server_section) {
@@ -254,7 +254,7 @@ TEST(file_not_found) {
 
     ASSERT_EQ(result, ConfigResult::FileNotFound);
     // Config should still have defaults
-    ASSERT_STREQ(config.server.host, "90.93.156.13");
+    ASSERT_STREQ(config.server.host, "ryuldnnx.ddns.net");
 }
 
 TEST(passphrase_truncated) {

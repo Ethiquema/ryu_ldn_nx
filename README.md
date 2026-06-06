@@ -13,7 +13,7 @@ This project is still under development and is not ready for release yet.
 
 If you want to test the project and contribute, please use a private RyuLDN server, please DO NOT USE the official Ryujinx LDN servers with this project (ldn.ryujinx.app).
 
-A hosted testing instance is also available via IP address at 90.93.156.13.
+A hosted testing instance is also available via IP address at ryuldnnx.ddns.net.
 
 ## What is ryu_ldn_nx?
 
@@ -64,7 +64,7 @@ Create `sdmc:/config/ryu_ldn_nx/config.ini` (or let the sysmodule auto-create it
 
 ```ini
 [server]
-host = 90.93.156.13    ; IP address or hostname
+host = ryuldnnx.ddns.net    ; IP address or hostname
 port = 30456
 use_tls = 0                      ; NOT IMPLEMENTED — no TLS code exists
 

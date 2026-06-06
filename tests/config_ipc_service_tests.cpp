@@ -193,7 +193,7 @@ void init_mock_config() {
     std::memset(&g_mock_config, 0, sizeof(g_mock_config));
 
     // Server defaults
-    std::strncpy(g_mock_config.server.host, "90.93.156.13",
+    std::strncpy(g_mock_config.server.host, "ryuldnnx.ddns.net",
                  sizeof(g_mock_config.server.host) - 1);
     g_mock_config.server.port = 30456;
 
@@ -652,7 +652,7 @@ TEST(get_server_address_default) {
     Result r = svc.GetServerAddress(addr);
 
     ASSERT_SUCCESS(r);
-    ASSERT_STREQ(addr.host, "90.93.156.13");
+    ASSERT_STREQ(addr.host, "ryuldnnx.ddns.net");
     ASSERT_EQ(addr.port, 30456u);
 }
 
