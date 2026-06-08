@@ -12,38 +12,47 @@
  * 3. **ConfigService Logic Tests**: Test service method behavior via mock config
  * 4. **ConfigResult Tests**: Verify result code values
  *
- * ## ryu:cfg Command IDs (0-25)
+ * ## ryu:cfg Command IDs (0-24)
+ *
+ * ### Sysmodule Status (0-8)
  *
  * | ID | Command            | Description                       |
  * |----|--------------------|-----------------------------------|
  * | 0  | GetVersion         | Get sysmodule version string      |
- * | 1  | GetConnectionStatus| Get current connection state      |
- * | 2  | GetPassphrase      | Get room passphrase               |
- * | 3  | SetPassphrase      | Set room passphrase               |
- * | 4  | GetServerAddress   | Get server host and port          |
- * | 5  | SetServerAddress   | Set server host and port          |
- * | 6  | GetLdnEnabled      | Check if LDN emulation is on      |
- * | 7  | SetLdnEnabled      | Toggle LDN emulation              |
- * | 8  | GetDebugEnabled    | Check debug logging state        |
- * | 9  | SetDebugEnabled    | Toggle debug logging             |
- * | 10 | GetDebugLevel       | Get log verbosity (0-3)           |
- * | 11 | SetDebugLevel       | Set log verbosity                 |
- * | 12 | SaveConfig          | Persist config to SD card         |
- * | 13 | ReloadConfig        | Reload config from SD card        |
- * | 14 | IsServiceActive     | Ping to check service is running  |
- * | 15 | (reserved)          | (was GetUsePassphrase before parity fix) |
- * | 16 | GetUsePassphrase    | Check passphrase filtering        |
- * | 17 | SetUsePassphrase    | Toggle passphrase filtering        |
+ * | 1  | GetConnectionStatus | Get current connection state      |
+ * | 2  | IsServiceActive    | Ping to check service is running  |
+ * | 3  | IsGameActive       | Check if game is using LDN        |
+ * | 4  | GetLdnState        | Get current LDN CommState (0-6)   |
+ * | 5  | GetSessionInfo     | Get session info struct           |
+ * | 6  | GetLastRtt          | Get last RTT in milliseconds      |
+ * | 7  | ForceReconnect      | Request reconnection             |
+ * | 8  | GetActiveProcessId  | Get active game PID               |
  *
- * | 18 | IsGameActive        | Check if game is using LDN        |
- * | 19 | GetLdnState         | Get LDN communication state      |
- * | 20 | GetSessionInfo      | Get session info struct           |
- * | 21 | GetLastRtt          | Get last RTT in milliseconds      |
- * | 22 | ForceReconnect      | Request reconnection             |
- * | 23 | GetActiveProcessId  | Get active game PID               |
- * | 24 | GetDisableP2p       | Check if P2P proxy is disabled   |
- * | 25 | SetDisableP2p       | Toggle P2P proxy                  |
+ * ### Sysmodule General Settings (9-14)
  *
+ * | ID | Command            | Description                       |
+ * |----|--------------------|-----------------------------------|
+ * | 9  | GetDebugEnabled    | Check debug logging state        |
+ * | 10 | SetDebugEnabled    | Toggle debug logging             |
+ * | 11 | GetDebugLevel       | Get log verbosity (0-3)           |
+ * | 12 | SetDebugLevel       | Set log verbosity                 |
+ * | 13 | SaveConfig          | Persist config to SD card         |
+ * | 14 | ReloadConfig        | Reload config from SD card        |
+ *
+ * ### Sysmodule Configuration Manager (15-24)
+ *
+ * | ID | Command            | Description                       |
+ * |----|--------------------|-----------------------------------|
+ * | 15 | GetServerAddress   | Get server host and port          |
+ * | 16 | SetServerAddress   | Set server host and port          |
+ * | 17 | GetLdnEnabled      | Check if LDN emulation is on      |
+ * | 18 | SetLdnEnabled      | Toggle LDN emulation              |
+ * | 19 | GetDisableP2p       | Check if P2P proxy is disabled   |
+ * | 20 | SetDisableP2p       | Toggle P2P proxy                  |
+ * | 21 | GetUsePassphrase    | Check passphrase filtering        |
+ * | 22 | SetUsePassphrase    | Toggle passphrase filtering        |
+ * | 23 | GetPassphrase       | Get room passphrase               |
+ * | 24 | SetPassphrase       | Set room passphrase               |
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
  */
@@ -80,37 +89,36 @@ typedef int32_t Result;
  * These values must match the enum in config_ipc_service.hpp exactly.
  */
 enum class ConfigCmd : u32 {
-    // Configuration commands (0-17)
+    // Sysmodule Status (0-8)
     GetVersion          = 0,
     GetConnectionStatus = 1,
-    GetPassphrase       = 2,
-    SetPassphrase       = 3,
-    GetServerAddress    = 4,
-    SetServerAddress    = 5,
-    GetLdnEnabled      = 6,
-    SetLdnEnabled      = 7,
-    GetDebugEnabled    = 8,
-    SetDebugEnabled    = 9,
-    GetDebugLevel       = 10,
-    SetDebugLevel       = 11,
-    SaveConfig          = 12,
-    ReloadConfig        = 13,
-    IsServiceActive     = 14,
-    // 15 reserved (was GetUsePassphrase before parity fix)
-    GetUsePassphrase    = 16,
-    SetUsePassphrase    = 17,
+    IsServiceActive     = 2,
+    IsGameActive        = 3,
+    GetLdnState         = 4,
+    GetSessionInfo      = 5,
+    GetLastRtt          = 6,
+    ForceReconnect      = 7,
+    GetActiveProcessId  = 8,
 
-    // Runtime LDN state commands (18-23)
-    IsGameActive        = 18,
-    GetLdnState         = 19,
-    GetSessionInfo      = 20,
-    GetLastRtt          = 21,
-    ForceReconnect      = 22,
-    GetActiveProcessId  = 23,
+    // Sysmodule General Settings (9-14)
+    GetDebugEnabled     = 9,
+    SetDebugEnabled     = 10,
+    GetDebugLevel       = 11,
+    SetDebugLevel       = 12,
+    SaveConfig          = 13,
+    ReloadConfig        = 14,
 
-    // P2P Proxy control (24-25)
-    GetDisableP2p       = 24,
-    SetDisableP2p       = 25,
+    // Sysmodule Configuration Manager (15-24)
+    GetServerAddress    = 15,
+    SetServerAddress    = 16,
+    GetLdnEnabled       = 17,
+    SetLdnEnabled       = 18,
+    GetDisableP2p       = 19,
+    SetDisableP2p       = 20,
+    GetUsePassphrase    = 21,
+    SetUsePassphrase    = 22,
+    GetPassphrase       = 23,
+    SetPassphrase       = 24,
 };
 
 /**
@@ -133,7 +141,7 @@ enum class ConfigResult : u32 {
 /**
  * @brief Server address structure for IPC
  *
- * Used with GetServerAddress (cmd 4) and SetServerAddress (cmd 5).
+ * Used with GetServerAddress (cmd 15) and SetServerAddress (cmd 16).
  */
 struct ServerAddressIpc {
     char host[64];  ///< Server hostname or IP (null-terminated)
@@ -390,77 +398,75 @@ TEST(command_ids_start_from_zero) {
 }
 
 /**
- * @test Verify command IDs are sequential
+ * @test Verify command IDs match the new layout
+ *
+ * Groups: Status (0-8), General Settings (9-14), Config Manager (15-24).
  */
-TEST(command_ids_are_sequential) {
+TEST(command_ids_match_layout) {
+    // Sysmodule Status (0-8)
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetVersion), 0u);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::GetConnectionStatus), 1u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPassphrase), 2u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase), 3u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetServerAddress), 4u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress), 5u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled), 6u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled), 7u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled), 8u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled), 9u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel), 10u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel), 11u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SaveConfig), 12u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::ReloadConfig), 13u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 14u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase), 16u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase), 17u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsGameActive), 18u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnState), 19u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetSessionInfo), 20u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLastRtt), 21u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::ForceReconnect), 22u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetActiveProcessId), 23u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p), 24u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 25u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsServiceActive), 2u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::IsGameActive), 3u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnState), 4u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetSessionInfo), 5u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLastRtt), 6u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::ForceReconnect), 7u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetActiveProcessId), 8u);
+
+    // Sysmodule General Settings (9-14)
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled), 9u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled), 10u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel), 11u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel), 12u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SaveConfig), 13u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::ReloadConfig), 14u);
+
+    // Sysmodule Configuration Manager (15-24)
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetServerAddress), 15u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress), 16u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled), 17u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled), 18u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p), 19u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 20u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase), 21u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase), 22u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPassphrase), 23u);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase), 24u);
 }
 
 /**
- * @test Verify Get/Set commands are paired (Get is even, Set is odd)
+ * @test Verify Get/Set commands are adjacent pairs
+ *
+ * In the new layout, Get and Set are adjacent (not even/odd parity).
  */
 TEST(command_ids_get_set_pairing) {
-    // Config Get/Set pairs (Get is even, Set is odd)
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetPassphrase) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetServerAddress) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetLdnEnabled) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugEnabled) % 2, 0u);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDebugLevel) % 2, 0u);
-    // Get even, Set odd (convention: Get pair, Set pair)
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetUsePassphrase) % 2, 0u);  // 16, even (Get)
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::GetDisableP2p) % 2, 0u);     // 24, even (Get)
-
-    // Config Set commands immediately follow Get
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase),
-              static_cast<u32>(ConfigCmd::GetPassphrase) + 1);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress),
-              static_cast<u32>(ConfigCmd::GetServerAddress) + 1);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled),
-              static_cast<u32>(ConfigCmd::GetLdnEnabled) + 1);
+    // General Settings pairs (9-14)
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugEnabled),
               static_cast<u32>(ConfigCmd::GetDebugEnabled) + 1);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDebugLevel),
               static_cast<u32>(ConfigCmd::GetDebugLevel) + 1);
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase),
-              static_cast<u32>(ConfigCmd::GetUsePassphrase) + 1);
+
+    // Configuration Manager pairs (15-24)
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetServerAddress),
+              static_cast<u32>(ConfigCmd::GetServerAddress) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetLdnEnabled),
+              static_cast<u32>(ConfigCmd::GetLdnEnabled) + 1);
     ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p),
               static_cast<u32>(ConfigCmd::GetDisableP2p) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetUsePassphrase),
+              static_cast<u32>(ConfigCmd::GetUsePassphrase) + 1);
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase),
+              static_cast<u32>(ConfigCmd::GetPassphrase) + 1);
 }
 
 /**
- * @test Verify total command count
+ * @test Verify total command count is 25 (IDs 0-24)
  */
-TEST(command_count_is_26) {
-    // Commands 0-25 with gap at 15 (reserved from parity swap)
-    // 26 defined values but command 15 is unused/reserved
-    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetDisableP2p), 25u);
-    // Total: 26 defined command IDs (0-25, minus reserved 15)
+TEST(command_count_is_25) {
+    ASSERT_EQ(static_cast<u32>(ConfigCmd::SetPassphrase), 24u);
+    // Total: 25 defined command IDs (0-24)
 }
-
 //=============================================================================
 // Structure Size Tests
 //=============================================================================
@@ -856,9 +862,9 @@ int main() {
 
     printf("--- Command ID Tests ---\n");
     RUN_TEST(command_ids_start_from_zero);
-    RUN_TEST(command_ids_are_sequential);
+    RUN_TEST(command_ids_match_layout);
     RUN_TEST(command_ids_get_set_pairing);
-    RUN_TEST(command_count_is_26);
+    RUN_TEST(command_count_is_25);
 
     printf("\n--- Structure Size Tests ---\n");
     RUN_TEST(server_address_ipc_size);
