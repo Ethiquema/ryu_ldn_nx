@@ -290,3 +290,12 @@ public:
     /* P2P Proxy control (24-25) */                                                                                                 \
     AMS_SF_METHOD_INFO(C, H, 24, ams::Result, GetDisableP2p,      (ams::sf::Out<u32> out),                              (out),        ams::hos::Version_Min, ams::hos::Version_Max) \
     AMS_SF_METHOD_INFO(C, H, 25, ams::Result, SetDisableP2p,      (u32 disabled),                                       (disabled),   ams::hos::Version_Min, ams::hos::Version_Max)
+
+/**
+ * @brief Define the IConfigService interface
+ *
+ * Interface ID: 0x52594343 ("RYCC" - RYu Config Controller)
+ */
+// codeql[cpp/unused-local-variable,cpp/unused-static-variable] — macro
+// expansion uses `args` via perfect forwarding
+AMS_SF_DEFINE_INTERFACE(ryu_ldn::ipc, IConfigService, AMS_RYU_CFG_SERVICE_INTERFACE, 0x52594343)

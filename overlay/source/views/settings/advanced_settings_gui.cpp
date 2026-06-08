@@ -92,7 +92,7 @@ void AdvancedSettingsGui::BuildLdnSection(tsl::elm::List* list) {
     m_passphraseEnabledToggle->setStateChangedListener([](bool enabled) {
         RyuLdnConfigService* svc = ryuLdnGetService();
         if (svc) {
-            ryuLdnSetPassphraseEnabled(svc, enabled ? 1 : 0);
+            ryuLdnSetUsePassphrase(svc, enabled ? 1 : 0);
             OverlayState::Instance().MarkDirty();
         }
     });
