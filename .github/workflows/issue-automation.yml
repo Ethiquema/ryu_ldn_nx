@@ -568,7 +568,7 @@ jobs:
     steps:
       - name: Parse relation commands from comment
         id: parse
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const body = context.payload.comment.body;
@@ -624,7 +624,7 @@ jobs:
 
       - name: Update relationships bidirectionally
         if: steps.parse.outputs.has_command == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const additions = JSON.parse('${{ steps.parse.outputs.additions }}');
