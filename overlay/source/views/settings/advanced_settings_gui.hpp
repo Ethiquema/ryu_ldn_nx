@@ -1,6 +1,6 @@
 /**
  * @file advanced_settings_gui.hpp
- * @brief Advanced settings overlay screen (server, LDN, debug, config).
+ * @brief Advanced settings overlay screen (server, LDN, debug).
  *
  * Shows settings removed from the main dashboard:
  * - Server address display (config file only)
@@ -29,14 +29,11 @@ private:
     void BuildServerSection(tsl::elm::List* list);
     void BuildLdnSection(tsl::elm::List* list);
     void BuildDebugSection(tsl::elm::List* list);
-    void BuildConfigSection(tsl::elm::List* list);
     void RefreshServerAddress();
 
     tsl::elm::MiniListItem* m_serverItem = nullptr;
-    tsl::elm::ToggleListItem* m_ldnToggle = nullptr;
     tsl::elm::ToggleListItem* m_p2pToggle = nullptr;
     tsl::elm::ToggleListItem* m_debugToggle = nullptr;
     tsl::elm::NamedStepTrackBar* m_debugLevelBar = nullptr;
-    tsl::elm::ToggleListItem* m_passphraseEnabledToggle = nullptr;
     u32 m_refreshCounter = 0;
 };

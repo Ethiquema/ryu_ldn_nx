@@ -3,7 +3,7 @@
  * @brief LDN passphrase editor overlay screen - compact horizontal layout.
  *
  * Displays 8 hex characters on a single row with a cursor indicator.
- * Left/Right moves the cursor between positions, Up/Down increments/decrements
+ * ←/→ moves the cursor between positions, ↑/↓ increments/decrements
  * the hex value at the current cursor position (0-9 a-f, wrapping).
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors

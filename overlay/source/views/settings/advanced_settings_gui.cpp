@@ -2,7 +2,7 @@
  * @file advanced_settings_gui.cpp
  * @brief Implementation of the advanced settings overlay screen.
  *
- * Contains server info, LDN settings, debug toggles, and config actions
+ * Contains server info, LDN settings, and debug toggles
  * that were previously on the main dashboard.
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
@@ -11,16 +11,13 @@
 
 #include "views/settings/advanced_settings_gui.hpp"
 #include "app/overlay_state.hpp"
-#include "app/config_actions.hpp"
 
 #include "ryu_ldn_ipc.h"
 
 AdvancedSettingsGui::AdvancedSettingsGui() {
-    OverlayState::Instance().AcquireUpdateLock();
 }
 
 AdvancedSettingsGui::~AdvancedSettingsGui() {
-    OverlayState::Instance().ReleaseUpdateLock();
 }
 
 tsl::elm::Element* AdvancedSettingsGui::createUI() {
@@ -41,7 +38,6 @@ tsl::elm::Element* AdvancedSettingsGui::createUI() {
     BuildServerSection(list);
     BuildLdnSection(list);
     BuildDebugSection(list);
-    BuildConfigSection(list);
 
     frame->setContent(list);
     return frame;
@@ -54,22 +50,10 @@ void AdvancedSettingsGui::BuildServerSection(tsl::elm::List* list) {
 }
 
 void AdvancedSettingsGui::BuildLdnSection(tsl::elm::List* list) {
-    list->addItem(new tsl::elm::CategoryHeader("LDN Settings"));
-    m_ldnToggle = new tsl::elm::ToggleListItem("LDN Enabled", true);
-    RyuLdnConfigService* svc = ryuLdnGetService();
-    if (svc) {
-        u32 ldnEnabled;
-        if (R_SUCCEEDED(ryuLdnGetLdnEnabled(svc, &ldnEnabled))) m_ldnToggle->setState(ldnEnabled != 0);
-    }
-    m_ldnToggle->setStateChangedListener([](bool enabled) {
-        RyuLdnConfigService* svc = ryuLdnGetService();
-        if (svc) { ryuLdnSetLdnEnabled(svc, enabled ? 1 : 0); OverlayState::Instance().MarkDirty(); }
-    });
-    list->addItem(m_ldnToggle);
     list->addItem(new tsl::elm::CategoryHeader("P2P Proxy : Warning disable it increase latency"));
     // P2P toggle (inverted: ON = P2P enabled, i.e. disable_p2p=0)
     m_p2pToggle = new tsl::elm::ToggleListItem("P2P Enabled", true);
-    svc = ryuLdnGetService();
+    RyuLdnConfigService* svc = ryuLdnGetService();
     if (svc) {
         u32 p2pDisabled;
         if (R_SUCCEEDED(ryuLdnGetDisableP2p(svc, &p2pDisabled))) {
@@ -85,18 +69,6 @@ void AdvancedSettingsGui::BuildLdnSection(tsl::elm::List* list) {
         }
     });
     list->addItem(m_p2pToggle);
-
-    list->addItem(new tsl::elm::CategoryHeader("Passphrase"));
-    // Use Passphrase toggle (future IPC — currently always enabled)
-    m_passphraseEnabledToggle = new tsl::elm::ToggleListItem("Use Passphrase", true);
-    m_passphraseEnabledToggle->setStateChangedListener([](bool enabled) {
-        RyuLdnConfigService* svc = ryuLdnGetService();
-        if (svc) {
-            ryuLdnSetUsePassphrase(svc, enabled ? 1 : 0);
-            OverlayState::Instance().MarkDirty();
-        }
-    });
-    list->addItem(m_passphraseEnabledToggle);
 }
 
 void AdvancedSettingsGui::BuildDebugSection(tsl::elm::List* list) {
@@ -126,22 +98,6 @@ void AdvancedSettingsGui::BuildDebugSection(tsl::elm::List* list) {
     list->addItem(m_debugLevelBar);
 }
 
-void AdvancedSettingsGui::BuildConfigSection(tsl::elm::List* list) {
-    list->addItem(new tsl::elm::CategoryHeader("Config"));
-    auto reloadItem = new tsl::elm::ListItem("Reload Config");
-    reloadItem->setValue("Press A");
-    reloadItem->setClickListener([](u64 keys) {
-        if (keys & HidNpadButton_A) {
-            if (DoReloadConfig()) {
-                OverlayState::Instance().MarkSaved();
-                tsl::goBack();
-            }
-            return true;
-        }
-        return false;
-    });
-    list->addItem(reloadItem);
-}
 
 void AdvancedSettingsGui::RefreshServerAddress() {
     if (OverlayState::Instance().GetStatus() != OverlayState::InitStatus::Loaded) return;
@@ -163,7 +119,6 @@ void AdvancedSettingsGui::update() {
         // Always refresh server address (read-only display, not affected by edit locks)
         RefreshServerAddress();
     }
-    // Auto-save and dirty indicator removed per user request
 }
 
 bool AdvancedSettingsGui::handleInput(u64 keysDown, u64 keysHeld,

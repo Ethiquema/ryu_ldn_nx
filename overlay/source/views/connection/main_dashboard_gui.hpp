@@ -14,6 +14,8 @@
 
 #include <tesla.hpp>
 
+#include "app/auto_save_controller.hpp"
+
 class MainDashboardGui : public tsl::Gui {
 public:
     MainDashboardGui();
@@ -27,15 +29,20 @@ public:
 private:
     void BuildConnectionSection(tsl::elm::List* list);
     void BuildPassphraseSection(tsl::elm::List* list);
+    void BuildLdnSection(tsl::elm::List* list);
     void BuildNavSection(tsl::elm::List* list);
 
     void RefreshConnectionValues();
     void RefreshPassphrase();
 
-    tsl::elm::ListItemV2* m_statusItem = nullptr;
-    tsl::elm::ListItemV2* m_ldnStateItem = nullptr;
+    tsl::elm::MiniListItem* m_statusItem = nullptr;
+    tsl::elm::MiniListItem* m_ldnStateItem = nullptr;
     tsl::elm::MiniListItem* m_sessionInfoItem = nullptr;
     tsl::elm::MiniListItem* m_passphraseItem = nullptr;
 
+    tsl::elm::ToggleListItem* m_ldnToggle = nullptr;
+    tsl::elm::ToggleListItem* m_passphraseEnabledToggle = nullptr;
+
     u32 m_refreshCounter = 0;
+    AutoSaveController m_autoSaveController;
 };

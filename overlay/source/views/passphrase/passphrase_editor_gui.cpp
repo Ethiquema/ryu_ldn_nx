@@ -49,7 +49,7 @@ tsl::elm::Element* PassphraseEditorGui::createUI() {
     m_previewItem = new tsl::elm::MiniListItem("Passphrase", BuildHexString());
     list->addItem(m_previewItem);
 
-    list->addItem(new tsl::elm::CategoryHeader("Edit (L/R move, U/D change)"));
+    list->addItem(new tsl::elm::CategoryHeader("Edit (←→ move, ↑↓ change)"));
 
     // Line showing the 8 chars with cursor highlighted
     m_charsItem = new tsl::elm::ListItem(BuildCursorDisplay());
@@ -59,17 +59,6 @@ tsl::elm::Element* PassphraseEditorGui::createUI() {
     m_cursorItem = new tsl::elm::MiniListItem("", BuildCursorIndicator());
     list->addItem(m_cursorItem);
 
-    list->addItem(new tsl::elm::CategoryHeader("Actions"));
-
-    list->addItem(new tsl::elm::DummyListItem());
-
-    auto applyItem = new tsl::elm::ListItem("Apply");
-    applyItem->setValue("Press A / +");
-    applyItem->setClickListener([this](u64 keys) {
-        if (keys & HidNpadButton_A) { ApplyPassphrase(); return true; }
-        return false;
-    });
-    list->addItem(applyItem);
     frame->setContent(list);
     return frame;
 }
@@ -126,6 +115,8 @@ bool PassphraseEditorGui::handleInput(u64 keysDown, u64 keysHeld, const HidTouch
         RefreshDisplay();
         return true;
     }
+    // B (back) = Apply passphrase and go back
+    if (keysDown & HidNpadButton_B) { ApplyPassphrase(); return true; }
     // Plus = Apply
     if (keysDown & HidNpadButton_Plus) { ApplyPassphrase(); return true; }
     return false;

@@ -17,6 +17,7 @@
 
 #include "ryu_ldn_ipc.h"
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 
 // Initialize random seed for passphrase generation
@@ -44,6 +45,7 @@ tsl::elm::Element* MainDashboardGui::createUI() {
     }
 
     BuildConnectionSection(list);
+    BuildLdnSection(list);
     BuildPassphraseSection(list);
     BuildNavSection(list);
 
@@ -54,9 +56,11 @@ tsl::elm::Element* MainDashboardGui::createUI() {
 
 void MainDashboardGui::BuildConnectionSection(tsl::elm::List* list) {
     list->addItem(new tsl::elm::CategoryHeader("Connection"));
-    m_statusItem = new tsl::elm::ListItemV2("Status", "N/A");
+    m_statusItem = new tsl::elm::MiniListItem("Status", "N/A");
     list->addItem(m_statusItem);
-    m_ldnStateItem = new tsl::elm::ListItemV2("LDN State", "None");
+    m_passphraseItem = new tsl::elm::MiniListItem("Passphrase", "---");
+    list->addItem(m_passphraseItem);
+    m_ldnStateItem = new tsl::elm::MiniListItem("LDN State", "None");
     list->addItem(m_ldnStateItem);
     m_sessionInfoItem = new tsl::elm::MiniListItem("Session", "N/A");
     list->addItem(m_sessionInfoItem);
@@ -64,8 +68,46 @@ void MainDashboardGui::BuildConnectionSection(tsl::elm::List* list) {
 
 void MainDashboardGui::BuildPassphraseSection(tsl::elm::List* list) {
     list->addItem(new tsl::elm::CategoryHeader("Passphrase  (X=Random Y=Clear)"));
-    m_passphraseItem = new tsl::elm::MiniListItem("Passphrase", "---");
-    list->addItem(m_passphraseItem);
+    // Use Passphrase toggle (copied from AdvancedSettingsGui::BuildLdnSection)
+    bool passphraseEnabled = false;
+    bool hasPassphrase = false;
+    RyuLdnConfigService* ldnSvc = ryuLdnGetService();
+    if (ldnSvc) {
+        u32 usePassphrase = 0;
+        if (R_SUCCEEDED(ryuLdnGetUsePassphrase(ldnSvc, &usePassphrase)))
+            passphraseEnabled = (usePassphrase != 0);
+        char passphrase[64] = {0};
+        if (R_SUCCEEDED(ryuLdnGetPassphrase(ldnSvc, passphrase)))
+            hasPassphrase = (strlen(passphrase) > 0);
+    }
+    if (!hasPassphrase) {
+        passphraseEnabled = false;
+    }
+    m_passphraseEnabledToggle = new tsl::elm::ToggleListItem("Use Passphrase", passphraseEnabled);
+    if (!hasPassphrase) {
+        m_passphraseEnabledToggle->isLocked = true;
+    }
+    m_passphraseEnabledToggle->setStateChangedListener([this](bool enabled) {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (svc) {
+            // Prevent enabling the toggle when no passphrase is set.
+            // The isLocked flag only blocks the visual toggle, not the
+            // callback, so without this check the IPC call would store
+            // use_passphrase=1 in the sysmodule. When the passphrase later
+            // becomes non-empty, update() unlocks and syncs to that stored
+            // ON value, causing the toggle to flip on automatically.
+            if (enabled) {
+                char passphrase[64] = {0};
+                if (R_SUCCEEDED(ryuLdnGetPassphrase(svc, passphrase)) && strlen(passphrase) == 0) {
+                    m_passphraseEnabledToggle->setState(false);
+                    return;
+                }
+            }
+            ryuLdnSetUsePassphrase(svc, enabled ? 1 : 0);
+            OverlayState::Instance().MarkDirty();
+        }
+    });
+    list->addItem(m_passphraseEnabledToggle);
     auto editItem = new tsl::elm::ListItem("Edit Passphrase");
     editItem->setValue(">");
     editItem->setClickListener([](u64 keys) {
@@ -76,13 +118,31 @@ void MainDashboardGui::BuildPassphraseSection(tsl::elm::List* list) {
 }
 
 void MainDashboardGui::BuildNavSection(tsl::elm::List* list) {
-    auto advancedItem = new tsl::elm::ListItem("Advanced Settings");
+    list->addItem(new tsl::elm::CategoryHeader("Advanced Settings"));
+    auto advancedItem = new tsl::elm::MiniListItem("Open Advanced Settings");
     advancedItem->setValue(">");
     advancedItem->setClickListener([](u64 keys) {
         if (keys & HidNpadButton_A) { tsl::changeTo<AdvancedSettingsGui>(); return true; }
         return false;
     });
     list->addItem(advancedItem);
+}
+
+void MainDashboardGui::BuildLdnSection(tsl::elm::List* list) {
+    list->addItem(new tsl::elm::CategoryHeader("LDN Settings"));
+
+    // LDN Enabled toggle (copied from AdvancedSettingsGui::BuildLdnSection)
+    m_ldnToggle = new tsl::elm::ToggleListItem("LDN Enabled", true);
+    RyuLdnConfigService* svc = ryuLdnGetService();
+    if (svc) {
+        u32 ldnEnabled;
+        if (R_SUCCEEDED(ryuLdnGetLdnEnabled(svc, &ldnEnabled))) m_ldnToggle->setState(ldnEnabled != 0);
+    }
+    m_ldnToggle->setStateChangedListener([](bool enabled) {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (svc) { ryuLdnSetLdnEnabled(svc, enabled ? 1 : 0); OverlayState::Instance().MarkDirty(); }
+    });
+    list->addItem(m_ldnToggle);
 }
 
 void MainDashboardGui::RefreshConnectionValues() {
@@ -113,13 +173,13 @@ void MainDashboardGui::RefreshConnectionValues() {
             }
         }
         m_statusItem->setValue(ryu_ldn::overlay::ConnectionStatusToString(derivedStatus));
-        m_statusItem->setValueColorOverride(ryu_ldn::overlay::StatusColor(derivedStatus));
+        m_statusItem->setValueColor(ryu_ldn::overlay::StatusColor(derivedStatus));
     }
     if (m_ldnStateItem) {
         RyuLdnState state;
         if (R_SUCCEEDED(ryuLdnGetLdnState(svc, &state))) {
             m_ldnStateItem->setValue(ryuLdnStateToString(state));
-            m_ldnStateItem->setValueColorOverride(ryu_ldn::overlay::LdnStateColor(state));
+            m_ldnStateItem->setValueColor(ryu_ldn::overlay::LdnStateColor(state));
         }
     }
     if (m_sessionInfoItem) {
@@ -156,7 +216,26 @@ void MainDashboardGui::update() {
         RefreshConnectionValues();
         RefreshPassphrase();
     }
-    // Auto-save display removed per user request
+    m_autoSaveController.Update(OverlayState::Instance().IsDirty());
+    // Refresh passphrase toggle: lock/unlock and sync state when passphrase changes
+    if (m_passphraseEnabledToggle) {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        if (svc) {
+            char passphrase[64] = {0};
+            bool hasPassphrase = false;
+            if (R_SUCCEEDED(ryuLdnGetPassphrase(svc, passphrase)))
+                hasPassphrase = (strlen(passphrase) > 0);
+            if (!hasPassphrase) {
+                m_passphraseEnabledToggle->setState(false);
+                m_passphraseEnabledToggle->isLocked = true;
+            } else {
+                m_passphraseEnabledToggle->isLocked = false;
+                u32 usePassphrase = 0;
+                if (R_SUCCEEDED(ryuLdnGetUsePassphrase(svc, &usePassphrase)))
+                    m_passphraseEnabledToggle->setState(usePassphrase != 0);
+            }
+        }
+    }
 }
 
 bool MainDashboardGui::handleInput(u64 keysDown, u64 keysHeld,
@@ -188,6 +267,7 @@ bool MainDashboardGui::handleInput(u64 keysDown, u64 keysHeld,
         RyuLdnConfigService* svc = ryuLdnGetService();
         if (svc) {
             Result rc = ryuLdnSetPassphrase(svc, "");
+            ryuLdnSetUsePassphrase(svc, 0);
             if (R_SUCCEEDED(rc)) OverlayState::Instance().MarkDirty();
             RefreshPassphrase();
         }
