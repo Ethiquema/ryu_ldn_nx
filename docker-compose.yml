@@ -21,9 +21,9 @@ services:
         # without rebuilding from source.
         LIB_DIR="/workspace/sysmodule/Atmosphere-libs/libstratosphere/lib/nintendo_nx_arm64_armv8a/release"
         PREBUILT="/opt/ryu_ldn_nx/libstratosphere/lib/nintendo_nx_arm64_armv8a/release/libstratosphere.a"
-        if [ -f "$PREBUILT" ] && [ ! -f "$LIB_DIR/libstratosphere.a" ]; then
-          mkdir -p "$LIB_DIR"
-          ln -s "$PREBUILT" "$LIB_DIR/libstratosphere.a"
+        if [ -f "$$PREBUILT" ] && [ ! -f "$$LIB_DIR/libstratosphere.a" ]; then
+          mkdir -p "$$LIB_DIR"
+          ln -s "$$PREBUILT" "$$LIB_DIR/libstratosphere.a"
           echo "[build] Linked pre-built libstratosphere.a"
         fi
 
