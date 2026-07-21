@@ -96,13 +96,11 @@ RyuLdnClientConfig::RyuLdnClientConfig()
  */
 RyuLdnClientConfig::RyuLdnClientConfig(const config::Config& cfg)
     : port(cfg.server.port)
-    , connect_timeout_ms(cfg.network.connect_timeout_ms)
+    , connect_timeout_ms(5000)  // Hardcoded: 5s connection timeout
     , recv_timeout_ms(20)  // 20 ms — see default ctor
-    , ping_interval_ms(0)  // Forced 0 — see default ctor for protocol rationale.
-                           // Config value cfg.network.ping_interval_ms is ignored
-                           // because client-initiated pings break the connection.
+    , ping_interval_ms(0)  // Forced 0 — server drives pings
     , reconnect()
-    , auto_reconnect(cfg.network.max_reconnect_attempts != 0)
+    , auto_reconnect(true)  // Hardcoded: auto-reconnect always enabled
 {
     // Copy host, ensuring null termination
     std::memset(host, 0, sizeof(host));
@@ -112,12 +110,12 @@ RyuLdnClientConfig::RyuLdnClientConfig(const config::Config& cfg)
     std::memset(passphrase, 0, sizeof(passphrase));
     std::memcpy(passphrase, cfg.ldn.passphrase, sizeof(passphrase) - 1);
 
-    // Configure reconnection from app config
-    reconnect.initial_delay_ms = cfg.network.reconnect_delay_ms;
-    reconnect.max_delay_ms = cfg.network.reconnect_delay_ms * 10;  // 10x initial as max
+    // Configure reconnection with hardcoded constants
+    reconnect.initial_delay_ms = 1000;  // 1s initial delay
+    reconnect.max_delay_ms = 10000;     // 10s max (10x initial)
     reconnect.multiplier_percent = 200;  // 2x
     reconnect.jitter_percent = 10;
-    reconnect.max_retries = static_cast<uint16_t>(cfg.network.max_reconnect_attempts);
+    reconnect.max_retries = 0;  // 0 disables auto-reconnect (see AGENTS.md: "max_reconnect_attempts = 0 disables auto-reconnect entirely")
 }
 
 // ============================================================================

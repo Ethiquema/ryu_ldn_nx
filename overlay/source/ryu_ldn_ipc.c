@@ -3,6 +3,7 @@
  * @brief IPC client implementation for ryu_ldn_nx sysmodule
  *
  * Connects to the standalone ryu:cfg IPC service provided by the sysmodule.
+ * Command IDs match ConfigCmd in config_ipc_service.hpp.
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -14,41 +15,39 @@
 /**
  * IPC Command IDs for ryu:cfg service
  *
- * These are the command IDs for the standalone configuration service.
+ * These match the ConfigCmd enum in config_ipc_service.hpp.
  */
 enum {
-    // Configuration commands (0-22)
+    // Sysmodule Status (0-8)
     RyuCfgCmd_GetVersion          = 0,
     RyuCfgCmd_GetConnectionStatus = 1,
-    RyuCfgCmd_GetPassphrase       = 2,
-    RyuCfgCmd_SetPassphrase       = 3,
-    RyuCfgCmd_GetServerAddress    = 4,
-    RyuCfgCmd_SetServerAddress    = 5,
-    RyuCfgCmd_GetLdnEnabled       = 6,
-    RyuCfgCmd_SetLdnEnabled       = 7,
-    RyuCfgCmd_GetUseTls           = 8,
-    RyuCfgCmd_SetUseTls           = 9,
-    RyuCfgCmd_GetDebugEnabled     = 10,
-    RyuCfgCmd_SetDebugEnabled     = 11,
-    RyuCfgCmd_GetDebugLevel       = 12,
-    RyuCfgCmd_SetDebugLevel       = 13,
-    RyuCfgCmd_GetLogToFile        = 14,
-    RyuCfgCmd_SetLogToFile        = 15,
-    RyuCfgCmd_SaveConfig          = 16,
-    RyuCfgCmd_ReloadConfig        = 17,
-    RyuCfgCmd_GetConnectTimeout   = 18,
-    RyuCfgCmd_SetConnectTimeout   = 19,
-    RyuCfgCmd_GetPingInterval     = 20,
-    RyuCfgCmd_SetPingInterval     = 21,
-    RyuCfgCmd_IsServiceActive     = 22,
+    RyuCfgCmd_IsServiceActive     = 2,
+    RyuCfgCmd_IsGameActive        = 3,
+    RyuCfgCmd_GetLdnState         = 4,
+    RyuCfgCmd_GetSessionInfo      = 5,
+    RyuCfgCmd_GetLastRtt          = 6,
+    RyuCfgCmd_ForceReconnect      = 7,
+    RyuCfgCmd_GetActiveProcessId  = 8,
 
-    // Runtime LDN state commands (23-28)
-    RyuCfgCmd_IsGameActive        = 23,
-    RyuCfgCmd_GetLdnState         = 24,
-    RyuCfgCmd_GetSessionInfo      = 25,
-    RyuCfgCmd_GetLastRtt          = 26,
-    RyuCfgCmd_ForceReconnect      = 27,
-    RyuCfgCmd_GetActiveProcessId  = 28,
+    // Sysmodule General Settings (9-14)
+    RyuCfgCmd_GetDebugEnabled     = 9,
+    RyuCfgCmd_SetDebugEnabled     = 10,
+    RyuCfgCmd_GetDebugLevel       = 11,
+    RyuCfgCmd_SetDebugLevel       = 12,
+    RyuCfgCmd_SaveConfig          = 13,
+    RyuCfgCmd_ReloadConfig        = 14,
+
+    // Sysmodule Configuration Manager (15-24)
+    RyuCfgCmd_GetServerAddress    = 15,
+    RyuCfgCmd_SetServerAddress    = 16,
+    RyuCfgCmd_GetLdnEnabled       = 17,
+    RyuCfgCmd_SetLdnEnabled       = 18,
+    RyuCfgCmd_GetDisableP2p       = 19,
+    RyuCfgCmd_SetDisableP2p       = 20,
+    RyuCfgCmd_GetUsePassphrase    = 21,
+    RyuCfgCmd_SetUsePassphrase    = 22,
+    RyuCfgCmd_GetPassphrase       = 23,
+    RyuCfgCmd_SetPassphrase       = 24,
 };
 
 /// Global service handle
@@ -78,9 +77,9 @@ RyuLdnConfigService* ryuLdnGetService(void) {
     return g_ryuCfgInitialized ? &g_ryuCfgService : NULL;
 }
 
-Result ryuLdnIsServiceActive(RyuLdnConfigService* s, u32* active) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_IsServiceActive, *active);
-}
+//=============================================================================
+// Sysmodule Status Commands (0-8)
+//=============================================================================
 
 Result ryuLdnGetVersion(RyuLdnConfigService* s, char* version) {
     char version_buf[32];
@@ -100,6 +99,81 @@ Result ryuLdnGetConnectionStatus(RyuLdnConfigService* s, RyuLdnConnectionStatus*
     }
     return rc;
 }
+
+Result ryuLdnIsServiceActive(RyuLdnConfigService* s, u32* active) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_IsServiceActive, *active);
+}
+
+Result ryuLdnIsGameActive(RyuLdnConfigService* s, u32* active) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_IsGameActive, *active);
+}
+
+Result ryuLdnGetLdnState(RyuLdnConfigService* s, RyuLdnState* state) {
+    u32 out_state;
+    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_GetLdnState, out_state);
+    if (R_SUCCEEDED(rc)) {
+        *state = (RyuLdnState)out_state;
+    }
+    return rc;
+}
+
+Result ryuLdnGetSessionInfo(RyuLdnConfigService* s, RyuLdnSessionInfo* info) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetSessionInfo, *info);
+}
+
+Result ryuLdnGetLastRtt(RyuLdnConfigService* s, u32* rtt_ms) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLastRtt, *rtt_ms);
+}
+
+Result ryuLdnForceReconnect(RyuLdnConfigService* s) {
+    return serviceDispatch(&s->s, RyuCfgCmd_ForceReconnect);
+}
+
+Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetActiveProcessId, *pid);
+}
+
+//=============================================================================
+// Sysmodule General Settings Commands (9-14)
+//=============================================================================
+
+Result ryuLdnGetDebugEnabled(RyuLdnConfigService* s, u32* enabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDebugEnabled, *enabled);
+}
+
+Result ryuLdnSetDebugEnabled(RyuLdnConfigService* s, u32 enabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDebugEnabled, enabled);
+}
+
+Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDebugLevel, *level);
+}
+
+Result ryuLdnSetDebugLevel(RyuLdnConfigService* s, u32 level) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDebugLevel, level);
+}
+
+Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
+    u32 out_result;
+    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_SaveConfig, out_result);
+    if (R_SUCCEEDED(rc)) {
+        *result = (RyuLdnConfigResult)out_result;
+    }
+    return rc;
+}
+
+Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
+    u32 out_result;
+    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_ReloadConfig, out_result);
+    if (R_SUCCEEDED(rc)) {
+        *result = (RyuLdnConfigResult)out_result;
+    }
+    return rc;
+}
+
+//=============================================================================
+// Sysmodule Configuration Manager Commands (15-24)
+//=============================================================================
 
 Result ryuLdnGetServerAddress(RyuLdnConfigService* s, char* host, u16* port) {
     struct {
@@ -131,17 +205,29 @@ Result ryuLdnSetServerAddress(RyuLdnConfigService* s, const char* host, u16 port
     return serviceDispatchIn(&s->s, RyuCfgCmd_SetServerAddress, in);
 }
 
-Result ryuLdnGetDebugEnabled(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDebugEnabled, *enabled);
+Result ryuLdnGetLdnEnabled(RyuLdnConfigService* s, u32* enabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLdnEnabled, *enabled);
 }
 
-Result ryuLdnSetDebugEnabled(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDebugEnabled, enabled);
+Result ryuLdnSetLdnEnabled(RyuLdnConfigService* s, u32 enabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetLdnEnabled, enabled);
 }
 
-//=============================================================================
-// Configuration Commands
-//=============================================================================
+Result ryuLdnGetDisableP2p(RyuLdnConfigService* s, u32* disabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDisableP2p, *disabled);
+}
+
+Result ryuLdnSetDisableP2p(RyuLdnConfigService* s, u32 disabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDisableP2p, disabled);
+}
+
+Result ryuLdnGetUsePassphrase(RyuLdnConfigService* s, u32* enabled) {
+    return serviceDispatchOut(&s->s, RyuCfgCmd_GetUsePassphrase, *enabled);
+}
+
+Result ryuLdnSetUsePassphrase(RyuLdnConfigService* s, u32 enabled) {
+    return serviceDispatchIn(&s->s, RyuCfgCmd_SetUsePassphrase, enabled);
+}
 
 Result ryuLdnGetPassphrase(RyuLdnConfigService* s, char* passphrase) {
     char passphrase_buf[64];
@@ -160,105 +246,6 @@ Result ryuLdnSetPassphrase(RyuLdnConfigService* s, const char* passphrase) {
         strncpy(passphrase_buf, passphrase, 63);
     }
     return serviceDispatchIn(&s->s, RyuCfgCmd_SetPassphrase, passphrase_buf);
-}
-
-Result ryuLdnGetLdnEnabled(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLdnEnabled, *enabled);
-}
-
-Result ryuLdnSetLdnEnabled(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetLdnEnabled, enabled);
-}
-
-Result ryuLdnGetUseTls(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetUseTls, *enabled);
-}
-
-Result ryuLdnSetUseTls(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetUseTls, enabled);
-}
-
-Result ryuLdnGetConnectTimeout(RyuLdnConfigService* s, u32* timeout_ms) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetConnectTimeout, *timeout_ms);
-}
-
-Result ryuLdnSetConnectTimeout(RyuLdnConfigService* s, u32 timeout_ms) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetConnectTimeout, timeout_ms);
-}
-
-Result ryuLdnGetPingInterval(RyuLdnConfigService* s, u32* interval_ms) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetPingInterval, *interval_ms);
-}
-
-Result ryuLdnSetPingInterval(RyuLdnConfigService* s, u32 interval_ms) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetPingInterval, interval_ms);
-}
-
-Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetDebugLevel, *level);
-}
-
-Result ryuLdnSetDebugLevel(RyuLdnConfigService* s, u32 level) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetDebugLevel, level);
-}
-
-Result ryuLdnGetLogToFile(RyuLdnConfigService* s, u32* enabled) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLogToFile, *enabled);
-}
-
-Result ryuLdnSetLogToFile(RyuLdnConfigService* s, u32 enabled) {
-    return serviceDispatchIn(&s->s, RyuCfgCmd_SetLogToFile, enabled);
-}
-
-Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
-    u32 out_result;
-    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_SaveConfig, out_result);
-    if (R_SUCCEEDED(rc)) {
-        *result = (RyuLdnConfigResult)out_result;
-    }
-    return rc;
-}
-
-Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result) {
-    u32 out_result;
-    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_ReloadConfig, out_result);
-    if (R_SUCCEEDED(rc)) {
-        *result = (RyuLdnConfigResult)out_result;
-    }
-    return rc;
-}
-
-//=============================================================================
-// Runtime LDN State Commands (23-28)
-//=============================================================================
-
-Result ryuLdnIsGameActive(RyuLdnConfigService* s, u32* active) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_IsGameActive, *active);
-}
-
-Result ryuLdnGetLdnState(RyuLdnConfigService* s, RyuLdnState* state) {
-    u32 out_state;
-    Result rc = serviceDispatchOut(&s->s, RyuCfgCmd_GetLdnState, out_state);
-    if (R_SUCCEEDED(rc)) {
-        *state = (RyuLdnState)out_state;
-    }
-    return rc;
-}
-
-Result ryuLdnGetSessionInfo(RyuLdnConfigService* s, RyuLdnSessionInfo* info) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetSessionInfo, *info);
-}
-
-Result ryuLdnGetLastRtt(RyuLdnConfigService* s, u32* rtt_ms) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetLastRtt, *rtt_ms);
-}
-
-Result ryuLdnForceReconnect(RyuLdnConfigService* s) {
-    return serviceDispatch(&s->s, RyuCfgCmd_ForceReconnect);
-}
-
-Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid) {
-    return serviceDispatchOut(&s->s, RyuCfgCmd_GetActiveProcessId, *pid);
 }
 
 const char* ryuLdnStateToString(RyuLdnState state) {

@@ -108,11 +108,11 @@ struct ReconnectConfig {
     uint8_t jitter_percent;
 
     /**
-     * @brief Maximum number of retry attempts (0 = infinite)
+     * @brief Maximum number of retry attempts (0 = disabled, no auto-reconnect)
      *
      * If set, the manager will stop allowing retries after
-     * this many attempts. Use 0 for infinite retries.
-     * Default: 0 (infinite)
+     * this many attempts. Use 0 to disable auto-reconnect entirely.
+     * Default: 0 (disabled)
      */
     uint16_t max_retries;
 

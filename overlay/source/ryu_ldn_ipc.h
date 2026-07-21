@@ -10,37 +10,47 @@
  *
  * ## IPC Command IDs (ryu:cfg service)
  *
+ * Command IDs match ConfigCmd in config_ipc_service.hpp.
+ *
+ * ### Sysmodule Status (0-8)
+ *
  * | ID | Command            | Description                       |
  * |----|--------------------|-----------------------------------|
  * | 0  | GetVersion         | Get sysmodule version string      |
- * | 1  | GetConnectionStatus| Get current connection state      |
- * | 2  | GetPassphrase      | Get room passphrase               |
- * | 3  | SetPassphrase      | Set room passphrase               |
- * | 4  | GetServerAddress   | Get server host and port          |
- * | 5  | SetServerAddress   | Set server host and port          |
- * | 6  | GetLdnEnabled      | Check if LDN emulation is on      |
- * | 7  | SetLdnEnabled      | Toggle LDN emulation              |
- * | 8  | GetUseTls          | Check TLS encryption state        |
- * | 9  | SetUseTls          | Toggle TLS encryption             |
- * | 10 | GetDebugEnabled    | Check debug logging state         |
- * | 11 | SetDebugEnabled    | Toggle debug logging              |
- * | 12 | GetDebugLevel      | Get log verbosity (0-3)           |
- * | 13 | SetDebugLevel      | Set log verbosity                 |
- * | 14 | GetLogToFile       | Check file logging state          |
- * | 15 | SetLogToFile       | Toggle file logging               |
- * | 16 | SaveConfig         | Persist config to SD card         |
- * | 17 | ReloadConfig       | Reload config from SD card        |
- * | 18 | GetConnectTimeout  | Get connection timeout (ms)       |
- * | 19 | SetConnectTimeout  | Set connection timeout            |
- * | 20 | GetPingInterval    | Get keepalive interval (ms)       |
- * | 21 | SetPingInterval    | Set keepalive interval            |
- * | 22 | IsServiceActive    | Ping to check service is running  |
- * | 23 | IsGameActive       | Check if game is using LDN        |
- * | 24 | GetLdnState        | Get current LDN CommState (0-6)   |
- * | 25 | GetSessionInfo     | Get session info struct (8 bytes) |
- * | 26 | GetLastRtt         | Get last measured RTT (ms)        |
- * | 27 | ForceReconnect     | Request MITM to reconnect         |
- * | 28 | GetActiveProcessId | Get PID of active game (debug)    |
+ * | 1  | GetConnectionStatus | Get current connection state      |
+ * | 2  | IsServiceActive    | Ping to check service is running  |
+ * | 3  | IsGameActive       | Check if game is using LDN        |
+ * | 4  | GetLdnState        | Get current LDN CommState (0-6)   |
+ * | 5  | GetSessionInfo     | Get session info struct           |
+ * | 6  | GetLastRtt         | Get last measured RTT (ms)        |
+ * | 7  | ForceReconnect     | Request MITM to reconnect         |
+ * | 8  | GetActiveProcessId | Get PID of active game (debug)     |
+ *
+ * ### Sysmodule General Settings (9-14)
+ *
+ * | ID | Command            | Description                       |
+ * |----|--------------------|-----------------------------------|
+ * | 9  | GetDebugEnabled    | Check debug logging state         |
+ * | 10 | SetDebugEnabled    | Toggle debug logging              |
+ * | 11 | GetDebugLevel      | Get log verbosity (0-3)           |
+ * | 12 | SetDebugLevel      | Set log verbosity                 |
+ * | 13 | SaveConfig         | Persist config to SD card         |
+ * | 14 | ReloadConfig       | Reload config from SD card        |
+ *
+ * ### Sysmodule Configuration Manager (15-24)
+ *
+ * | ID | Command            | Description                       |
+ * |----|--------------------|-----------------------------------|
+ * | 15 | GetServerAddress   | Get server host and port          |
+ * | 16 | SetServerAddress   | Set server host and port          |
+ * | 17 | GetLdnEnabled      | Check if LDN emulation is on      |
+ * | 18 | SetLdnEnabled      | Toggle LDN emulation              |
+ * | 19 | GetDisableP2p      | Check P2P proxy disabled state    |
+ * | 20 | SetDisableP2p      | Set P2P proxy disabled state      |
+ * | 21 | GetUsePassphrase   | Check passphrase filtering state  |
+ * | 22 | SetUsePassphrase   | Toggle passphrase filtering        |
+ * | 23 | GetPassphrase      | Get room passphrase               |
+ * | 24 | SetPassphrase      | Set room passphrase               |
  *
  * @copyright Copyright (c) 2026 ryu_ldn_nx contributors
  * @license GPL-2.0-or-later
@@ -59,7 +69,7 @@ extern "C" {
 typedef enum {
     RyuLdnStatus_Disconnected = 0,   ///< Not connected to server
     RyuLdnStatus_Connecting = 1,     ///< Connection in progress
-    RyuLdnStatus_Connected = 2,      ///< Connected, handshake pending
+    RyuLdnStatus_Connected = 2,     ///< Connected, handshake pending
     RyuLdnStatus_Ready = 3,          ///< Fully connected and ready
     RyuLdnStatus_Error = 4,          ///< Connection error
 } RyuLdnConnectionStatus;
@@ -100,6 +110,17 @@ typedef struct {
 } RyuLdnConfigService;
 
 /**
+ * @brief Configuration operation result
+ */
+typedef enum {
+    RyuLdnConfigResult_Success = 0,
+    RyuLdnConfigResult_FileNotFound = 1,
+    RyuLdnConfigResult_ParseError = 2,
+    RyuLdnConfigResult_IoError = 3,
+    RyuLdnConfigResult_InvalidValue = 4,
+} RyuLdnConfigResult;
+
+/**
  * @brief Initialize connection to ryu:cfg service
  *
  * This opens a connection to the standalone ryu:cfg service.
@@ -121,13 +142,9 @@ void ryuLdnExit(void);
  */
 RyuLdnConfigService* ryuLdnGetService(void);
 
-/**
- * @brief Check if sysmodule is active
- *
- * @param active Output: 1 if active, 0 otherwise
- * @return Result code
- */
-Result ryuLdnIsServiceActive(RyuLdnConfigService* s, u32* active);
+//=============================================================================
+// Sysmodule Status Commands (0-8)
+//=============================================================================
 
 /**
  * @brief Get sysmodule version string
@@ -148,205 +165,13 @@ Result ryuLdnGetVersion(RyuLdnConfigService* s, char* version);
 Result ryuLdnGetConnectionStatus(RyuLdnConfigService* s, RyuLdnConnectionStatus* status);
 
 /**
- * @brief Get configured server address
+ * @brief Check if sysmodule is active
  *
  * @param s Configuration service
- * @param host Output host buffer (at least 64 bytes)
- * @param port Output port
+ * @param active Output: 1 if active, 0 otherwise
  * @return Result code
  */
-Result ryuLdnGetServerAddress(RyuLdnConfigService* s, char* host, u16* port);
-
-/**
- * @brief Set server address
- *
- * @param s Configuration service
- * @param host Server hostname
- * @param port Server port
- * @return Result code
- */
-Result ryuLdnSetServerAddress(RyuLdnConfigService* s, const char* host, u16 port);
-
-/**
- * @brief Get debug logging state
- *
- * @param s Configuration service
- * @param enabled Output: 1 if enabled, 0 if disabled
- * @return Result code
- */
-Result ryuLdnGetDebugEnabled(RyuLdnConfigService* s, u32* enabled);
-
-/**
- * @brief Enable/disable debug logging
- *
- * @param s Configuration service
- * @param enabled 1 to enable, 0 to disable
- * @return Result code
- */
-Result ryuLdnSetDebugEnabled(RyuLdnConfigService* s, u32 enabled);
-
-//=============================================================================
-// Configuration Commands
-//=============================================================================
-
-/**
- * @brief Config operation result
- */
-typedef enum {
-    RyuLdnConfigResult_Success = 0,
-    RyuLdnConfigResult_FileNotFound = 1,
-    RyuLdnConfigResult_ParseError = 2,
-    RyuLdnConfigResult_IoError = 3,
-    RyuLdnConfigResult_InvalidValue = 4,
-} RyuLdnConfigResult;
-
-/**
- * @brief Get passphrase
- *
- * @param s Configuration service
- * @param passphrase Output buffer (at least 64 bytes)
- * @return Result code
- */
-Result ryuLdnGetPassphrase(RyuLdnConfigService* s, char* passphrase);
-
-/**
- * @brief Set passphrase
- *
- * @param s Configuration service
- * @param passphrase Passphrase string (max 63 chars)
- * @return Result code
- */
-Result ryuLdnSetPassphrase(RyuLdnConfigService* s, const char* passphrase);
-
-/**
- * @brief Get LDN enabled state
- *
- * @param s Configuration service
- * @param enabled Output: 1 if enabled, 0 if disabled
- * @return Result code
- */
-Result ryuLdnGetLdnEnabled(RyuLdnConfigService* s, u32* enabled);
-
-/**
- * @brief Set LDN enabled state
- *
- * @param s Configuration service
- * @param enabled 1 to enable, 0 to disable
- * @return Result code
- */
-Result ryuLdnSetLdnEnabled(RyuLdnConfigService* s, u32 enabled);
-
-/**
- * @brief Get TLS enabled state
- *
- * @param s Configuration service
- * @param enabled Output: 1 if enabled, 0 if disabled
- * @return Result code
- */
-Result ryuLdnGetUseTls(RyuLdnConfigService* s, u32* enabled);
-
-/**
- * @brief Set TLS enabled state
- *
- * @param s Configuration service
- * @param enabled 1 to enable, 0 to disable
- * @return Result code
- */
-Result ryuLdnSetUseTls(RyuLdnConfigService* s, u32 enabled);
-
-/**
- * @brief Get connect timeout in milliseconds
- *
- * @param s Configuration service
- * @param timeout_ms Output timeout value
- * @return Result code
- */
-Result ryuLdnGetConnectTimeout(RyuLdnConfigService* s, u32* timeout_ms);
-
-/**
- * @brief Set connect timeout in milliseconds
- *
- * @param s Configuration service
- * @param timeout_ms Timeout value
- * @return Result code
- */
-Result ryuLdnSetConnectTimeout(RyuLdnConfigService* s, u32 timeout_ms);
-
-/**
- * @brief Get ping interval in milliseconds
- *
- * @param s Configuration service
- * @param interval_ms Output interval value
- * @return Result code
- */
-Result ryuLdnGetPingInterval(RyuLdnConfigService* s, u32* interval_ms);
-
-/**
- * @brief Set ping interval in milliseconds
- *
- * @param s Configuration service
- * @param interval_ms Interval value
- * @return Result code
- */
-Result ryuLdnSetPingInterval(RyuLdnConfigService* s, u32 interval_ms);
-
-/**
- * @brief Get debug level (0-3)
- *
- * @param s Configuration service
- * @param level Output level (0=Error, 1=Warn, 2=Info, 3=Verbose)
- * @return Result code
- */
-Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level);
-
-/**
- * @brief Set debug level (0-3)
- *
- * @param s Configuration service
- * @param level Level (0=Error, 1=Warn, 2=Info, 3=Verbose)
- * @return Result code
- */
-Result ryuLdnSetDebugLevel(RyuLdnConfigService* s, u32 level);
-
-/**
- * @brief Get log to file state
- *
- * @param s Configuration service
- * @param enabled Output: 1 if enabled, 0 if disabled
- * @return Result code
- */
-Result ryuLdnGetLogToFile(RyuLdnConfigService* s, u32* enabled);
-
-/**
- * @brief Set log to file state
- *
- * @param s Configuration service
- * @param enabled 1 to enable, 0 to disable
- * @return Result code
- */
-Result ryuLdnSetLogToFile(RyuLdnConfigService* s, u32 enabled);
-
-/**
- * @brief Save configuration to file
- *
- * @param s Configuration service
- * @param result Output operation result
- * @return Result code
- */
-Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
-
-/**
- * @brief Reload configuration from file
- *
- * @param s Configuration service
- * @param result Output operation result
- * @return Result code
- */
-Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
-
-//=============================================================================
-// Runtime LDN State Commands (23-28)
-//=============================================================================
+Result ryuLdnIsServiceActive(RyuLdnConfigService* s, u32* active);
 
 /**
  * @brief Check if a game is actively using LDN
@@ -400,6 +225,167 @@ Result ryuLdnForceReconnect(RyuLdnConfigService* s);
  * @return Result code
  */
 Result ryuLdnGetActiveProcessId(RyuLdnConfigService* s, u64* pid);
+
+//=============================================================================
+// Sysmodule General Settings Commands (9-14)
+//=============================================================================
+
+/**
+ * @brief Get debug logging state
+ *
+ * @param s Configuration service
+ * @param enabled Output: 1 if enabled, 0 if disabled
+ * @return Result code
+ */
+Result ryuLdnGetDebugEnabled(RyuLdnConfigService* s, u32* enabled);
+
+/**
+ * @brief Enable/disable debug logging
+ *
+ * @param s Configuration service
+ * @param enabled 1 to enable, 0 to disable
+ * @return Result code
+ */
+Result ryuLdnSetDebugEnabled(RyuLdnConfigService* s, u32 enabled);
+
+/**
+ * @brief Get debug level (0-3)
+ *
+ * @param s Configuration service
+ * @param level Output level (0=Error, 1=Warn, 2=Info, 3=Verbose)
+ * @return Result code
+ */
+Result ryuLdnGetDebugLevel(RyuLdnConfigService* s, u32* level);
+
+/**
+ * @brief Set debug level (0-3)
+ *
+ * @param s Configuration service
+ * @param level Level (0=Error, 1=Warn, 2=Info, 3=Verbose)
+ * @return Result code
+ */
+Result ryuLdnSetDebugLevel(RyuLdnConfigService* s, u32 level);
+
+/**
+ * @brief Save configuration to file
+ *
+ * @param s Configuration service
+ * @param result Output operation result
+ * @return Result code
+ */
+Result ryuLdnSaveConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
+
+/**
+ * @brief Reload configuration from file
+ *
+ * @param s Configuration service
+ * @param result Output operation result
+ * @return Result code
+ */
+Result ryuLdnReloadConfig(RyuLdnConfigService* s, RyuLdnConfigResult* result);
+
+//=============================================================================
+// Sysmodule Configuration Manager Commands (15-24)
+//=============================================================================
+
+/**
+ * @brief Get configured server address
+ *
+ * @param s Configuration service
+ * @param host Output host buffer (at least 64 bytes)
+ * @param port Output port
+ * @return Result code
+ */
+Result ryuLdnGetServerAddress(RyuLdnConfigService* s, char* host, u16* port);
+
+/**
+ * @brief Set server address
+ *
+ * @param s Configuration service
+ * @param host Server hostname
+ * @param port Server port
+ * @return Result code
+ */
+Result ryuLdnSetServerAddress(RyuLdnConfigService* s, const char* host, u16 port);
+
+/**
+ * @brief Get LDN enabled state
+ *
+ * @param s Configuration service
+ * @param enabled Output: 1 if enabled, 0 if disabled
+ * @return Result code
+ */
+Result ryuLdnGetLdnEnabled(RyuLdnConfigService* s, u32* enabled);
+
+/**
+ * @brief Set LDN enabled state
+ *
+ * @param s Configuration service
+ * @param enabled 1 to enable, 0 to disable
+ * @return Result code
+ */
+Result ryuLdnSetLdnEnabled(RyuLdnConfigService* s, u32 enabled);
+
+/**
+ * @brief Get P2P proxy disabled state
+ *
+ * When P2P is disabled, all traffic goes through the relay server.
+ * P2P proxy is disabled by default (disable_p2p = 1).
+ *
+ * @param s Configuration service
+ * @param disabled Output: 1 if P2P proxy is disabled, 0 if enabled
+ * @return Result code
+ */
+Result ryuLdnGetDisableP2p(RyuLdnConfigService* s, u32* disabled);
+
+/**
+ * @brief Set P2P proxy disabled state
+ *
+ * @param s Configuration service
+ * @param disabled 1 to disable P2P proxy, 0 to enable
+ * @return Result code
+ */
+Result ryuLdnSetDisableP2p(RyuLdnConfigService* s, u32 disabled);
+
+/**
+ * @brief Get passphrase filtering state
+ *
+ * When use_passphrase is true, LDN rooms are filtered by the
+ * passphrase — only players with the same passphrase can see
+ * and join each other's sessions.
+ *
+ * @param s Configuration service
+ * @param enabled Output: 1 if passphrase filtering is enabled, 0 if disabled
+ * @return Result code
+ */
+Result ryuLdnGetUsePassphrase(RyuLdnConfigService* s, u32* enabled);
+
+/**
+ * @brief Set passphrase filtering state
+ *
+ * @param s Configuration service
+ * @param enabled 1 to enable passphrase filtering, 0 to disable
+ * @return Result code
+ */
+Result ryuLdnSetUsePassphrase(RyuLdnConfigService* s, u32 enabled);
+
+/**
+ * @brief Get passphrase
+ *
+ * @param s Configuration service
+ * @param passphrase Output buffer (at least 64 bytes)
+ * @return Result code
+ */
+Result ryuLdnGetPassphrase(RyuLdnConfigService* s, char* passphrase);
+
+/**
+ * @brief Set passphrase
+ *
+ * @param s Configuration service
+ * @param passphrase Passphrase string (max 63 chars)
+ * @return Result code
+ */
+Result ryuLdnSetPassphrase(RyuLdnConfigService* s, const char* passphrase);
 
 /**
  * @brief Convert LDN state to human-readable string

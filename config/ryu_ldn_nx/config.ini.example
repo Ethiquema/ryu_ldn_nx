@@ -4,36 +4,25 @@
 
 [server]
 ; Server hostname or IP address
-host = 90.93.156.13
+host = ryuldnnx.ddns.net
 ; Server port
 port = 30456
-; Use TLS encryption (0/1) — NOT IMPLEMENTED: always plain TCP regardless of this setting
-use_tls = 0
-
-[network]
-; Connection timeout in milliseconds
-connect_timeout = 5000
-; Ping interval in milliseconds (parsed but not used — server drives pings)
-ping_interval = 10000
-; Initial reconnect delay in milliseconds (fast retry of 200ms applies first attempt)
-reconnect_delay = 3000
-; Max reconnect attempts (0 = disable auto-reconnect, not infinite)
-max_reconnect_attempts = 5
 
 [ldn]
 ; Enable LDN emulation (0/1/true/false/yes/no)
 enabled = 1
+; Enable passphrase filtering (0/1)
+use_passphrase = 0
 ; Room passphrase (empty = public)
 passphrase =
-; Network interface (empty = auto)
-interface =
-; Disable P2P proxy (0 = false | 1 = true) : DO NOT SET at 0 / false (P2P is not fully implemented and in development)
+; Disable P2P proxy (0 = P2P enabled, 1 = P2P disabled / relay-only)
+; WARNING: Setting to 0 enables P2P proxy which is experimental and incomplete.
+; Keep at 1 (relay-only) for stable gameplay.
 disable_p2p = 1
 
 [debug]
 ; Enable debug logging (0/1/true/false/yes/no)
+; When enabled, logs are written to both console and SD card file.
 enabled = 0
 ; Log level (0=errors, 1=warnings, 2=info, 3=verbose)
 level = 1
-; Log to file (0/1/true/false/yes/no)
-log_to_file = 0

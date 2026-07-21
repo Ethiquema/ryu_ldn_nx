@@ -41,7 +41,7 @@
  * TcpClient client;
  *
  * // Connect to server
- * if (client.connect("90.93.156.13", 30456, 5000) == ClientResult::Success) {
+ * if (client.connect("ryuldnnx.ddns.net", 30456, 5000) == ClientResult::Success) {
  *     // Send initialize message
  *     InitializeMessage init{};
  *     client.send_initialize(init);

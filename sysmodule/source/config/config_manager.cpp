@@ -171,39 +171,6 @@ void ConfigManager::SetServerPort(uint16_t port) {
     NotifyChange("server");
 }
 
-void ConfigManager::SetUseTls(bool enabled) {
-    m_config.server.use_tls = enabled;
-    m_dirty = true;
-    NotifyChange("server");
-}
-
-// =============================================================================
-// Network Settings
-// =============================================================================
-
-void ConfigManager::SetConnectTimeout(uint32_t timeout_ms) {
-    m_config.network.connect_timeout_ms = timeout_ms;
-    m_dirty = true;
-    NotifyChange("network");
-}
-
-void ConfigManager::SetPingInterval(uint32_t interval_ms) {
-    m_config.network.ping_interval_ms = interval_ms;
-    m_dirty = true;
-    NotifyChange("network");
-}
-
-void ConfigManager::SetReconnectDelay(uint32_t delay_ms) {
-    m_config.network.reconnect_delay_ms = delay_ms;
-    m_dirty = true;
-    NotifyChange("network");
-}
-
-void ConfigManager::SetMaxReconnectAttempts(uint32_t attempts) {
-    m_config.network.max_reconnect_attempts = attempts;
-    m_dirty = true;
-    NotifyChange("network");
-}
 
 // =============================================================================
 // LDN Settings
@@ -232,16 +199,16 @@ bool ConfigManager::SetPassphrase(const char* passphrase) {
     return true;
 }
 
-void ConfigManager::SetInterfaceName(const char* name) {
-    if (name == nullptr) {
-        m_config.ldn.interface_name[0] = '\0';
-    } else {
-        std::strncpy(m_config.ldn.interface_name, name, MAX_INTERFACE_LENGTH);
-        m_config.ldn.interface_name[MAX_INTERFACE_LENGTH] = '\0';
-    }
+// =============================================================================
+// Use Passphrase
+// ============================================================================
+
+void ConfigManager::SetUsePassphrase(bool enabled) {
+    m_config.ldn.use_passphrase = enabled;
     m_dirty = true;
     NotifyChange("ldn");
 }
+
 
 // =============================================================================
 // Debug Settings
@@ -256,12 +223,6 @@ void ConfigManager::SetDebugEnabled(bool enabled) {
 void ConfigManager::SetDebugLevel(uint32_t level) {
     // Clamp to valid range (0-3)
     m_config.debug.level = (level > 3) ? 3 : level;
-    m_dirty = true;
-    NotifyChange("debug");
-}
-
-void ConfigManager::SetLogToFile(bool enabled) {
-    m_config.debug.log_to_file = enabled;
     m_dirty = true;
     NotifyChange("debug");
 }
