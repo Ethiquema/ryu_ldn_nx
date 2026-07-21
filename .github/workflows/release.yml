@@ -108,7 +108,7 @@ jobs:
           echo "percent=$(cat /tmp/avg.txt)" >> $GITHUB_OUTPUT
 
       - name: Update coverage badge
-        uses: schneegans/dynamic-badges-action@v1.8.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_BADGE_SECRET }}
           gistID: 4277995494c6874ebb238bdbc499d9d0
