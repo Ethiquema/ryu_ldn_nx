@@ -31,6 +31,7 @@ public:
             }
             state.SetStatus(OverlayState::InitStatus::Loaded);
         });
+
     }
     virtual void exitServices() override {
         if (OverlayState::Instance().GetStatus() == OverlayState::InitStatus::Loaded)

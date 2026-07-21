@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <string>
 
 // Initialize random seed for passphrase generation
 namespace {
@@ -30,6 +31,7 @@ MainDashboardGui::MainDashboardGui() = default;
 
 tsl::elm::Element* MainDashboardGui::createUI() {
     auto frame = new tsl::elm::OverlayFrame("ryu_ldn_nx", OverlayState::Instance().GetVersion());
+    m_frame = frame;
     auto list = new tsl::elm::List();
 
     if (OverlayState::Instance().GetStatus() == OverlayState::InitStatus::Error) {
@@ -60,14 +62,10 @@ void MainDashboardGui::BuildConnectionSection(tsl::elm::List* list) {
     list->addItem(m_statusItem);
     m_passphraseItem = new tsl::elm::MiniListItem("Passphrase", "---");
     list->addItem(m_passphraseItem);
-    m_ldnStateItem = new tsl::elm::MiniListItem("LDN State", "None");
-    list->addItem(m_ldnStateItem);
-    m_sessionInfoItem = new tsl::elm::MiniListItem("Session", "N/A");
-    list->addItem(m_sessionInfoItem);
 }
 
 void MainDashboardGui::BuildPassphraseSection(tsl::elm::List* list) {
-    list->addItem(new tsl::elm::CategoryHeader("Passphrase  (X=Random Y=Clear)"));
+    list->addItem(new tsl::elm::CategoryHeader("Passphrase (X=Random Y=Clear)"));
     // Use Passphrase toggle (copied from AdvancedSettingsGui::BuildLdnSection)
     bool passphraseEnabled = false;
     bool hasPassphrase = false;
@@ -103,12 +101,16 @@ void MainDashboardGui::BuildPassphraseSection(tsl::elm::List* list) {
                     return;
                 }
             }
-            ryuLdnSetUsePassphrase(svc, enabled ? 1 : 0);
+            Result rc = ryuLdnSetUsePassphrase(svc, enabled ? 1 : 0);
+            if (R_FAILED(rc)) {
+                m_passphraseEnabledToggle->setState(!enabled);
+                return;
+            }
             OverlayState::Instance().MarkDirty();
         }
     });
     list->addItem(m_passphraseEnabledToggle);
-    auto editItem = new tsl::elm::ListItem("Edit Passphrase");
+    auto editItem = new tsl::elm::MiniListItem("Edit Passphrase");
     editItem->setValue(">");
     editItem->setClickListener([](u64 keys) {
         if (keys & HidNpadButton_A) { tsl::changeTo<PassphraseEditorGui>(); return true; }
@@ -138,9 +140,16 @@ void MainDashboardGui::BuildLdnSection(tsl::elm::List* list) {
         u32 ldnEnabled;
         if (R_SUCCEEDED(ryuLdnGetLdnEnabled(svc, &ldnEnabled))) m_ldnToggle->setState(ldnEnabled != 0);
     }
-    m_ldnToggle->setStateChangedListener([](bool enabled) {
+    m_ldnToggle->setStateChangedListener([this](bool enabled) {
         RyuLdnConfigService* svc = ryuLdnGetService();
-        if (svc) { ryuLdnSetLdnEnabled(svc, enabled ? 1 : 0); OverlayState::Instance().MarkDirty(); }
+        if (svc) {
+            Result rc = ryuLdnSetLdnEnabled(svc, enabled ? 1 : 0);
+            if (R_FAILED(rc)) {
+                m_ldnToggle->setState(!enabled);
+                return;
+            }
+            OverlayState::Instance().MarkDirty();
+        }
     });
     list->addItem(m_ldnToggle);
 }
@@ -175,25 +184,24 @@ void MainDashboardGui::RefreshConnectionValues() {
         m_statusItem->setValue(ryu_ldn::overlay::ConnectionStatusToString(derivedStatus));
         m_statusItem->setValueColor(ryu_ldn::overlay::StatusColor(derivedStatus));
     }
-    if (m_ldnStateItem) {
-        RyuLdnState state;
-        if (R_SUCCEEDED(ryuLdnGetLdnState(svc, &state))) {
-            m_ldnStateItem->setValue(ryuLdnStateToString(state));
-            m_ldnStateItem->setValueColor(ryu_ldn::overlay::LdnStateColor(state));
-        }
-    }
-    if (m_sessionInfoItem) {
-        RyuLdnSessionInfo info;
-        if (R_SUCCEEDED(ryuLdnGetSessionInfo(svc, &info))) {
-            if (info.node_count == 0) m_sessionInfoItem->setValue("Not in session");
-            else {
-                char buf[48];
-                snprintf(buf, sizeof(buf), "%d/%d (%s)",
-                         info.node_count, info.max_nodes,
-                         info.is_host ? "Host" : "Client");
-                m_sessionInfoItem->setValue(buf);
+    // Build compact session info for subtitle: "2/8" or "2/8 (Host)"
+    {
+        std::string info;
+        char buf[64];
+
+        RyuLdnSessionInfo sessionInfo;
+        if (R_SUCCEEDED(ryuLdnGetSessionInfo(svc, &sessionInfo))) {
+            if (sessionInfo.node_count > 0) {
+                snprintf(buf, sizeof(buf), "%d/%d%s",
+                         sessionInfo.node_count, sessionInfo.max_nodes,
+                         sessionInfo.is_host ? " (Host)" : "");
+            } else {
+                snprintf(buf, sizeof(buf), "--");
             }
+            info = buf;
         }
+
+        m_cachedInfoSubtitle = info;
     }
 }
 
@@ -206,6 +214,8 @@ void MainDashboardGui::RefreshPassphrase() {
         char display[32];
         ryu_ldn::overlay::FormatPassphraseDisplay(passphrase, display, sizeof(display));
         m_passphraseItem->setValue(display);
+        if (strlen(passphrase) > 0) m_passphraseItem->setValueColor(tsl::RGB888("00FF00"));
+        else                        m_passphraseItem->setValueColor(tsl::RGB888("888888"));
     }
 }
 
@@ -217,6 +227,65 @@ void MainDashboardGui::update() {
         RefreshPassphrase();
     }
     m_autoSaveController.Update(OverlayState::Instance().IsDirty());
+
+    // Dynamic subtitle: connection status + save indicator
+    if (m_frame) {
+        RyuLdnConfigService* svc = ryuLdnGetService();
+        RyuLdnConnectionStatus currentStatus = RyuLdnStatus_Disconnected;
+        if (svc) {
+            RyuLdnState ldnState;
+            if (R_SUCCEEDED(ryuLdnGetLdnState(svc, &ldnState))) {
+                switch (ldnState) {
+                    case RyuLdnState_AccessPointCreated:
+                    case RyuLdnState_StationConnected:
+                        currentStatus = RyuLdnStatus_Ready;
+                        break;
+                    case RyuLdnState_AccessPoint:
+                    case RyuLdnState_Station:
+                        currentStatus = RyuLdnStatus_Connected;
+                        break;
+                    case RyuLdnState_Initialized:
+                        currentStatus = RyuLdnStatus_Connecting;
+                        break;
+                    case RyuLdnState_Error:
+                        currentStatus = RyuLdnStatus_Error;
+                        break;
+                    default:
+                        currentStatus = RyuLdnStatus_Disconnected;
+                        break;
+                }
+            }
+        }
+
+        // Build subtitle: status dot + save indicator + info line
+        std::string subtitle;
+        switch (currentStatus) {
+            case RyuLdnStatus_Ready:
+            case RyuLdnStatus_Connected:
+                subtitle = "\u25CF Connected";
+                break;
+            case RyuLdnStatus_Connecting:
+                subtitle = "\u25CF Connecting";
+                break;
+            case RyuLdnStatus_Error:
+                subtitle = "\u25CF Error";
+                break;
+            default:
+                subtitle = "\u25CF Disconnected";
+                break;
+        }
+        std::string indicator = m_autoSaveController.GetIndicatorText();
+        if (!indicator.empty()) {
+            subtitle += " \u2014 ";
+            subtitle += indicator;
+        }
+        if (!m_cachedInfoSubtitle.empty()) {
+            subtitle += " | ";
+            subtitle += m_cachedInfoSubtitle;
+        }
+        m_frame->setSubtitle(subtitle);
+    }
+
     // Refresh passphrase toggle: lock/unlock and sync state when passphrase changes
     if (m_passphraseEnabledToggle) {
         RyuLdnConfigService* svc = ryuLdnGetService();

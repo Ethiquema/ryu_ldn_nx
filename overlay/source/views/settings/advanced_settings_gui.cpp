@@ -60,11 +60,15 @@ void AdvancedSettingsGui::BuildLdnSection(tsl::elm::List* list) {
             m_p2pToggle->setState(p2pDisabled == 0); // ON when NOT disabled
         }
     }
-    m_p2pToggle->setStateChangedListener([](bool enabled) {
+    m_p2pToggle->setStateChangedListener([this](bool enabled) {
         RyuLdnConfigService* svc2 = ryuLdnGetService();
         if (svc2) {
             // Inverted: enabled=true -> disable_p2p=0, enabled=false -> disable_p2p=1
-            ryuLdnSetDisableP2p(svc2, enabled ? 0 : 1);
+            Result rc = ryuLdnSetDisableP2p(svc2, enabled ? 0 : 1);
+            if (R_FAILED(rc)) {
+                m_p2pToggle->setState(!enabled);
+                return;
+            }
             OverlayState::Instance().MarkDirty();
         }
     });
@@ -79,9 +83,16 @@ void AdvancedSettingsGui::BuildDebugSection(tsl::elm::List* list) {
         u32 debugEnabled;
         if (R_SUCCEEDED(ryuLdnGetDebugEnabled(svc, &debugEnabled))) m_debugToggle->setState(debugEnabled != 0);
     }
-    m_debugToggle->setStateChangedListener([](bool enabled) {
+    m_debugToggle->setStateChangedListener([this](bool enabled) {
         RyuLdnConfigService* svc = ryuLdnGetService();
-        if (svc) { ryuLdnSetDebugEnabled(svc, enabled ? 1 : 0); OverlayState::Instance().MarkDirty(); }
+        if (svc) {
+            Result rc = ryuLdnSetDebugEnabled(svc, enabled ? 1 : 0);
+            if (R_FAILED(rc)) {
+                m_debugToggle->setState(!enabled);
+                return;
+            }
+            OverlayState::Instance().MarkDirty();
+        }
     });
     list->addItem(m_debugToggle);
     m_debugLevelBar = new tsl::elm::NamedStepTrackBar("\uE142",
@@ -109,6 +120,14 @@ void AdvancedSettingsGui::RefreshServerAddress() {
         char buf[96];
         snprintf(buf, sizeof(buf), "%s:%u", host, port);
         m_serverItem->setValue(buf);
+        // Color: green if connected, grey if disconnected
+        RyuLdnConnectionStatus status;
+        if (R_SUCCEEDED(ryuLdnGetConnectionStatus(svc, &status)) &&
+            (status == RyuLdnStatus_Connected || status == RyuLdnStatus_Ready)) {
+            m_serverItem->setValueColor(tsl::RGB888("00FF00"));
+        } else {
+            m_serverItem->setValueColor(tsl::RGB888("888888"));
+        }
     }
 }
 

@@ -35,9 +35,9 @@ private:
     void RefreshConnectionValues();
     void RefreshPassphrase();
 
+    tsl::elm::OverlayFrame* m_frame = nullptr;
+
     tsl::elm::MiniListItem* m_statusItem = nullptr;
-    tsl::elm::MiniListItem* m_ldnStateItem = nullptr;
-    tsl::elm::MiniListItem* m_sessionInfoItem = nullptr;
     tsl::elm::MiniListItem* m_passphraseItem = nullptr;
 
     tsl::elm::ToggleListItem* m_ldnToggle = nullptr;
@@ -45,4 +45,7 @@ private:
 
     u32 m_refreshCounter = 0;
     AutoSaveController m_autoSaveController;
+
+    /** @brief Cached info line built in RefreshConnectionValues, used in update() subtitle. */
+    std::string m_cachedInfoSubtitle;
 };
