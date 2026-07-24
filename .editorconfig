@@ -1,0 +1,54 @@
+# EditorConfig — https://editorconfig.org
+# Keeps editor behavior consistent across contributors for ryu_ldn_nx.
+# Most of the codebase is C/C++ (sysmodule + overlay) using 4-space
+# indentation; tests are also C++. Other file types are covered by the
+# wildcard root rule and can be refined per-file below.
+
+root = true
+
+# Default for every file: UTF-8, no trailing whitespace, final newline.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# C / C++ sources and headers — 4 spaces, matching AGENTS.md "Code Conventions".
+[*.{c,h,cpp,hpp,cxx,hxx,cc}]
+indent_size = 4
+indent_style = space
+
+# Makefiles require real tabs for recipe lines.
+[Makefile]
+indent_style = tab
+indent_size = 8
+
+[*.{mk,mk.in}]
+indent_style = tab
+indent_size = 8
+
+# Shell scripts — 4 spaces (matches scripts/ style).
+[*.sh]
+indent_size = 4
+
+# INI / config files — 4 spaces.
+[*.ini]
+indent_size = 4
+
+# YAML — 2 spaces (Docker Compose, CI workflows).
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown — 2 spaces (lists/code blocks render consistently).
+[*.md]
+indent_size = 2
+
+# JSON — 2 spaces.
+[*.json]
+indent_size = 2
+
+# Python tooling (scripts/gdb_codegen.py and friends).
+[*.py]
+indent_size = 4

@@ -179,12 +179,13 @@ $(TARGET_PACKET_DISPATCHER): ldn_packet_dispatcher_tests.o ldn_packet_dispatcher
 $(TARGET_SESSION_HANDLER): ldn_session_handler_tests.o ldn_session_handler.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
-# Proxy Handler tests (needs ldn_proxy_handler.cpp)
-$(TARGET_PROXY_HANDLER): ldn_proxy_handler_tests.o ldn_proxy_handler.o
+# Proxy Handler tests (needs ldn_proxy_handler.cpp + log.o since add_connection
+# saturation path now logs via LOG_WARN)
+$(TARGET_PROXY_HANDLER): ldn_proxy_handler_tests.o ldn_proxy_handler.o log.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Handler Integration tests (needs all handler implementations)
-$(TARGET_HANDLER_INTEGRATION): ldn_handler_integration_tests.o ldn_packet_dispatcher.o ldn_session_handler.o ldn_proxy_handler.o
+$(TARGET_HANDLER_INTEGRATION): ldn_handler_integration_tests.o ldn_packet_dispatcher.o ldn_session_handler.o ldn_proxy_handler.o log.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # UPnP tests (standalone, no miniupnpc needed for mock tests)

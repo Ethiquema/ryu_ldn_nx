@@ -225,3 +225,10 @@ output/
 
 # Lock Files (For build priorities)
 .lock-*
+
+# =============================================================================
+# Build wrapper logs
+# =============================================================================
+
+# build-wrapper.sh coordination logs (scripts/builder/)
+build-logs/
