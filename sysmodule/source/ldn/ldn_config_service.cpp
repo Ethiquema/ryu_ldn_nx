@@ -17,7 +17,7 @@
 
 namespace ams::mitm::ldn {
 
-LdnConfigService::LdnConfigService(LdnICommunication* communication)
+LdnConfigService::LdnConfigService(ICommunicationService* communication)
     : m_communication(communication)
 {
     // m_communication can be null if created without a parent service
@@ -26,6 +26,7 @@ LdnConfigService::LdnConfigService(LdnICommunication* communication)
 Result LdnConfigService::GetVersion(sf::Out<std::array<char, 32>> out) {
     std::array<char, 32> version{};
     std::strncpy(version.data(), RYU_LDN_VERSION, 31);
+    version[31] = '\0';  // Guarantee null-termination even if RYU_LDN_VERSION >= 31 chars
     *out = version;
     R_SUCCEED();
 }

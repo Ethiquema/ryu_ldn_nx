@@ -41,7 +41,7 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <vector>
+#include <array>
 
 #include "../protocol/types.hpp"
 
@@ -147,6 +147,13 @@ struct ProxyConnection {
  * Maintains a table of active virtual connections and provides
  * callbacks for connection events and data reception.
  *
+ * ## Memory Model
+ *
+ * The connection table is a fixed-size `std::array<ProxyConnection, 64>`
+ * with an active-count tracker. No dynamic allocation — the sysmodule
+ * runs on a 384 KB expanded heap and cannot afford `std::vector` growth.
+ * The 64-entry cap matches the maximum number of proxy sockets.
+ *
  * ## Thread Safety
  *
  * NOT thread-safe. All methods should be called from the same thread.
@@ -172,6 +179,9 @@ struct ProxyConnection {
  */
 class LdnProxyHandler {
 public:
+    /// Maximum number of tracked proxy connections (matches max proxy sockets).
+    static constexpr size_t MAX_PROXY_CONNECTIONS = 64;
+
     /**
      * @brief Default constructor
      *
@@ -333,7 +343,7 @@ public:
      *
      * @return Count of entries in connection table
      */
-    size_t get_connection_count() const { return m_connections.size(); }
+    size_t get_connection_count() const { return m_connection_count; }
 
     /**
      * @brief Check if a connection exists
@@ -371,7 +381,9 @@ private:
     uint32_t m_proxy_ip;              ///< Configured proxy IP
     uint32_t m_proxy_subnet_mask;     ///< Configured subnet mask
 
-    std::vector<ProxyConnection> m_connections; ///< Active connection table
+    /// Fixed-size connection table (no dynamic allocation).
+    std::array<ProxyConnection, MAX_PROXY_CONNECTIONS> m_connections;
+    size_t m_connection_count;        ///< Number of active entries in m_connections
 
     // Callbacks
     ProxyConfigCallback m_config_callback;
@@ -388,8 +400,10 @@ private:
      * @brief Add a connection to the table
      *
      * @param info Connection info
+     * @return true if the connection was added, false if the table was full
+     *         (caller may log / take corrective action)
      */
-    void add_connection(const protocol::ProxyInfo& info);
+    bool add_connection(const protocol::ProxyInfo& info);
 
     /**
      * @brief Remove a connection from the table

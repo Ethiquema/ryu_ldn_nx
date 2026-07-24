@@ -44,7 +44,14 @@
 namespace ams::mitm::ldn {
 
 // Forward declarations
-class LdnICommunication;
+// NOTE: The actual class is defined in ldn_icommunication.hpp as
+// `ICommunicationService`. The previous forward declaration used the
+// non-existent name `LdnICommunication`, which made the constructor
+// parameter and member pointer refer to an unrelated (and never defined)
+// type — a type-system mismatch that would break any translation unit
+// that actually instantiated LdnConfigService with a real
+// ICommunicationService pointer.
+class ICommunicationService;
 
 /**
  * @brief Connection status for overlay
@@ -121,10 +128,10 @@ public:
     /**
      * @brief Constructor
      *
-     * @param communication Pointer to parent LdnICommunication service
+     * @param communication Pointer to parent ICommunicationService service
      */
     /// @gdb{tag="LDN:LIFECYCLE", msg="ConfigService constructor"}
-    explicit LdnConfigService(LdnICommunication* communication);
+    explicit LdnConfigService(ICommunicationService* communication);
 
     /**
      * @brief Get sysmodule version string
@@ -332,7 +339,27 @@ public:
     Result ReloadConfig(sf::Out<ConfigResult> out);
 
 private:
-    LdnICommunication* m_communication;
+    /**
+     * @brief Pointer to the parent LDN communication service.
+     *
+     * ## Ownership
+     * - **Not owned** by LdnConfigService — the caller (typically the MITM
+     *   service that spawns the `ryu:cfg` session) owns the
+     *   ICommunicationService instance and is responsible for its lifetime.
+     *   LdnConfigService only borrows it to forward status queries.
+     *
+     * ## Lifetime
+     * - Valid for the duration of the config service session. The parent
+     *   service outlives every `ryu:cfg` IPC session it spawns.
+     *
+     * ## Nullability
+     * - **May be nullptr.** A LdnConfigService can be constructed without a
+     *   parent service (see ldn_config_service.cpp ctor comment). Callers
+     *   must null-check before dereferencing. When nullptr, status queries
+     *   fall back to SharedState defaults and never touch the communication
+     *   service.
+     */
+    ICommunicationService* m_communication;
 };
 
 } // namespace ams::mitm::ldn

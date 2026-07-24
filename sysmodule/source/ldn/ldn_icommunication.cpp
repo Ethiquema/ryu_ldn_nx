@@ -12,6 +12,8 @@
 #include "../debug/log.hpp"
 #include "../bsd/proxy_socket_manager.hpp"
 #include "../bsd/bsd_mitm_service.hpp"
+#include "../p2p/p2p_proxy_client.hpp"
+#include "../p2p/p2p_proxy_server.hpp"
 #include <arpa/inet.h>
 
 namespace ams::mitm::ldn {
@@ -26,13 +28,61 @@ namespace ams::mitm::ldn {
  * The BSD MITM needs to send ProxyData through the LDN server connection.
  * This static pointer provides access to the active service's client.
  * Set during ConnectToServer, cleared during DisconnectFromServer.
+ *
+ * Stored as std::atomic so that unsynchronized readers (e.g. timeout checks)
+ * never observe a torn pointer value. The g_active_service_mutex is still
+ * held for compound operations (read + deref + mutate service state) to
+ * prevent the instance from being disconnected mid-call.
  */
-static ICommunicationService* g_active_ldn_service = nullptr;
+static std::atomic<ICommunicationService*> g_active_ldn_service{nullptr};
+
+/**
+ * @brief Mutex serializing compound operations on g_active_ldn_service.
+ *
+ * @role Held while dereferencing/mutating the active ICommunicationService
+ *       pointer so the instance cannot be disconnected mid-call. The atomic
+ *       itself only protects against a torn pointer read; this mutex extends
+ *       the critical section to cover the follow-up state access.
+ * @modified_by Any code that loads/stores g_active_ldn_service AND then
+ *              touches the service — `OnInactivityTimeout`, `ConnectToServer`,
+ *              `DisconnectFromServer`, and the BSD MITM ProxyData callback
+ *              entry points in this file.
+ * @thread_safety This mutex is the lock for compound access to
+ *                g_active_ldn_service. Plain atomic reads (e.g. a one-shot
+ *                `g_active_ldn_service.load()` for a null check) do not need
+ *                it; anything that dereferences the pointer does.
+ */
 static os::Mutex g_active_service_mutex{false};
 
+/**
+ * @brief Stack backing the LDN background (receive/poll) thread.
+ *
+ * @role Pre-allocated 16 KB stack for the background thread that pumps the
+ *       Ryujinx LDN server connection. Allocated statically so the class
+ *       stays small and the heap is not touched on thread start.
+ * @modified_by Never mutated after zero-init; only consumed by
+ *              `os::ThreadType` setup when the background thread is created.
+ * @thread_safety Thread-safe by design: a single owner thread runs on this
+ *                stack; no concurrent accessors.
+ */
 // Background thread stack - allocated statically to avoid bloating class size
 alignas(os::ThreadStackAlignment) static u8 g_background_thread_stack[0x4000];
 
+/**
+ * @brief Stack backing the one-shot P2P connect worker thread.
+ *
+ * @role Pre-allocated 16 KB stack for the async ExternalProxy connect+auth+
+ *       EnsureProxyReady chain, which previously ran inline inside
+ *       HandleServerPacket and froze further packet dispatch (including the
+ *       master server's `Connected` reply arriving right after `ExternalProxy`).
+ *       Ryujinx runs the same handler on its receive thread; we approximate
+ *       that by spawning a dedicated worker once per ExternalProxy.
+ * @modified_by Never mutated after zero-init; only consumed by
+ *              `os::ThreadType` setup when the P2P connect thread is spawned.
+ * @thread_safety Thread-safe by design: the worker is launched at most once
+ *                at a time and joins before reuse, so the stack has a single
+ *                owner per run.
+ */
 // Async ExternalProxy connect thread stack — see m_p2p_connect_thread comment
 // in the header. The connect+auth+EnsureProxyReady chain takes 1–4 s and used
 // to run inline inside HandleServerPacket from the WaitForResponse poll loop,
@@ -52,9 +102,10 @@ alignas(os::ThreadStackAlignment) static u8 g_p2p_connect_thread_stack[0x4000];
 void ICommunicationService::OnInactivityTimeout() {
     std::scoped_lock lock(g_active_service_mutex);
 
-    if (g_active_ldn_service != nullptr && !g_active_ldn_service->m_network_connected) {
+    ICommunicationService* svc = g_active_ldn_service.load();
+    if (svc != nullptr && !svc->m_network_connected) {
         LOG_INFO("Inactivity timeout - disconnecting from server");
-        g_active_ldn_service->DisconnectFromServer();
+        svc->DisconnectFromServer();
     }
 }
 
@@ -79,7 +130,7 @@ static bool SendProxyDataCallback(uint32_t source_ip, uint16_t source_port,
                                    const void* data, size_t data_len) {
     std::scoped_lock lock(g_active_service_mutex);
 
-    if (g_active_ldn_service == nullptr) {
+    if (g_active_ldn_service.load() == nullptr) {
         LOG_WARN("SendProxyDataCallback: g_active_ldn_service=nullptr, src=0x%08X:%u dst=0x%08X:%u",
                  source_ip, source_port, dest_ip, dest_port);
         return false;
@@ -107,8 +158,9 @@ static bool SendProxyDataCallback(uint32_t source_ip, uint16_t source_port,
 
     header.data_length = static_cast<uint32_t>(data_len);
 
-    // Send via the LDN client
-    auto result = g_active_ldn_service->SendProxyDataToServer(header, data, data_len);
+    // Send via the LDN client (held under g_active_service_mutex above)
+    ICommunicationService* svc = g_active_ldn_service.load();
+    auto result = svc->SendProxyDataToServer(header, data, data_len);
     if (result != ryu_ldn::network::ClientOpResult::Success) {
         LOG_WARN("SendProxyDataCallback: SendProxyDataToServer failed: %s (src=0x%08X:%u dst=0x%08X:%u len=%zu)",
                  ryu_ldn::network::client_op_result_to_string(result),
@@ -182,9 +234,13 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_external_proxy_config{}
     , m_p2p_client(nullptr)
     , m_p2p_server(nullptr)
+    , m_p2p_connect_thread{}
+    , m_p2p_connect_thread_active{false}
+    , m_p2p_connect_thread_initialized(false)
     , m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
     , m_recv_thread{}
     , m_recv_thread_running(false)
+    , m_recv_thread_stopped(false)
     , m_shared_mutex{}
     , m_program_id(program_id)
     , m_local_communication_id(0)
@@ -256,7 +312,13 @@ ICommunicationService::~ICommunicationService() {
     // and the MITM service never destroys — the next game launch freezes
     // on a black screen because it cannot open ldn:u.
     //
-    // Correct order:
+    // If Finalize() was called before the destructor (normal game exit),
+    // it already stopped and destroyed the receive thread. In that case
+    // m_recv_thread_stopped is true and we skip the receive-thread steps.
+    //
+    // If the destructor runs without Finalize() (crash, Home button close,
+    // process killed), the receive thread is still running and we must
+    // stop it here. The order is:
     //   1. Signal the receive thread to stop
     //   2. Close the TCP socket (shutdown+close) — this unblocks recv()
     //      so the receive thread exits its polling loop immediately
@@ -269,21 +331,31 @@ ICommunicationService::~ICommunicationService() {
     // shutdown(SHUT_WR) + close(fd), causing recv() to return immediately
     // with an error, breaking the receive thread out of its loop.
 
-    // Step 1: Signal the receive thread to stop
-    m_recv_thread_running = false;
-    m_error_event.Signal();
+    if (!m_recv_thread_stopped) {
+        // Step 1: Signal the receive thread to stop
+        m_recv_thread_running = false;
+        m_error_event.Signal();
 
-    // Step 2: Close the TCP socket BEFORE joining the receive thread.
-    // This unblocks recv() so the thread exits immediately.
-    // DisconnectFromServer() always calls m_server_client.disconnect()
-    // (even when m_server_connected is false) to close any TCP socket
-    // that auto-reconnect may have opened. It also disconnects P2P proxy
-    // and resets ProxySocketManager when m_server_connected was true.
-    DisconnectFromServer();
+        // Step 2: Close the TCP socket BEFORE joining the receive thread.
+        // This unblocks recv() so the thread exits immediately.
+        // DisconnectFromServer() always calls m_server_client.disconnect()
+        // (even when m_server_connected is false) to close any TCP socket
+        // that auto-reconnect may have opened. It also disconnects P2P proxy
+        // and resets ProxySocketManager when m_server_connected was true.
+        DisconnectFromServer();
 
-    // Step 3: Join the receive thread (now unblocked, exits quickly)
-    os::WaitThread(&m_recv_thread);
-    os::DestroyThread(&m_recv_thread);
+        // Step 3: Join the receive thread (now unblocked, exits quickly)
+        os::WaitThread(&m_recv_thread);
+        os::DestroyThread(&m_recv_thread);
+        m_recv_thread_stopped = true;
+    } else {
+        // Finalize() already stopped the receive thread and called
+        // DisconnectFromServer(). But the destructor must still call
+        // DisconnectFromServer() to close any TCP socket that auto-reconnect
+        // may have opened between Finalize() and the destructor.
+        // disconnect() is idempotent — safe to call when already disconnected.
+        m_server_client.disconnect();
+    }
 
     // Wait for any in-flight async P2P connect worker before tearing down
     // m_p2p_client / m_external_proxy_config underneath it.
@@ -353,14 +425,12 @@ ICommunicationService::~ICommunicationService() {
     // Note: shared_state was declared above for SetGameActive/SetLdnPid.
     u32 remaining = shared_state.DecrementSessionCount();
     LOG_INFO("Destructor: active sessions remaining = %u", remaining);
-
-    if (remaining == 0) {
-        LOG_INFO("Destructor: no active sessions — game closed, terminating sysmodule");
-        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
-        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
-        ryu_ldn::debug::g_logger.flush();
-        svc::ExitProcess();
-    }
+    // NOTE: We intentionally do NOT call svc::ExitProcess() here.
+    // This sysmodule is a boot2 process (TitleID 4200000000000010) that
+    // must survive across multiple game sessions. When the game exits,
+    // Atmosphere destroys the IPC sessions and these destructors run,
+    // but the sysmodule itself stays alive. The session counter resets
+    // naturally when a new game opens new ldn:u/bsd:u sessions.
 }
 
 // ============================================================================
@@ -467,7 +537,7 @@ Result ICommunicationService::ConnectToServer() {
     // Register this service for BSD MITM callback
     {
         std::scoped_lock lock(g_active_service_mutex);
-        g_active_ldn_service = this;
+        g_active_ldn_service.store(this);
     }
 
     // Register the send callback with ProxySocketManager
@@ -487,8 +557,8 @@ void ICommunicationService::DisconnectFromServer() {
         // Unregister BSD MITM callback
         {
             std::scoped_lock lock(g_active_service_mutex);
-            if (g_active_ldn_service == this) {
-                g_active_ldn_service = nullptr;
+            if (g_active_ldn_service.load() == this) {
+                g_active_ldn_service.store(nullptr);
             }
         }
 
@@ -556,6 +626,33 @@ Result ICommunicationService::InitializeSystem2(u64 unk, const ams::sf::ClientPr
 
 Result ICommunicationService::Finalize() {
     LOG_INFO("Finalize() called");
+
+    // ── Stop the receive thread BEFORE closing the TCP socket ──────────
+    // The receive thread drives RyuLdnClient::update() which calls
+    // process_packets() → handle_packet() → our callback → HandleServerPacket.
+    // If we close the socket first (via DisconnectFromServer), the receive
+    // thread sees ConnectionLost, calls start_backoff(), and may call
+    // try_connect() if the backoff expires before the destructor joins it.
+    // That opens a NEW TCP socket, the receive thread blocks in recv() on it,
+    // and the destructor hangs on WaitThread — the MITM service never
+    // destroys, and the next game launch freezes on a black screen because
+    // it cannot open ldn:u.
+    //
+    // Correct order:
+    //   1. Signal the receive thread to stop
+    //   2. Wait for it to exit (no socket to block on — it's still open)
+    //   3. Destroy the thread
+    //   4. Disconnect from server (close socket)
+    //   5. Finalize state machine
+    if (!m_recv_thread_stopped) {
+        m_recv_thread_running = false;
+        m_error_event.Signal();
+        os::WaitThread(&m_recv_thread);
+        os::DestroyThread(&m_recv_thread);
+        m_recv_thread_stopped = true;
+        LOG_INFO("Finalize: receive thread stopped");
+    }
+
     // Disconnect from RyuLdn server if connected
     DisconnectFromServer();
 
@@ -1776,7 +1873,11 @@ void ICommunicationService::HandleServerPacket(ryu_ldn::protocol::PacketId id, c
             // This is sent to the HOST when a joiner is about to connect via P2P
             if (size >= sizeof(ryu_ldn::protocol::ExternalProxyToken)) {
                 const auto* token = reinterpret_cast<const ryu_ldn::protocol::ExternalProxyToken*>(data);
-                LOG_INFO("Received ExternalProxyToken: virtual_ip=0x%08X",
+                // NOTE: only the virtual_ip is logged. The 16-byte auth token
+                // (token->token) is intentionally omitted — it is a per-joiner
+                // secret and must never appear in logs (same policy as the
+                // passphrase masking in network/client.cpp).
+                LOG_INFO("Received ExternalProxyToken: virtual_ip=0x%08X (token=***)",
                          token->virtual_ip);
 
                 // Add token to P2P server's waiting list for authentication
@@ -1892,7 +1993,10 @@ void ICommunicationService::HandleConnectedPacket(const uint8_t* data, size_t si
                  m_network_info.ldn.nodeCountMax);
 
         // Debug: log NetworkInfo common fields
-        LOG_INFO("  NetworkInfo.common: bssid=%02X:%02X:%02X:%02X:%02X:%02X, channel=%d",
+        // BSSID (typically the host's MAC) is a PII-like identifier; downgrade
+        // to VERBOSE so it only appears when debug logging is explicitly
+        // enabled, not on every successful Connect/CreateNetwork.
+        LOG_VERBOSE("  NetworkInfo.common: bssid=%02X:%02X:%02X:%02X:%02X:%02X, channel=%d",
                  m_network_info.common.bssid.raw[0], m_network_info.common.bssid.raw[1],
                  m_network_info.common.bssid.raw[2], m_network_info.common.bssid.raw[3],
                  m_network_info.common.bssid.raw[4], m_network_info.common.bssid.raw[5],
@@ -1908,6 +2012,7 @@ void ICommunicationService::HandleConnectedPacket(const uint8_t* data, size_t si
                  m_network_info.ldn.advertiseDataSize);
 
         // Debug: log first 32 bytes of advertiseData if present
+#ifdef DEBUG_HEX_DUMP
         if (m_network_info.ldn.advertiseDataSize > 0) {
             size_t dump_len = std::min<size_t>(m_network_info.ldn.advertiseDataSize, 32);
             char hex_buf[97] = {0};
@@ -1916,12 +2021,19 @@ void ICommunicationService::HandleConnectedPacket(const uint8_t* data, size_t si
             }
             LOG_INFO("  NetworkInfo.ldn.advertiseData[0-%zu]: %s", dump_len-1, hex_buf);
         }
+#endif
 
         // Debug: log each node's info including MAC and username
+        // Per-node MAC addresses are PII-like identifiers; downgrade to
+        // VERBOSE so they only appear when debug logging is explicitly
+        // enabled. IP/nodeId/isConnected stay at INFO since they are
+        // needed for routine connection diagnostics.
         for (u8 i = 0; i < m_network_info.ldn.nodeCount && i < 8; i++) {
             const auto& node = m_network_info.ldn.nodes[i];
-            LOG_INFO("  Node[%u]: ip=0x%08X, nodeId=%u, isConnected=%u, MAC=%02X:%02X:%02X:%02X:%02X:%02X",
-                     i, node.ipv4Address, node.nodeId, node.isConnected,
+            LOG_INFO("  Node[%u]: ip=0x%08X, nodeId=%u, isConnected=%u",
+                     i, node.ipv4Address, node.nodeId, node.isConnected);
+            LOG_VERBOSE("  Node[%u]: MAC=%02X:%02X:%02X:%02X:%02X:%02X",
+                     i,
                      node.macAddress.raw[0], node.macAddress.raw[1], node.macAddress.raw[2],
                      node.macAddress.raw[3], node.macAddress.raw[4], node.macAddress.raw[5]);
             // Log first 16 chars of username (null-terminated)
@@ -2479,7 +2591,18 @@ void ICommunicationService::HandleExternalProxyConnect(
     };
 
     // Create new P2P client
+    //
+    // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
+    // return nullptr under pressure — the overridden `new` does NOT
+    // throw. Null-check before dereferencing; on failure clean up the
+    // way the surrounding "Failed to connect" path does (DisconnectP2pProxy).
     m_p2p_client = new p2p::P2pProxyClient(packet_callback);
+    if (m_p2p_client == nullptr) {
+        LOG_ERROR("ConnectP2pProxy: failed to allocate P2pProxyClient "
+                   "(heap exhausted?)");
+        DisconnectP2pProxy();
+        return;
+    }
 
     // Connect to P2P host using IP from config
     // ExternalProxyConfig has proxy_ip[16] for IPv4/IPv6
@@ -2577,6 +2700,15 @@ bool ICommunicationService::StartP2pProxyServer() {
         }
     };
     m_p2p_server = new p2p::P2pProxyServer(master_send_callback, this);
+    if (m_p2p_server == nullptr) {
+        // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
+        // return nullptr under pressure — the overridden `new` does NOT
+        // throw. Bail out cleanly via the same path used when Start() fails.
+        LOG_ERROR("StartP2pProxyServer: failed to allocate P2pProxyServer "
+                   "(heap exhausted?)");
+        StopP2pProxyServer();
+        return false;
+    }
 
     // Start listening on an available port
     if (!m_p2p_server->Start()) {
@@ -2683,6 +2815,12 @@ void ICommunicationService::ReceiveThreadFunc() {
 }
 
 u8 ICommunicationService::FindLocalNodeId() const {
+    // m_network_info is written by the receive thread in HandleServerPacket;
+    // callers (HandleConnectedPacket / HandleSyncNetworkPacket) run inside
+    // HandleServerPacket which already holds m_shared_mutex. os::SdkMutex is
+    // NON-recursive (LockSdkMutex aborts via AMS_ABORT_UNLESS if the current
+    // thread already owns it), so we MUST NOT re-lock here. External callers
+    // must hold m_shared_mutex before invoking this method.
     // Search nodes array for our IP address
     for (u8 i = 0; i < NodeCountMax; i++) {
         const auto& node = m_network_info.ldn.nodes[i];

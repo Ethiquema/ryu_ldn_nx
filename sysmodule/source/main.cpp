@@ -34,6 +34,43 @@ namespace ams {
         // Memory Configuration
         // ====================================================================
 
+        // ====================================================================
+        // Named constants for the libnx BSD socket configuration
+        // ====================================================================
+        // Previously magic numbers inlined in LibnxSocketInitConfig and
+        // LibnxBsdInitConfig; extracted for readability. Values unchanged.
+
+        /// @brief TCP transmit buffer initial size (bytes)
+        constexpr u32 TCP_TX_BUF_SIZE = 0x800;
+        /// @brief TCP receive buffer initial size (bytes)
+        constexpr u32 TCP_RX_BUF_SIZE = 0x1000;
+        /// @brief TCP transmit buffer max size (bytes)
+        constexpr u32 TCP_TX_BUF_MAX_SIZE = 0x2000;
+        /// @brief TCP receive buffer max size (bytes)
+        constexpr u32 TCP_RX_BUF_MAX_SIZE = 0x2000;
+        /// @brief UDP transmit buffer size (bytes)
+        constexpr u32 UDP_TX_BUF_SIZE = 0x2000;
+        /// @brief UDP receive buffer size (bytes)
+        constexpr u32 UDP_RX_BUF_SIZE = 0x2000;
+        /// @brief Socket buffer efficiency factor (sb_efficiency in libnx)
+        constexpr u32 SOCKET_BUFFER_EFFICIENCY = 4;
+        /// @brief Maximum number of concurrent BSD IPC sessions (ConcurrencyLimitMax)
+        constexpr u32 BSD_MAX_SESSIONS = 14;
+        /// @brief BSD init protocol version
+        constexpr u32 BSD_INIT_VERSION = 1;
+        /// @brief Alignment of the expanded heap backing buffer (bytes)
+        constexpr size_t HEAP_ALIGNMENT = 0x40;
+        /// @brief Number of MITM ports handled by ServerManager (ldn:u + bsd:u)
+        constexpr size_t MITM_PORT_COUNT = 2;
+        /// @brief Number of ryu:cfg config IPC ports
+        constexpr size_t CFG_PORT_COUNT = 1;
+        /// @brief Stack size for the log maintenance thread (bytes)
+        constexpr size_t LOG_THREAD_STACK_SIZE = 0x1000;
+        /// @brief Sleep interval of the log maintenance thread (seconds)
+        constexpr uint64_t LOG_MAINTENANCE_INTERVAL_SEC = 2;
+        /// @brief Priority offset of the log thread relative to the cfg thread
+        constexpr s32 LOG_THREAD_PRIORITY_OFFSET = 5;
+
         /// Main malloc buffer size
         /// NOTE: Switch sysmodules share ~10MB total, keep this small!
         /// 1 MB is sufficient for TlsHeapCentral and gameplay traffic
@@ -55,13 +92,13 @@ namespace ams {
 
         /// Socket initialization configuration
         constexpr const ::SocketInitConfig LibnxSocketInitConfig = {
-            .tcp_tx_buf_size     = 0x800,
-            .tcp_rx_buf_size     = 0x1000,
-            .tcp_tx_buf_max_size = 0x2000,
-            .tcp_rx_buf_max_size = 0x2000,
-            .udp_tx_buf_size     = 0x2000,
-            .udp_rx_buf_size     = 0x2000,
-            .sb_efficiency       = 4,
+            .tcp_tx_buf_size     = TCP_TX_BUF_SIZE,
+            .tcp_rx_buf_size     = TCP_RX_BUF_SIZE,
+            .tcp_tx_buf_max_size = TCP_TX_BUF_MAX_SIZE,
+            .tcp_rx_buf_max_size = TCP_RX_BUF_MAX_SIZE,
+            .udp_tx_buf_size     = UDP_TX_BUF_SIZE,
+            .udp_rx_buf_size     = UDP_RX_BUF_SIZE,
+            .sb_efficiency       = SOCKET_BUFFER_EFFICIENCY,
             // num_bsd_sessions = number of IPC sessions to bsd:s — i.e. the
             // max concurrency for blocking BSD calls. Each blocked recv()/
             // accept()/send() holds one session for the entire IPC round-trip.
@@ -84,7 +121,7 @@ namespace ams {
             // (socket_constants.hpp:35), the highest value the kernel will
             // accept; transfer-memory size is independent of this count, so
             // headroom is free.
-            .num_bsd_sessions    = 14,
+            .num_bsd_sessions    = BSD_MAX_SESSIONS,
             // bsd:s (System) is required for privileged socket options like
             // IP_MULTICAST_TTL / IP_MULTICAST_IF / IP_ADD_MEMBERSHIP that
             // miniupnpc's upnpDiscover() relies on. bsd:u returned EPERM and
@@ -98,7 +135,7 @@ namespace ams {
 
         /// BSD initialization configuration
         constexpr const ::BsdInitConfig LibnxBsdInitConfig = {
-            .version             = 1,
+            .version             = BSD_INIT_VERSION,
             .tmem_buffer         = g_socket_tmem_buffer,
             .tmem_buffer_size    = sizeof(g_socket_tmem_buffer),
             .tcp_tx_buf_size     = LibnxSocketInitConfig.tcp_tx_buf_size,
@@ -142,9 +179,18 @@ namespace ams {
         // buffer, ExpHeap overhead/fragmentation, and transient std::vector/std::deque
         // allocations. 96KB saturated under real gameplay traffic and caused DABRT
         // 0x101 on allocation failure.
-        alignas(0x40) constinit u8 g_heap_memory[384_KB];
+        alignas(HEAP_ALIGNMENT) constinit u8 g_heap_memory[384_KB];
         constinit lmem::HeapHandle g_heap_handle;
         constinit bool g_heap_initialized;
+        // Heap init mutex. `os::SdkMutex` provides a constexpr constructor that
+        // constant-initializes the underlying critical section on Horizon (the
+        // `AMS_OS_INTERNAL_CRITICAL_SECTION_IMPL_CONSTANT_INITIALIZER` path), so
+        // `constinit` alone yields a usable lock. We still re-initialize it
+        // explicitly in `InitializeSystemModule()` to make the dependency on
+        // lock availability audible and to harden against non-Horizon toolchain
+        // paths (pthread/windows) where the constexpr initializer may not fully
+        // seed the critical section. `InitializeSdkMutex` is idempotent on an
+        // already-initialized mutex — it just re-seeds the storage.
         constinit os::SdkMutex g_heap_init_mutex;
 
         lmem::HeapHandle GetHeapHandle() {
@@ -189,16 +235,55 @@ namespace ams {
             constexpr int PortIndex_LdnMitm = 0;
             constexpr int PortIndex_BsdMitm = 1;
 
-            /// Custom server manager for MITM (2 ports: ldn:u and bsd:u)
-            class ServerManager final : public sf::hipc::ServerManager<2, LdnMitmManagerOptions, MaxSessions> {
+            /// Custom server manager for MITM (ldn:u + bsd:u)
+            class ServerManager final : public sf::hipc::ServerManager<MITM_PORT_COUNT, LdnMitmManagerOptions, MaxSessions> {
             private:
                 virtual ams::Result OnNeedsToAccept(int port_index, Server* server) override;
             };
 
+            /**
+             * @brief HIPC server manager driving the ldn:u and bsd:u MITM services.
+             *
+             * @role Owns the two MITM ports (PortIndex_LdnMitm, PortIndex_BsdMitm) and dispatches
+             *       incoming IPC sessions to the corresponding service implementations via
+             *       `OnNeedsToAccept`. Pumped by `LoopProcess()` from the main server thread
+             *       (and the extra worker threads), so all acceptance is single-threaded per
+             *       server manager instance.
+             * @modified_by `mitm::InitializeSystemModule()` registers the MITM ports once at boot;
+             *              `ServerManager::OnNeedsToAccept` accepts sessions at runtime. No external
+             *              code mutates this object after initialization.
+             * @thread_safety Atmosphere's `sf::hipc::ServerManager` is not internally synchronized;
+             *                it is driven by `LoopProcess()` which must be called from a single
+             *                thread per instance. Here it is pumped from the main thread plus the
+             *                `NumExtraThreads` worker threads, all calling `LoopProcess()` on the
+             *                same object — the manager's internal queue serializes dispatch safely
+             *                across those threads. No other concurrent access occurs.
+             */
             ServerManager g_server_manager;
 
-            // Global counters for session tracking
+            /**
+             * @brief Monotonic counter assigning a unique ID to each accepted ldn:u MITM session.
+             *
+             * @role Generates the per-session identifier surfaced in `LOG_INFO` traces so concurrent
+             *       LDN sessions can be told apart in logs.
+             * @modified_by `ServerManager::OnNeedsToAccept` (this file, PortIndex_LdnMitm branch),
+             *              via `++g_ldn_session_counter` when a new ldn:u session is accepted.
+             * @thread_safety Not protected by any mutex. Acceptance is single-threaded by Atmosphere's
+             *               server manager dispatch loop, so the increment is implicitly serialized.
+             *               Reads from other threads would be racy; no such reads exist today.
+             */
             static u32 g_ldn_session_counter = 0;
+
+            /**
+             * @brief Monotonic counter assigning a unique ID to each accepted bsd:u MITM session.
+             *
+             * @role Same purpose as g_ldn_session_counter but for the bsd:u MITM, so BSD sessions
+             *       can be correlated in logs.
+             * @modified_by `ServerManager::OnNeedsToAccept` (this file, PortIndex_BsdMitm branch),
+             *              via `++g_bsd_session_counter` when a new bsd:u session is accepted.
+             * @thread_safety Not protected by any mutex. Same single-threaded-accept rationale as
+             *               g_ldn_session_counter; only `OnNeedsToAccept` mutates it.
+             */
             static u32 g_bsd_session_counter = 0;
 
             Result ServerManager::OnNeedsToAccept(int port_index, Server* server) {
@@ -321,7 +406,21 @@ namespace ams {
         constexpr size_t MaxSessions = 2;
 
         /// Server manager for ryu:cfg service
-        using ConfigServerManager = sf::hipc::ServerManager<1, ConfigServerManagerOptions, MaxSessions>;
+        using ConfigServerManager = sf::hipc::ServerManager<CFG_PORT_COUNT, ConfigServerManagerOptions, MaxSessions>;
+        /**
+         * @brief HIPC server manager driving the custom `ryu:cfg` IPC service.
+         *
+         * @role Owns the single config service port that the Tesla overlay talks to for live
+         *       configuration changes and LDN status display. Pumped by `LoopProcess()` from the
+         *       dedicated config thread started in `InitializeSystemModule()`.
+         * @modified_by `cfg::InitializeConfig()` registers the `ConfigService` object once at boot;
+         *              no further mutation occurs after registration. Runtime traffic is read-only
+         *              with respect to the manager itself.
+         * @thread_safety Same caveat as `mitm::g_server_manager`: `sf::hipc::ServerManager` is not
+         *                internally synchronized and must be pumped from a single thread. Here it
+         *                is driven only by the config thread via `LoopConfigServerThread`, so the
+         *                implicit single-pumper contract is satisfied.
+         */
         ConfigServerManager g_config_server_manager;
 
         /// Config service thread entry point
@@ -330,14 +429,14 @@ namespace ams {
         }
 
         /// Log maintenance thread stack
-        alignas(os::MemoryPageSize) u8 g_log_thread_stack[0x1000];
+        alignas(os::MemoryPageSize) u8 g_log_thread_stack[LOG_THREAD_STACK_SIZE];
         os::ThreadType g_log_thread;
 
         /// Log maintenance thread entry point (checks file idle timeout)
         void LoopLogMaintenanceThread(void*) {
             while (true) {
                 // Sleep for 2 seconds
-                svc::SleepThread(TimeSpan::FromSeconds(2).GetNanoSeconds());
+                svc::SleepThread(TimeSpan::FromSeconds(LOG_MAINTENANCE_INTERVAL_SEC).GetNanoSeconds());
 
                 // Check if log file should be closed due to idle timeout
                 ryu_ldn::debug::g_logger.check_idle_timeout();
@@ -357,6 +456,17 @@ namespace ams {
         void InitializeSystemModule() {
             // Initialize service manager connection
             R_ABORT_UNLESS(sm::Initialize());
+
+            // Host-test safety net: re-seeds the mutex storage on non-Horizon
+            // platforms. On Horizon (`__SWITCH__`), `constinit` already
+            // constant-initializes the underlying critical section, so the
+            // explicit `InitializeSdkMutex` call is redundant and is skipped
+            // to avoid a double-init on the SdkMutex. The host test build
+            // (g++ with -DTEST_BUILD) has no `constinit` zero-init guarantee
+            // for the mutex internals, so we re-seed there.
+#ifndef __SWITCH__
+            os::InitializeSdkMutex(std::addressof(g_heap_init_mutex));
+#endif
 
             // Initialize filesystem
             fs::InitializeForSystem();
@@ -463,7 +573,7 @@ namespace ams {
             nullptr,
             cfg::g_log_thread_stack,
             sizeof(cfg::g_log_thread_stack),
-            cfg::ThreadPriority + 5));  // Lower priority than config service
+             cfg::ThreadPriority + LOG_THREAD_PRIORITY_OFFSET));  // Lower priority than config service
 
         os::SetThreadNamePointer(&cfg::g_log_thread, "ryu_ldn::LogThread");
         os::StartThread(&cfg::g_log_thread);
@@ -541,5 +651,50 @@ void operator delete[](void* p) {
 }
 
 void operator delete[](void* p, size_t size) {
+    return ams::mitm::Deallocate(p, size);
+}
+
+// ============================================================================
+// C++17 aligned allocation overloads
+// ============================================================================
+// The custom expanded heap (lmem::ExpHeap) has a fixed alignment that is
+// already sufficient for all standard types. These overloads delegate to the
+// existing non-aligned versions, ignoring the requested alignment. This
+// satisfies the C++17 standard library which calls these overloads when
+// allocating over-aligned types (e.g., alignas(64) buffers).
+//
+// Without these overloads, the linker fails to resolve the aligned new/delete
+// symbols on toolchains that define them (devkitPro/gcc 8.1+), causing a
+// build error whenever std::aligned_alloc or an over-aligned type is used.
+
+void* operator new(size_t size, std::align_val_t /*alignment*/) {
+    return ams::mitm::Allocate(size);
+}
+
+void* operator new(size_t size, std::align_val_t /*alignment*/, const std::nothrow_t&) {
+    return ams::mitm::Allocate(size);
+}
+
+void operator delete(void* p, std::align_val_t /*alignment*/) {
+    return ams::mitm::Deallocate(p, 0);
+}
+
+void operator delete(void* p, size_t size, std::align_val_t /*alignment*/) {
+    return ams::mitm::Deallocate(p, size);
+}
+
+void* operator new[](size_t size, std::align_val_t /*alignment*/) {
+    return ams::mitm::Allocate(size);
+}
+
+void* operator new[](size_t size, std::align_val_t /*alignment*/, const std::nothrow_t&) {
+    return ams::mitm::Allocate(size);
+}
+
+void operator delete[](void* p, std::align_val_t /*alignment*/) {
+    return ams::mitm::Deallocate(p, 0);
+}
+
+void operator delete[](void* p, size_t size, std::align_val_t /*alignment*/) {
     return ams::mitm::Deallocate(p, size);
 }
