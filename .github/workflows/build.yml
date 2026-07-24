@@ -12,187 +12,121 @@ permissions:
   packages: read
 
 jobs:
-  test:
-    name: Tests & Coverage ≥ 80%
+  # Verify every commit in a PR carries a DCO Signed-off-by line.
+  # Runs first so a missing sign-off fails the workflow fast, before
+  # any expensive test/build job spins up.
+  dco-check:
+    name: DCO sign-off check
     runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
-          submodules: recursive
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential g++ netcat-openbsd
-          pip install gcovr
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Run unit tests with coverage
-        run: cd tests && make clean && make COVERAGE=1 test
-
-      - name: Build integration tests with coverage
-        run: cd tests/integration && make clean && make COV=1 all
-
-      - name: Start LdnServer
-        run: |
-          cd tests/integration
-          bash prepare-compose.sh
-          docker compose -f docker-compose.yml up -d
-          bash wait-for-server.sh localhost 30456 60
-          sleep 2
-
-      - name: Run integration tests with coverage
-        run: |
-          cd tests/integration
-          INTEGRATION_COMPOSE_FILE="$(pwd)/docker-compose.yml" ./run_integration_tests localhost 30456
-
-      - name: Tear down LdnServer
-        if: always()
-        run: cd tests/integration && docker compose -f docker-compose.yml down -v
-
-      - name: Enforce per-file coverage ≥ 80%
-        run: python3 scripts/check-coverage.py --min 80 --root .
-
-      - name: Compute average coverage
-        id: coverage
-        run: |
-          python3 scripts/check-coverage.py --min 0 --root . --json /tmp/cov.json || true
-          python3 <<'PYEOF' > /tmp/avg.txt
-          import json
-          with open('/tmp/cov.json') as f:
-              d = json.load(f)
-          files = [f for f in d.get('files', []) if 'sysmodule/source/' in (f.get('file', f.get('filename', '')))]
-          total_lines = 0
-          total_covered = 0
-          for f in files:
-              lines = f.get('lines', [])
-              if isinstance(lines, list):
-                  total_lines += len(lines)
-                  total_covered += sum(1 for l in lines if l.get('count', 0) > 0)
-          avg = (total_covered / total_lines * 100) if total_lines > 0 else 0
-          print(f'{avg:.1f}')
-          PYEOF
-          echo "percent=$(cat /tmp/avg.txt)" >> $GITHUB_OUTPUT
-
-      - name: Update coverage badge
-        if: github.event_name == 'push'
-        uses: schneegans/dynamic-badges-action@v1.8.0
-        with:
-          auth: ${{ secrets.GIST_BADGE_SECRET }}
-          gistID: 4277995494c6874ebb238bdbc499d9d0
-          filename: coverage.json
-          label: coverage
-          message: ${{ steps.coverage.outputs.percent }}%
-          valColorRange: ${{ steps.coverage.outputs.percent }}
-          maxColorRange: 100
-          minColorRange: 0
-
-  build:
-    name: Build & Package
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    container: ghcr.io/ethiquema/ryu_ldn_nx:latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
           fetch-depth: 0
 
-      - name: Fix git safe directory
+      - name: Verify Signed-off-by on every commit in the PR
         run: |
-          git config --global --add safe.directory '*'
-          git symbolic-ref HEAD refs/heads/"${GITHUB_REF_NAME:-develop}" 2>/dev/null || true
+          set -euo pipefail
+          # Range of commits introduced by this PR (base..head).
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Checking DCO for commits ${BASE_SHA:0:7}..${HEAD_SHA:0:7}"
 
-      - name: Link pre-built libraries
-        run: |
-          # Symlink pre-built libstratosphere.a from the container image
-          # so the sysmodule Makefile finds it without rebuilding libs.
-          LIB_DIR="${GITHUB_WORKSPACE}/sysmodule/Atmosphere-libs/libstratosphere/lib/nintendo_nx_arm64_armv8a/release"
-          PREBUILT="/opt/ryu_ldn_nx/libstratosphere/lib/nintendo_nx_arm64_armv8a/release/libstratosphere.a"
+          MISSING=0
+          MISMATCH=0
+          for sha in $(git rev-list "${BASE_SHA}..${HEAD_SHA}"); do
+            body=$(git show -s --format='%B' "$sha")
+            author=$(git show -s --format='%an <%ae>' "$sha")
 
-          if [ -f "$PREBUILT" ]; then
-            mkdir -p "$LIB_DIR"
-            ln -s "$PREBUILT" "$LIB_DIR/libstratosphere.a"
-            echo "Linked pre-built libstratosphere.a from container image"
-          else
-            echo "::error::Pre-built libstratosphere.a not found at $PREBUILT"
+            # 1. A Signed-off-by trailer must be present at all.
+            if ! printf '%s' "$body" | grep -Eq '^Signed-off-by: .+ <.+@.+>'; then
+              echo "::error::Commit ${sha} is missing a Signed-off-by line"
+              echo "----- ${sha:0:7} message -----"
+              printf '%s\n' "$body"
+              echo "------------------------------"
+              MISSING=$((MISSING + 1))
+              continue
+            fi
+
+            # 2. Per the Developer Certificate of Origin, the author's own
+            #    sign-off must be present — a co-authored Signed-off-by from
+            #    another contributor does not satisfy the requirement for the
+            #    commit author. Compare the 'Name <email>' portion of every
+            #    Signed-off-by trailer against '%an <%ae>'.
+            #    `sed` strips the 'Signed-off-by: ' prefix and trailing
+            #    whitespace; `grep -Fxq` requires an exact full-line match.
+            if ! printf '%s\n' "$body" \
+                 | grep -E '^Signed-off-by: ' \
+                 | sed 's/^Signed-off-by: //; s/[[:space:]]*$//' \
+                 | grep -Fxq "$author"; then
+              echo "::error::Commit ${sha} Signed-off-by does not match author '${author}'"
+              echo "----- ${sha:0:7} message -----"
+              printf '%s\n' "$body"
+              echo "------------------------------"
+              MISMATCH=$((MISMATCH + 1))
+            fi
+          done
+
+          TOTAL=$((MISSING + MISMATCH))
+          if [ "$TOTAL" -gt 0 ]; then
+            echo "::error::${TOTAL} commit(s) failed DCO check (${MISSING} missing, ${MISMATCH} mismatched). Rebase with --signoff (git commit -s / git rebase --signoff)."
             exit 1
           fi
 
-      - name: Detach devkitPro packaging tools from CodeQL LD_PRELOAD
-        run: |
-          for tool in npdmtool elf2nso build_pfs0 nacptool; do
-            real="/opt/devkitpro/tools/bin/$tool"
-            if [ ! -f "$real.real" ]; then
-              mv "$real" "$real.real"
-            fi
-            cat > "$real" <<'WRAPPER'
-          #!/bin/bash
-          self="${0}.real"
-          name="$(basename "$0")"
-          # npdmtool fails to parse the input JSON when it lives on the
-          # GitHub Actions workspace bind-mount (/__w/...) inside the
-          # container, even though the file content is byte-identical to
-          # what works elsewhere. Workaround: copy input to /tmp (container-
-          # native fs) and rewrite arg before exec.
-          if [ "$name" = "npdmtool" ] && [ -f "$1" ]; then
-            staged="/tmp/$(basename "$1").$$"
-            cp "$1" "$staged"
-            shift
-            set -- "$staged" "$@"
-          fi
-          exec env -u LD_PRELOAD "$self" "$@"
-          WRAPPER
-            chmod +x "$real"
-          done
+          echo "All PR commits carry a Signed-off-by line matching the commit author ✓"
 
-      - name: Build sysmodule + overlay + dist ZIP
-        env:
-          DEVKITPRO: /opt/devkitpro
-        run: |
-          export DEVKITPRO=/opt/devkitpro
-          export DEVKITARM=$DEVKITPRO/devkitARM
-          export DEVKITA64=$DEVKITPRO/devkitA64
-          export PATH=$DEVKITPRO/tools/bin:$DEVKITA64/bin:$PATH
+  # Static analysis (clang-tidy via scripts/lint.sh + docker compose lint).
+  # Runs on push and PR so lint regressions fail early.
+  lint:
+    name: Static lint (clang-tidy)
+    runs-on: ubuntu-latest
+    needs: dco-check
+    if: always() && (needs.dco-check.result == 'success' || needs.dco-check.result == 'skipped')
 
-          # Copy NPDM descriptor to /tmp to avoid filesystem issues on
-          # the GitHub Actions workspace bind-mount inside the container.
-          # npdmtool cannot parse JSON from the /__w/... bind-mount.
-          cp "${GITHUB_WORKSPACE}/sysmodule/res/app.json" /tmp/app.json
-
-          cd ${GITHUB_WORKSPACE}/sysmodule && make -j4 all APP_JSON=/tmp/app.json
-          cd ${GITHUB_WORKSPACE}/overlay && make -j4 all
-          cd ${GITHUB_WORKSPACE}/sysmodule && make dist APP_JSON=/tmp/app.json
-
-      - name: Upload release ZIP
-        uses: actions/upload-artifact@v7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          name: ryu_ldn_nx-release-${{ github.sha }}
-          path: ryu_ldn_nx-release.zip
+          submodules: recursive
 
-      - name: Upload debug symbols
-        uses: actions/upload-artifact@v7
-        with:
-          name: ryu_ldn_nx-debug-${{ github.sha }}
-          path: |
-            sysmodule/ryu_ldn_nx.elf
-            sysmodule/ryu_ldn_nx.nso
-          if-no-files-found: warn
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run lint service
+        run: docker compose run --rm lint
+
+  # Shared test + build pipeline extracted into _build-base.yml.
+  # On PRs only the test job runs (run-build=false); on develop pushes
+  # both test and build run, then the pre-release job consumes the
+  # artifacts produced by the reusable build job.
+  base:
+    name: Test & Build (reusable)
+    needs: [dco-check, lint]
+    if: always() && (needs.dco-check.result == 'success' || needs.dco-check.result == 'skipped') && (needs.lint.result == 'success' || needs.lint.result == 'skipped')
+    uses: ./.github/workflows/_build-base.yml
+    with:
+      # Build the sysmodule only on develop pushes (not on PRs).
+      run-build: ${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+      default-branch: 'develop'
+      artifact-name-zip: ryu_ldn_nx-release-${{ github.sha }}
+      artifact-name-debug: ryu_ldn_nx-debug-${{ github.sha }}
+      # Build.yml updates the coverage badge only on push events.
+      badge-always: false
+    permissions:
+      contents: read
+      packages: read
 
   pre-release:
     name: Create Pre-Release
     runs-on: ubuntu-latest
-    needs: build
+    needs: base
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Download release ZIP
         uses: actions/download-artifact@v8
