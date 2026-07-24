@@ -77,8 +77,24 @@ UpnpPortMapper::UpnpPortMapper()
 {
     // Allocate UPnP structures on the heap
     // These are C structs from miniupnpc, we manage their lifetime
+    //
+    // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
+    // return nullptr under pressure — the overridden `new` does NOT
+    // throw. Null-check both allocations; if either fails we leave
+    // m_available=false and Discover() will early-out via the existing
+    // nullptr guard at line ~129.
     m_urls = new UPNPUrls();
+    if (m_urls == nullptr) {
+        LOG_ERROR("UpnpPortMapper: failed to allocate UPNPUrls (heap exhausted?)");
+        return;
+    }
     m_data = new IGDdatas();
+    if (m_data == nullptr) {
+        LOG_ERROR("UpnpPortMapper: failed to allocate IGDdatas (heap exhausted?)");
+        delete m_urls;
+        m_urls = nullptr;
+        return;
+    }
 
     // Zero-initialize (required before first use)
     std::memset(m_urls, 0, sizeof(UPNPUrls));

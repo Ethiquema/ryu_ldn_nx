@@ -64,6 +64,30 @@ using ProxyPacketCallback = void(*)(ryu_ldn::protocol::PacketId type,
  * When a Switch joins a network with P2P enabled, this client establishes
  * a direct connection to the host instead of going through the relay server.
  *
+ * ## Security / Encryption
+ *
+ * P2P traffic is carried **in cleartext** over the direct TCP connection.
+ * There is no TLS, no DTLS, and no application-layer encryption of proxy
+ * packets. This is a deliberate architectural choice:
+ *
+ *   - It is consistent with the rest of the sysmodule: the relay-server
+ *     path (RyuLdnClient → Ryujinx LDN server) is plain raw TCP (the LDN
+ *     protocol carries no confidentiality guarantees — it transports PIA
+ *     mesh frames that the game layer is responsible for protecting if
+ *     needed).
+ *   - Adding TLS to the P2P leg would require a shared trust anchor
+ *     between peers that the current server-mediated auth
+ *     (ExternalProxyConfig token) does not provide; it would also push
+ *     the sysmodule past its memory budget (mbedTLS context + buffers).
+ *   - The threat model is "LDN multiplayer traffic between consenting
+ *     peers on a trusted network", not "confidential payload over an
+ *     untrusted link". Peers who need confidentiality should use a VPN
+ *     at the OS level.
+ *
+ * Anyone reusing this code in a context where the P2P link crosses an
+ * untrusted network MUST add transport encryption — do not assume the
+ * cleartext default is safe for arbitrary deployments.
+ *
  * ## Thread Safety
  *
  * All public methods are thread-safe. Internal state is protected by mutex.

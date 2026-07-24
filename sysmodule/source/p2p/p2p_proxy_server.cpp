@@ -1013,6 +1013,9 @@ bool P2pProxyServer::TryRegisterUser(P2pProxySession* session,
 
             if (token_match && !ip_match) {
                 // Recompute token_ip for the warning text only.
+                // NOTE: the 16-byte auth token is intentionally NOT logged —
+                // it is a per-joiner secret. Only the resolved physical IP is
+                // surfaced, which is a routing diagnostic, not a credential.
                 uint32_t token_ip_log = (static_cast<uint32_t>(token.physical_ip[0]) << 24) |
                                         (static_cast<uint32_t>(token.physical_ip[1]) << 16) |
                                         (static_cast<uint32_t>(token.physical_ip[2]) << 8)  |
@@ -1069,6 +1072,7 @@ bool P2pProxyServer::TryRegisterUser(P2pProxySession* session,
                 // against what the master server emits in relay mode (which
                 // Ryujinx joiners parse fine). 20 bytes total = 12-byte header
                 // + 8-byte ProxyConfig payload.
+#ifdef DEBUG_HEX_DUMP
                 {
                     char hex[3 * 32 + 1] = {};
                     size_t dump_len = len < 32 ? len : 32;
@@ -1077,6 +1081,7 @@ bool P2pProxyServer::TryRegisterUser(P2pProxySession* session,
                     }
                     LOG_INFO("ProxyConfig wire (%zu B): %s", len, hex);
                 }
+#endif
 
                 session->Send(packet, len);
 
@@ -1332,8 +1337,18 @@ void P2pProxyServer::AcceptLoop() {
         // =====================================================================
         // The session will be added to m_sessions[] after successful auth
         // in TryRegisterUser()
+        //
+        // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
+        // return nullptr under pressure — the overridden `new` does NOT
+        // throw. We must null-check before dereferencing `session`.
 
         auto* session = new P2pProxySession(this, client_fd, remote_ip);
+        if (session == nullptr) {
+            LOG_ERROR("P2P AcceptLoop: failed to allocate P2pProxySession "
+                       "(heap exhausted?) — closing client_fd=%d", client_fd);
+            close(client_fd);
+            continue;
+        }
         session->Start();  // Start receive thread
     }
 }
