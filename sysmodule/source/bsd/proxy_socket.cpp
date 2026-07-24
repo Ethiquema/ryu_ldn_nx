@@ -493,21 +493,20 @@ std::unique_ptr<ProxySocket> ProxySocket::Accept(ryu_ldn::bsd::SockAddrIn* out_a
     // Check if non-blocking and no connections available
     {
         std::scoped_lock lock(m_queue_mutex);
-        if (m_accept_queue.empty()) {
+        if (IsAcceptQueueEmpty()) {
             if (m_non_blocking) {
                 // EWOULDBLOCK
                 return nullptr;
             }
         } else {
             // Connection available - return it
-            auto accepted = std::move(m_accept_queue.front());
-            m_accept_queue.pop_front();
+            auto accepted = AcceptQueuePopFront();
 
-            if (m_accept_queue.empty()) {
+            if (IsAcceptQueueEmpty()) {
                 m_accept_event.Clear();
             }
 
-            if (out_addr != nullptr) {
+            if (out_addr != nullptr && accepted != nullptr) {
                 *out_addr = accepted->GetRemoteAddr();
             }
 
@@ -521,15 +520,14 @@ std::unique_ptr<ProxySocket> ProxySocket::Accept(ryu_ldn::bsd::SockAddrIn* out_a
     // Try again after waking up
     {
         std::scoped_lock lock(m_queue_mutex);
-        if (!m_accept_queue.empty()) {
-            auto accepted = std::move(m_accept_queue.front());
-            m_accept_queue.pop_front();
+        if (!IsAcceptQueueEmpty()) {
+            auto accepted = AcceptQueuePopFront();
 
-            if (m_accept_queue.empty()) {
+            if (IsAcceptQueueEmpty()) {
                 m_accept_event.Clear();
             }
 
-            if (out_addr != nullptr) {
+            if (out_addr != nullptr && accepted != nullptr) {
                 *out_addr = accepted->GetRemoteAddr();
             }
 
@@ -566,11 +564,17 @@ void ProxySocket::IncomingConnection(const ryu_ldn::protocol::ProxyConnectReques
     // Mark as connected
     accepted->m_state = ProxySocketState::Connected;
 
-    // Add to accept queue
-    m_accept_queue.push_back(std::move(accepted));
+    // Add to accept queue (drop if full)
+    if (IsAcceptQueueFull()) {
+        LOG_WARN("ProxySocket IncomingConnection: accept queue full (>%zu), dropping connection from 0x%08X:%u",
+                 MAX_ACCEPT_QUEUE, request.info.source_ipv4, request.info.source_port);
+        // Still send ProxyConnectReply below so the peer doesn't hang forever
+    } else {
+        AcceptQueuePushBack(std::move(accepted));
 
-    // Signal that a connection is available
-    m_accept_event.Signal();
+        // Signal that a connection is available
+        m_accept_event.Signal();
+    }
 
     // Send ProxyConnectReply back to the peer via ProxySocketManager
     // This confirms the connection was accepted
@@ -595,7 +599,7 @@ void ProxySocket::HandleConnectResponse(const ryu_ldn::protocol::ProxyConnectRes
 
 bool ProxySocket::HasPendingConnections() const {
     std::scoped_lock lock(m_queue_mutex);
-    return !m_accept_queue.empty();
+    return !IsAcceptQueueEmpty();
 }
 
 // =============================================================================
