@@ -30,8 +30,6 @@ If the file doesn't exist, the sysmodule creates it automatically with default v
 host = 150.230.119.252
 ; Server port
 port = 30456
-; Use TLS encryption (0/1) — NOT IMPLEMENTED: always plain TCP regardless of this setting
-use_tls = 0
 
 [network]
 ; Connection timeout in milliseconds
@@ -94,7 +92,6 @@ This means `true`, `True`, `yes`, `Yes`, `1` all evaluate to **true**, while `fa
 |--------|---------|-------------|
 | `host` | `150.230.119.252` | Server hostname or IP address |
 | `port` | `30456` | Server port number |
-| `use_tls` | `0` (false) | ⚠️ **Not implemented** — always plain TCP regardless of this setting |
 
 To use a different LDN server:
 
@@ -102,7 +99,6 @@ To use a different LDN server:
 [server]
 host = my.custom.server.com
 port = 12345
-use_tls = 1
 ```
 
 For self-hosted servers on your LAN:
@@ -111,7 +107,6 @@ For self-hosted servers on your LAN:
 [server]
 host = 192.168.1.100
 port = 30456
-use_tls = 0
 ```
 
 ### `[network]` — Connection Behavior

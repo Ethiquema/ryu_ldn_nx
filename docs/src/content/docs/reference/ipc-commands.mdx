@@ -58,9 +58,9 @@ These are the standard Nintendo LDN IPC commands that ryu_ldn_nx intercepts:
 
 The standalone `ryu:cfg` IPC service is available directly via `smGetService("ryu:cfg")`. The overlay uses this service for live configuration and status display.
 
-> **Note**: `GetConnectionStatus` (cmd 1) in the standalone `ryu:cfg` service currently always returns `0` (Disconnected). For actual connection status, use `GetLdnState` (cmd 24) which returns the `CommState` enum.
+> **Note**: `GetConnectionStatus` (cmd 1) in the standalone `ryu:cfg` service currently always returns `0` (Disconnected). For actual connection status, use `GetLdnState` (cmd 22) which returns the `CommState` enum.
 
-### Configuration Commands (0–22)
+### Configuration Commands (0–20)
 
 | Cmd | Name | Parameters | Returns | Description |
 |-----|------|------------|---------|-------------|
@@ -72,45 +72,43 @@ The standalone `ryu:cfg` IPC service is available directly via `smGetService("ry
 | 5 | SetServerAddress | ServerAddress | - | Change server address |
 | 6 | GetLdnEnabled | - | u32 | LDN emulation enabled flag |
 | 7 | SetLdnEnabled | u32 | - | Enable/disable LDN emulation |
-| 8 | GetUseTls | - | u32 | TLS flag (⚠️ NOT IMPLEMENTED — always plain TCP) |
-| 9 | SetUseTls | u32 | - | Enable/disable TLS (⚠️ has no effect) |
-| 10 | GetDebugEnabled | - | u32 | Debug logging flag |
-| 11 | SetDebugEnabled | u32 | - | Enable/disable debug logging |
-| 12 | GetDebugLevel | - | u32 | Log level (0-3) |
-| 13 | SetDebugLevel | u32 | - | Set log level |
-| 14 | GetLogToFile | - | u32 | File logging flag |
-| 15 | SetLogToFile | u32 | - | Enable/disable file logging |
-| 16 | SaveConfig | - | ConfigResult | Persist config to SD card |
-| 17 | ReloadConfig | - | ConfigResult | Reload config from SD card |
-| 18 | GetConnectTimeout | - | u32 | Connection timeout in ms |
-| 19 | SetConnectTimeout | u32 | - | Set connection timeout in ms |
-| 20 | GetPingInterval | - | u32 | Ping interval in ms (⚠️ parsed but not used — server drives pings) |
-| 21 | SetPingInterval | u32 | - | Set ping interval in ms (⚠️ has no effect) |
-| 22 | IsServiceActive | - | u32 | Service ping (returns 1 if active) |
+| 8 | GetDebugEnabled | - | u32 | Debug logging flag |
+| 9 | SetDebugEnabled | u32 | - | Enable/disable debug logging |
+| 10 | GetDebugLevel | - | u32 | Log level (0-3) |
+| 11 | SetDebugLevel | u32 | - | Set log level |
+| 12 | GetLogToFile | - | u32 | File logging flag |
+| 13 | SetLogToFile | u32 | - | Enable/disable file logging |
+| 14 | SaveConfig | - | ConfigResult | Persist config to SD card |
+| 15 | ReloadConfig | - | ConfigResult | Reload config from SD card |
+| 16 | GetConnectTimeout | - | u32 | Connection timeout in ms |
+| 17 | SetConnectTimeout | u32 | - | Set connection timeout in ms |
+| 18 | GetPingInterval | - | u32 | Ping interval in ms (⚠️ parsed but not used — server drives pings) |
+| 19 | SetPingInterval | u32 | - | Set ping interval in ms (⚠️ has no effect) |
+| 20 | IsServiceActive | - | u32 | Service ping (returns 1 if active) |
 
-### Runtime State Commands (23–28)
+### Runtime State Commands (21–26)
 
 | Cmd | Name | Parameters | Returns | Description |
 |-----|------|------------|---------|-------------|
-| 23 | IsGameActive | - | u32 | Returns 1 if a game is using LDN |
-| 24 | GetLdnState | - | u32 | Current CommState enum value |
-| 25 | GetSessionInfo | - | SessionInfo | Current session information |
-| 26 | GetLastRtt | - | u32 | Last RTT in milliseconds |
-| 27 | ForceReconnect | - | - | Request MITM reconnection |
-| 28 | GetActiveProcessId | - | u64 | PID of active game |
+| 21 | IsGameActive | - | u32 | Returns 1 if a game is using LDN |
+| 22 | GetLdnState | - | u32 | Current CommState enum value |
+| 23 | GetSessionInfo | - | SessionInfo | Current session information |
+| 24 | GetLastRtt | - | u32 | Last RTT in milliseconds |
+| 25 | ForceReconnect | - | - | Request MITM reconnection |
+| 26 | GetActiveProcessId | - | u64 | PID of active game |
 
-### P2P Proxy Commands (29–30)
+### P2P Proxy Commands (27–28)
 
-> **Note**: Commands 29–30 are available in the `ryu:cfg` service but do not yet have overlay client stubs in `ryu_ldn_ipc.c`.
+> **Note**: Commands 27–28 are available in the `ryu:cfg` service but do not yet have overlay client stubs in `ryu_ldn_ipc.c`.
 
 | Cmd | Name | Parameters | Returns | Description |
 |-----|------|------------|---------|-------------|
-| 29 | GetDisableP2p | - | u32 | Returns 1 if P2P proxy is disabled |
-| 30 | SetDisableP2p | u32 | - | Enable/disable P2P proxy (0=enable, 1=disable) |
+| 27 | GetDisableP2p | - | u32 | Returns 1 if P2P proxy is disabled |
+| 28 | SetDisableP2p | u32 | - | Enable/disable P2P proxy (0=enable, 1=disable) |
 
 ### MITM Config Commands (65000+)
 
-The LDN MITM service also exposes a `LdnConfigService` via command 65000 on `ldn:u`. This service mirrors the `ryu:cfg` commands at offset +65000 and adds extended commands 65011-65030:
+The LDN MITM service also exposes a `LdnConfigService` via command 65000 on `ldn:u`. This service mirrors the `ryu:cfg` commands at offset +65000 and adds extended commands 65009-65026:
 
 | Cmd | Name | Description |
 |-----|------|-------------|
@@ -119,32 +117,28 @@ The LDN MITM service also exposes a `LdnConfigService` via command 65000 on `ldn
 | 65002 | SetHost | Set server hostname |
 | 65003 | GetPort | Get server port |
 | 65004 | SetPort | Set server port |
-| 65005 | GetUseTls | Get TLS setting (⚠️ not implemented — always plain TCP) |
-| 65006 | SetUseTls | Set TLS setting (⚠️ not implemented) |
-| 65007 | GetConnectTimeout | Get connect timeout in ms |
-| 65008 | SetConnectTimeout | Set connect timeout in ms |
-| 65009 | GetPingInterval | Get ping interval in ms (⚠️ parsed but not used) |
-| 65010 | SetPingInterval | Set ping interval in ms (⚠️ has no effect) |
-| 65011 | GetPassphrase | Get room passphrase |
-| 65012 | SetPassphrase | Set room passphrase |
-| 65013 | GetLdnEnabled | Get LDN enabled state |
-| 65014 | SetLdnEnabled | Set LDN enabled state |
-| 65015 | GetUseTls | Get TLS state (same as 65005) |
-| 65016 | SetUseTls | Set TLS state (same as 65006) |
-| 65017 | GetConnectTimeout | Get connect timeout (same as 65007) |
-| 65018 | SetConnectTimeout | Set connect timeout (same as 65008) |
-| 65019 | GetPingInterval | Get ping interval (same as 65009) |
-| 65020 | SetPingInterval | Set ping interval (same as 65010) |
-| 65021 | GetReconnectDelay | Get reconnect delay in ms |
-| 65022 | SetReconnectDelay | Set reconnect delay in ms |
-| 65023 | GetMaxReconnectAttempts | Get max reconnect attempts |
-| 65024 | SetMaxReconnectAttempts | Set max reconnect attempts (0 = disable auto-reconnect) |
-| 65025 | GetDebugLevel | Get debug log level |
-| 65026 | SetDebugLevel | Set debug log level |
-| 65027 | GetLogToFile | Get log-to-file state |
-| 65028 | SetLogToFile | Set log-to-file state |
-| 65029 | SaveConfig | Save current config to file |
-| 65030 | ReloadConfig | Reload config from file |
+| 65005 | GetConnectTimeout | Get connect timeout in ms |
+| 65006 | SetConnectTimeout | Set connect timeout in ms |
+| 65007 | GetPingInterval | Get ping interval in ms (⚠️ parsed but not used) |
+| 65008 | SetPingInterval | Set ping interval in ms (⚠️ has no effect) |
+| 65009 | GetPassphrase | Get room passphrase |
+| 65010 | SetPassphrase | Set room passphrase |
+| 65011 | GetLdnEnabled | Get LDN enabled state |
+| 65012 | SetLdnEnabled | Set LDN enabled state |
+| 65013 | GetConnectTimeout | Get connect timeout (same as 65005) |
+| 65014 | SetConnectTimeout | Set connect timeout (same as 65006) |
+| 65015 | GetPingInterval | Get ping interval (same as 65007) |
+| 65016 | SetPingInterval | Set ping interval (same as 65008) |
+| 65017 | GetReconnectDelay | Get reconnect delay in ms |
+| 65018 | SetReconnectDelay | Set reconnect delay in ms |
+| 65019 | GetMaxReconnectAttempts | Get max reconnect attempts |
+| 65020 | SetMaxReconnectAttempts | Set max reconnect attempts (0 = disable auto-reconnect) |
+| 65021 | GetDebugLevel | Get debug log level |
+| 65022 | SetDebugLevel | Set debug log level |
+| 65023 | GetLogToFile | Get log-to-file state |
+| 65024 | SetLogToFile | Set log-to-file state |
+| 65025 | SaveConfig | Save current config to file |
+| 65026 | ReloadConfig | Reload config from file |
 
 ## Data Structures
 
@@ -158,7 +152,7 @@ The LDN MITM service also exposes a `LdnConfigService` via command 65000 on `ldn
 | 3 | Ready | Fully connected and operational |
 | 4 | Error | Connection error occurred |
 
-> **Note**: In the standalone `ryu:cfg` service, `GetConnectionStatus` always returns `0` (Disconnected). Use `GetLdnState` (cmd 24) for actual status.
+> **Note**: In the standalone `ryu:cfg` service, `GetConnectionStatus` always returns `0` (Disconnected). Use `GetLdnState` (cmd 22) for actual status.
 
 ### LdnState / CommState (enum u32)
 
@@ -211,7 +205,7 @@ smGetService(&cfgService, "ryu:cfg");
 
 // Get LDN state
 u32 state;
-serviceDispatchOut(&cfgService, 24, &state);
+serviceDispatchOut(&cfgService, 22, &state);
 printf("LDN State: %u\n", state);
 
 // Get session info
@@ -222,16 +216,16 @@ struct {
     u8 is_host;
     u8 reserved[4];
 } session_info;
-serviceDispatchOut(&cfgService, 25, &session_info);
+serviceDispatchOut(&cfgService, 23, &session_info);
 
 // Force reconnect
-serviceDispatch(&cfgService, 27);
+serviceDispatch(&cfgService, 25);
 
 // Check P2P status
 u32 p2p_disabled;
-serviceDispatchOut(&cfgService, 29, &p2p_disabled);
+serviceDispatchOut(&cfgService, 27, &p2p_disabled);
 
 // Save config to SD card
 u32 result;
-serviceDispatchOut(&cfgService, 16, &result);
+serviceDispatchOut(&cfgService, 14, &result);
 ```

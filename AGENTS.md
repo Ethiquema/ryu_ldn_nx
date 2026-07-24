@@ -187,7 +187,7 @@ The sysmodule runs on Switch hardware with aggressive constraints:
 ## Configuration
 
 - INI file at `sdmc:/config/ryu_ldn_nx/config.ini` (template: `config/ryu_ldn_nx/config.ini.example`).
-- Sections: `[server]` (host, port, use_tls), `[network]` (timeouts, reconnect), `[ldn]` (enabled, passphrase, disable_p2p), `[debug]` (enabled, level, log_to_file).
+- Sections: `[server]` (host, port), `[network]` (timeouts, reconnect), `[ldn]` (enabled, passphrase, disable_p2p), `[debug]` (enabled, level, log_to_file).
 - All config strings use fixed-size buffers — no `std::string` or dynamic allocation.
 - Default-on-failure semantics: if config is missing or malformed, defaults are used so the sysmodule still functions.
 - Config is loaded once at startup in `InitializeSystemModule()`. Live changes go through `ryu:cfg` IPC.
