@@ -12,7 +12,6 @@ dprintf ryu_ldn::config::ConfigManager::Save, "[CONFIG:MGR] Saving configuration
 dprintf ryu_ldn::config::ConfigManager::Reload, "[CONFIG:MGR] Reloading configuration from disk\n"
 dprintf ryu_ldn::config::ConfigManager::SetServerHost, "[CONFIG:MGR] Setting server host\n"
 dprintf ryu_ldn::config::ConfigManager::SetServerPort, "[CONFIG:MGR] Setting server port\n"
-dprintf ryu_ldn::config::ConfigManager::SetUseTls, "[CONFIG:MGR] Setting TLS enabled state\n"
 dprintf ryu_ldn::config::ConfigManager::SetConnectTimeout, "[CONFIG:MGR] Setting connect timeout\n"
 dprintf ryu_ldn::config::ConfigManager::SetPingInterval, "[CONFIG:MGR] Setting ping interval\n"
 dprintf ryu_ldn::config::ConfigManager::SetReconnectDelay, "[CONFIG:MGR] Setting reconnect delay\n"
@@ -26,4 +25,4 @@ dprintf ryu_ldn::config::ConfigManager::SetLogToFile, "[CONFIG:MGR] Setting log 
 dprintf ryu_ldn::config::ConfigManager::SetChangeCallback, "[CONFIG:MGR] Setting change callback\n"
 dprintf ryu_ldn::config::ConfigManager::NotifyChange, "[CONFIG:MGR] Config change notified\n"
 
-echo [CONFIG] mgr: 21 dprintf points\n
+echo [CONFIG] mgr: 20 dprintf points\n
