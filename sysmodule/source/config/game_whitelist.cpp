@@ -26,9 +26,57 @@ constexpr const char* WHITELIST_PATH = "sdmc:/config/ryu_ldn_nx/gamelist.txt";
 constexpr size_t BYTES_PER_ENTRY = 18;
 
 // Dynamically allocated whitelist (sized based on file)
+/**
+ * @brief Heap-allocated array holding the parsed whitelist of program IDs.
+ *
+ * @role Backing storage for the whitelist consulted by `IsGameWhitelisted` so
+ *       the MITM ShouldMitm path can decide whether to intercept a game
+ *       without touching the SD card on every IPC.
+ * @modified_by `LoadWhitelist` (this file) — allocated via `new (std::nothrow)`
+ *              once at startup, populated from `sdmc:/config/ryu_ldn_nx/gamelist.txt`,
+ *              and never freed (sysmodule lifetime).
+ * @thread_safety Not protected by a mutex. `LoadWhitelist` is invoked once during
+ *                `InitializeSystemModule` before any MITM session can call
+ *                `IsGameWhitelisted`; the load-then-freeze pattern means later
+ *                read-only access from MITM threads is safe by happens-before.
+ */
 static u64* g_whitelist = nullptr;
+
+/**
+ * @brief Capacity (in u64 entries) of the g_whitelist array.
+ *
+ * @role Bounding size used by `LoadWhitelist` to stop parsing once the array
+ *       is full and by the loader's loop guards.
+ * @modified_by `LoadWhitelist` only — set during allocation, never mutated
+ *              afterwards.
+ * @thread_safety Same load-then-freeze discipline as g_whitelist; read-only
+ *                after initialization.
+ */
 static size_t g_whitelist_capacity = 0;
+
+/**
+ * @brief Number of valid entries currently stored in g_whitelist.
+ *
+ * @role Active length of the whitelist; `IsGameWhitelisted` scans indices
+ *       `[0, g_whitelist_count)` to test membership.
+ * @modified_by `LoadWhitelist` only — incremented as each program ID is
+ *              parsed from the file, then frozen.
+ * @thread_safety Read-only after the one-shot `LoadWhitelist` run; no mutex
+ *                needed by the load-then-freeze contract.
+ */
 static size_t g_whitelist_count = 0;
+
+/**
+ * @brief One-shot "initialized" flag preventing double-loads of the whitelist.
+ *
+ * @role Guarded latch so repeated `LoadWhitelist` calls (e.g. via IPC reconnect
+ *       paths) short-circuit after the first successful or failed load.
+ * @modified_by `LoadWhitelist` only — set to true on success and also on the
+ *              empty-file / allocation-failure paths so the sysmodule still
+ *              functions with an empty whitelist.
+ * @thread_safety Read-only after the first `LoadWhitelist`; checked at the top
+ *                of `LoadWhitelist` under the same load-then-freeze discipline.
+ */
 static bool g_whitelist_loaded = false;
 
 /**

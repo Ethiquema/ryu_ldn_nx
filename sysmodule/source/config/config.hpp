@@ -252,7 +252,10 @@ struct Config {
  * - debug.level: 1 (warnings)
  *
  * ## Bool Parsing
- * Accepts: 0, f, F, n, N → false; anything else → true (1, true, yes, etc.)
+ * Accepts ONLY: "true"/"1" → true; "false"/"0" → false (case-insensitive).
+ * Any other value (including "yes"/"no"/"on"/"off"/empty) → false (parse error).
+ * This is stricter than the original implementation, which defaulted to
+ * true for any unrecognized value — see parse_bool() in config.cpp.
  */
 Config get_default_config();
 

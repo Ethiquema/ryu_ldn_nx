@@ -103,6 +103,67 @@ void safe_strcpy(char* dest, const char* src, size_t max_len) {
     dest[i] = '\0';
 }
 
+/**
+ * @brief Validate a passphrase string for IPC SetPassphrase
+ *
+ * Rules:
+ *   - Length (excluding null terminator) must be <= max_len
+ *   - Every character must be printable ASCII (0x20 .. 0x7E)
+ *
+ * @param str Null-terminated passphrase buffer
+ * @param max_len Maximum allowed length excluding the null terminator
+ * @return true if valid, false otherwise
+ */
+bool ValidatePassphrase(const char* str, size_t max_len) {
+    if (str == nullptr) {
+        return false;
+    }
+    size_t i = 0;
+    while (str[i] != '\0') {
+        if (i >= max_len) {
+            return false;  // Too long
+        }
+        const unsigned char c = static_cast<unsigned char>(str[i]);
+        if (c < 0x20 || c > 0x7E) {
+            return false;  // Non-printable
+        }
+        i++;
+    }
+    return true;
+}
+
+/**
+ * @brief Validate a server host string for IPC SetServerAddress
+ *
+ * Rules:
+ *   - Length (excluding null terminator) must be <= max_len
+ *   - Must not contain shell-injection metacharacters: ; | & ` and the
+ *     backtick character. These would be dangerous if the host string
+ *     were ever passed to a shell (e.g., for DNS lookup helpers).
+ *
+ * @param str Null-terminated host buffer
+ * @param max_len Maximum allowed length excluding the null terminator
+ * @return true if valid, false otherwise
+ */
+bool ValidateHost(const char* str, size_t max_len) {
+    if (str == nullptr) {
+        return false;
+    }
+    size_t i = 0;
+    while (str[i] != '\0') {
+        if (i >= max_len) {
+            return false;  // Too long
+        }
+        const char c = str[i];
+        // Reject shell-injection metacharacters
+        if (c == ';' || c == '|' || c == '&' || c == '`') {
+            return false;
+        }
+        i++;
+    }
+    return true;
+}
+
 } // anonymous namespace
 
 // =============================================================================
@@ -118,12 +179,12 @@ void safe_strcpy(char* dest, const char* src, size_t max_len) {
  * @param out Output buffer for version string (32 bytes, null-terminated)
  * @return Always succeeds
  */
-ams::Result ConfigService::GetVersion(ams::sf::Out<std::array<char, 32>> out) {
+ams::Result ConfigService::GetVersion(RyuCfgOutVersionString out) {
     static constexpr const char* VERSION = "1.0.0";
 
     // Clear output buffer
-    std::memset(out->data(), 0, out->size());
-    safe_strcpy(out->data(), VERSION, out->size() - 1);
+    std::memset(out->buf.data(), 0, out->size());
+    safe_strcpy(out->buf.data(), VERSION, out->size() - 1);
 
     LOG_VERBOSE("Config IPC: GetVersion called -> %s", VERSION);
     R_SUCCEED();
@@ -182,11 +243,11 @@ ams::Result ConfigService::IsServiceActive(ams::sf::Out<u32> out) {
  * @param out Output buffer for passphrase (64 bytes, null-terminated)
  * @return Always succeeds
  */
-ams::Result ConfigService::GetPassphrase(ams::sf::Out<std::array<char, 64>> out) {
+ams::Result ConfigService::GetPassphrase(RyuCfgOutPassphraseString out) {
     std::scoped_lock lk(g_config_mutex);
 
-    std::memset(out->data(), 0, out->size());
-    safe_strcpy(out->data(), g_config.ldn.passphrase, out->size() - 1);
+    std::memset(out->buf.data(), 0, out->size());
+    safe_strcpy(out->buf.data(), g_config.ldn.passphrase, out->size() - 1);
 
     LOG_VERBOSE("Config IPC: GetPassphrase called");
     R_SUCCEED();
@@ -197,13 +258,23 @@ ams::Result ConfigService::GetPassphrase(ams::sf::Out<std::array<char, 64>> out)
  *
  * Changes the passphrase in memory. Call SaveConfig to persist.
  *
+ * Validates that the passphrase is at most MAX_PASSPHRASE_LENGTH characters
+ * long and contains only printable ASCII (0x20 .. 0x7E). Returns
+ * `result::ResultInvalidIpcInput` if the input is rejected; in that case the
+ * in-memory passphrase is left untouched.
+ *
  * @param passphrase New passphrase (64 bytes, null-terminated)
- * @return Always succeeds
+ * @return Success or `result::ResultInvalidIpcInput` on validation failure
  */
-ams::Result ConfigService::SetPassphrase(std::array<char, 64> passphrase) {
+ams::Result ConfigService::SetPassphrase(RyuCfgPassphraseString passphrase) {
+    if (!ValidatePassphrase(passphrase.buf.data(), config::MAX_PASSPHRASE_LENGTH)) {
+        LOG_WARN("Config IPC: SetPassphrase rejected (invalid length or non-printable chars)");
+        R_THROW(result::ResultInvalidIpcInput());
+    }
+
     std::scoped_lock lk(g_config_mutex);
 
-    safe_strcpy(g_config.ldn.passphrase, passphrase.data(), config::MAX_PASSPHRASE_LENGTH);
+    safe_strcpy(g_config.ldn.passphrase, passphrase.buf.data(), config::MAX_PASSPHRASE_LENGTH);
 
     LOG_INFO("Config IPC: SetPassphrase -> '%s'", g_config.ldn.passphrase);
     R_SUCCEED();
@@ -255,7 +326,7 @@ ams::Result ConfigService::SetLdnEnabled(u32 enabled) {
  * @param out Output structure with host (64 bytes) and port (u16)
  * @return Always succeeds
  */
-ams::Result ConfigService::GetServerAddress(ams::sf::Out<ServerAddressIpc> out) {
+ams::Result ConfigService::GetServerAddress(RyuCfgOutServerAddress out) {
     std::scoped_lock lk(g_config_mutex);
 
     std::memset(&(*out), 0, sizeof(ServerAddressIpc));
@@ -272,10 +343,20 @@ ams::Result ConfigService::GetServerAddress(ams::sf::Out<ServerAddressIpc> out) 
  * Changes the server address in memory. Call SaveConfig to persist.
  * Requires restart/reconnect to take effect.
  *
+ * Validates that the host string is at most MAX_HOST_LENGTH characters long
+ * and does not contain shell-injection metacharacters (`;`, `|`, `&`,
+ * backtick). Returns `result::ResultInvalidIpcInput` if the input is rejected; in
+ * that case the in-memory host is left untouched.
+ *
  * @param address New server address structure
- * @return Always succeeds
+ * @return Success or `result::ResultInvalidIpcInput` on validation failure
  */
-ams::Result ConfigService::SetServerAddress(const ServerAddressIpc &address) {
+ams::Result ConfigService::SetServerAddress(RyuCfgInServerAddress address) {
+    if (!ValidateHost(address.host, config::MAX_HOST_LENGTH)) {
+        LOG_WARN("Config IPC: SetServerAddress rejected (invalid host length or shell metacharacters)");
+        R_THROW(result::ResultInvalidIpcInput());
+    }
+
     std::scoped_lock lk(g_config_mutex);
 
     safe_strcpy(g_config.server.host, address.host, config::MAX_HOST_LENGTH);
@@ -311,6 +392,15 @@ ams::Result ConfigService::GetDebugLevel(ams::sf::Out<u32> out) {
 }
 
 ams::Result ConfigService::SetDebugLevel(u32 level) {
+    // Validate debug level range. The logger supports levels 0..4 inclusive
+    // (0 = Error, 1 = Warn, 2 = Info, 3 = Verbose, 4 = Trace-equivalent).
+    // Out-of-range values would corrupt the in-memory config and could lead
+    // to undefined behavior in the logger's level comparisons.
+    if (level > 4) {
+        LOG_WARN("Config IPC: SetDebugLevel rejected (level=%u out of range 0..4)", level);
+        R_THROW(result::ResultInvalidIpcInput());
+    }
+
     std::scoped_lock lk(g_config_mutex);
     g_config.debug.level = level;
     LOG_INFO("Config IPC: SetDebugLevel -> %u", g_config.debug.level);
@@ -321,7 +411,7 @@ ams::Result ConfigService::SetDebugLevel(u32 level) {
 // ConfigService Implementation - Configuration Persistence
 // =============================================================================
 
-ams::Result ConfigService::SaveConfig(ams::sf::Out<ConfigResult> out) {
+ams::Result ConfigService::SaveConfig(RyuCfgOutConfigResult out) {
     std::scoped_lock lk(g_config_mutex);
     config::ConfigResult result = config::save_config(config::CONFIG_PATH, g_config);
     *out = static_cast<ConfigResult>(result);
@@ -382,7 +472,7 @@ ams::Result ConfigService::GetLdnState(ams::sf::Out<u32> out) {
     R_SUCCEED();
 }
 
-ams::Result ConfigService::GetSessionInfo(ams::sf::Out<SessionInfoIpc> out) {
+ams::Result ConfigService::GetSessionInfo(RyuCfgOutSessionInfo out) {
     auto& state = ams::mitm::ldn::SharedState::GetInstance();
     u8 node_count, max_nodes, local_node_id;
     bool is_host;

@@ -13,6 +13,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <cerrno>
 
 #ifdef __SWITCH__
 #include <stratosphere.hpp>
@@ -62,28 +63,111 @@ void safe_strcpy(char* dest, const char* src, size_t max_len) {
 }
 
 /**
- * @brief Parse boolean value (0/1, true/false, yes/no)
+ * @brief Parse boolean value (strict: "true"/"false"/"1"/"0", case-insensitive)
+ *
+ * Returns false for any value that is not one of the four accepted forms.
+ * The previous implementation accepted "f/F/n/N" prefixes and defaulted to
+ * true for anything else, which silently turned typos and garbage into
+ * "enabled" — a dangerous default for security-relevant flags such as
+ * `disable_p2p` or `use_passphrase`.
+ *
+ * @param value Null-terminated string to parse (may be nullptr)
+ * @return parsed boolean; false if the value is unrecognized or nullptr
  */
 bool parse_bool(const char* value) {
-    if (value[0] == '0' || value[0] == 'f' || value[0] == 'F' ||
-        value[0] == 'n' || value[0] == 'N') {
+    if (value == nullptr || value[0] == '\0') {
         return false;
     }
-    return true;  // Default to true for any non-false value
+
+    // Accept only "true"/"false"/"1"/"0" (case-insensitive). We do a small
+    // inline case-insensitive compare to stay portable across devkitPro
+    // (Switch) and the host g++ test build without pulling in <strings.h>.
+    auto ieq = [](char a, char b) {
+        // ASCII-only lowercasing; fine for the literal tokens "true"/"false".
+        if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+        return a == b;
+    };
+    auto ieqstr = [&](const char* a, const char* b) {
+        while (*a && *b) {
+            if (!ieq(*a, *b)) return false;
+            a++; b++;
+        }
+        return *a == '\0' && *b == '\0';
+    };
+
+    if (std::strcmp(value, "1") == 0 || ieqstr(value, "true")) {
+        return true;
+    }
+    if (std::strcmp(value, "0") == 0 || ieqstr(value, "false")) {
+        return false;
+    }
+    // Anything else (yes, no, on, off, True-ish, 2, ...) is a parse error.
+    // Defaulting to false is the safe choice: it never silently enables a
+    // feature the user did not intend to enable.
+    return false;
 }
 
 /**
- * @brief Parse unsigned integer
+ * @brief Parse unsigned 32-bit integer from a config value string.
+ *
+ * @note Errors are handled by returning 0 (the same default-on-failure
+ *       convention used by parse_bool in this file): a null/empty input or
+ *       a leading '-' (negative value) is rejected and the function returns
+ *       0 instead of letting strtoul silently wrap "-1" into ULONG_MAX and
+ *       then truncate to UINT32_MAX. This prevents a config typo like
+ *       `port = -1` from turning into 65535 or `level = -5` from becoming
+ *       UINT32_MAX.
+ *
+ *       In addition, the parse now rejects trailing garbage and overflow:
+ *       - `"123abc"` previously parsed as `123` (strtoul stops at the first
+ *         non-digit and silently drops the rest). It now returns 0 because
+ *         the whole input is not a clean integer.
+ *       - `"4294967296"` (2^32) previously wrapped/truncated silently. It
+ *         now returns 0 because strtoul sets errno=ERANGE and the result
+ *         does not fit in uint32_t.
+ *       This makes malformed config values loud (default applied) rather
+ *       than quietly producing a wrong-but-plausible number.
  */
 uint32_t parse_uint32(const char* value) {
-    return static_cast<uint32_t>(std::strtoul(value, nullptr, 10));
-}
+    if (value == nullptr || value[0] == '\0') {
+        return 0;
+    }
+    // Reject negative input. strtoul would happily accept "-1" and return
+    // ULONG_MAX (wrapped), which is never what a config value means here.
+    if (value[0] == '-') {
+        return 0;
+    }
 
-/**
- * @brief Parse unsigned 16-bit integer
- */
-uint16_t parse_uint16(const char* value) {
-    return static_cast<uint16_t>(std::strtoul(value, nullptr, 10));
+    // Use endptr to detect trailing characters and errno to detect overflow.
+    // strtoul skips leading whitespace itself; trailing whitespace is also
+    // rejected here so that "123 " is treated as malformed (the INI parser
+    // already trims values before calling us, so any trailing whitespace
+    // would indicate a parser bug rather than a user intent).
+    errno = 0;
+    char* endptr = nullptr;
+    unsigned long parsed = std::strtoul(value, &endptr, 10);
+
+    // Overflow: strtoul returned ULONG_MAX and set errno. For platforms
+    // where unsigned long is 64-bit, also reject values that exceed the
+    // uint32_t range even without ERANGE (defensive: ULONG_MAX on a 32-bit
+    // unsigned long triggers ERANGE, but on a 64-bit unsigned long only
+    // values >= 2^64 set ERANGE — a value like 0x1_0000_0000 fits in
+    // unsigned long but not in uint32_t).
+    if (errno == ERANGE || parsed > 0xFFFFFFFFUL) {
+        errno = 0;
+        return 0;
+    }
+
+    // Trailing garbage: the whole input must be consumed. If endptr does
+    // not point at the terminating NUL, characters such as "abc" in
+    // "123abc" were left unparsed.
+    if (endptr == value || *endptr != '\0') {
+        return 0;
+    }
+
+    errno = 0;
+    return static_cast<uint32_t>(parsed);
 }
 
 // Section identifiers
@@ -113,7 +197,14 @@ void process_server_key(const char* key, const char* value, ServerConfig& config
     if (std::strcmp(key, "host") == 0) {
         safe_strcpy(config.host, value, MAX_HOST_LENGTH);
     } else if (std::strcmp(key, "port") == 0) {
-        config.port = parse_uint16(value);
+        // Inlined parse_uint16 (single call site — LINT-12).
+        // Same error convention as parse_uint32: null/empty or negative
+        // input returns 0. Guards `port = -1` from wrapping to 65535.
+        if (value != nullptr && value[0] != '\0' && value[0] != '-') {
+            config.port = static_cast<uint16_t>(std::strtoul(value, nullptr, 10));
+        } else {
+            config.port = 0;
+        }
     }
 }
 
@@ -246,6 +337,7 @@ size_t format_config_content(char* buffer, size_t buffer_size, const Config& con
     WRITE_LINE("; Server hostname or IP address");
     WRITE_LINE("host = %s", config.server.host);
     WRITE_LINE("; Server port");
+    WRITE_LINE("port = %u", config.server.port);
     WRITE_LINE("");
 
     WRITE_LINE("");
@@ -384,32 +476,50 @@ ConfigResult save_config(const char* path, const Config& config) {
 
     size_t content_size = format_config_content(buffer, buffer_size, config);
 
-    // Delete existing file if present
-    ams::fs::DirectoryEntryType entry_type;
-    if (R_SUCCEEDED(ams::fs::GetEntryType(&entry_type, path))) {
-        ams::fs::DeleteFile(path);
+    // Atomic write via temp file + rename to avoid TOCTOU window where the
+    // config file is missing between DeleteFile and CreateFile succeeds.
+    // If any intermediate step fails, the original (if any) is left untouched.
+    char tmp_path[256];
+    // Reserve room for the ".tmp" suffix (4 chars) so strcat cannot overflow.
+    safe_strcpy(tmp_path, path, sizeof(tmp_path) - 1 - 4);
+    std::strcat(tmp_path, ".tmp");
+
+    // If a stale temp file from a previous failed run exists, delete it so
+    // CreateFile does not fail with FileExists.
+    ams::fs::DirectoryEntryType tmp_entry_type;
+    if (R_SUCCEEDED(ams::fs::GetEntryType(&tmp_entry_type, tmp_path))) {
+        ams::fs::DeleteFile(tmp_path);
     }
 
-    // Create new file
-    if (R_FAILED(ams::fs::CreateFile(path, content_size))) {
+    // Create temp file
+    if (R_FAILED(ams::fs::CreateFile(tmp_path, content_size))) {
         delete[] buffer;
         return ConfigResult::IoError;
     }
 
-    // Open file for writing
-    ams::fs::FileHandle file;
-    if (R_FAILED(ams::fs::OpenFile(&file, path, ams::fs::OpenMode_Write))) {
+    // Open temp file for writing
+    ams::fs::FileHandle tmp_file;
+    if (R_FAILED(ams::fs::OpenFile(&tmp_file, tmp_path, ams::fs::OpenMode_Write))) {
+        ams::fs::DeleteFile(tmp_path);
         delete[] buffer;
         return ConfigResult::IoError;
     }
 
     // Write content
-    ams::Result write_result = ams::fs::WriteFile(file, 0, buffer, content_size, ams::fs::WriteOption::Flush);
-    ams::fs::CloseFile(file);
+    ams::Result write_result = ams::fs::WriteFile(tmp_file, 0, buffer, content_size, ams::fs::WriteOption::Flush);
+    ams::fs::CloseFile(tmp_file);
 
     delete[] buffer;
 
     if (R_FAILED(write_result)) {
+        ams::fs::DeleteFile(tmp_path);
+        return ConfigResult::IoError;
+    }
+
+    // Atomically replace the original file. RenameFile overwrites the
+    // destination on the SD card filesystem (FAT-like semantics).
+    if (R_FAILED(ams::fs::RenameFile(tmp_path, path))) {
+        ams::fs::DeleteFile(tmp_path);
         return ConfigResult::IoError;
     }
 
