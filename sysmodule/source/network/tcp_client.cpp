@@ -49,7 +49,11 @@ TcpClient::TcpClient()
     : m_socket()
     , m_recv_buffer()
 {
-    // Send buffer is uninitialized - will be filled during send operations
+    // m_send_buffer is zero-initialized via the `= {}` value-initialization
+    // in the header (LINT-22). It is overwritten on every send path before
+    // being transmitted, so the zero state is never observable on the wire;
+    // the initialization is defensive — it guarantees no uninitialized
+    // bytes leak if a future code path reads the buffer before writing it.
 }
 
 /**

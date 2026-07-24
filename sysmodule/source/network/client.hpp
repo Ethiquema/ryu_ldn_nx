@@ -564,31 +564,38 @@ private:
     // Internal State
     // ========================================================================
 
+    // --- Configuration & dependencies ---------------------------------------
     RyuLdnClientConfig m_config;            ///< Client configuration
     std::unique_ptr<ITcpClient> m_tcp_client; ///< Low-level TCP client (injected)
     ConnectionStateMachine m_state_machine; ///< Connection state tracking
     ReconnectManager m_reconnect_manager;   ///< Reconnection backoff logic
 
+    // --- Callbacks (set by user, invoked from update() / try_connect) ------
     ClientStateCallback m_state_callback;   ///< User callback for state changes
     void* m_state_callback_user_data;       ///< User data for state callback
     ClientPacketCallback m_packet_callback; ///< User callback for packets
     void* m_packet_callback_user_data;      ///< User data for packet callback
 
+    // --- Timing (all in ms, anchored on the value passed to update()) ------
     uint64_t m_last_ping_time_ms;           ///< Time of last ping sent
     uint64_t m_backoff_start_time_ms;       ///< Start of current backoff period
     uint32_t m_current_backoff_delay_ms;    ///< Current backoff delay
     uint64_t m_last_update_time_ms;        ///< Time from last update() call
 
+    // --- Identity (assigned by server during handshake) --------------------
     protocol::SessionId m_session_id;       ///< Our session ID (from server)
     protocol::MacAddress m_mac_address;     ///< Our MAC address
 
+    // --- Handshake state ---------------------------------------------------
     bool m_handshake_sent;                  ///< Whether Initialize has been sent
     bool m_initialized;                     ///< Whether socket system is initialized
 
+    // --- Handshake timing & timeout ----------------------------------------
     uint64_t m_handshake_start_time_ms;     ///< Time when handshake was initiated
     uint32_t m_handshake_timeout_ms;        ///< Handshake timeout (default: 5000ms)
     protocol::NetworkErrorCode m_last_error_code; ///< Last error from server
 
+    // --- Ping / keepalive tracking -----------------------------------------
     uint64_t m_last_pong_time_ms;           ///< Time when last pong was received
     uint32_t m_ping_timeout_ms;             ///< Ping response timeout (default: 10000ms)
     uint32_t m_pending_ping_count;          ///< Number of pings without response
@@ -704,6 +711,43 @@ private:
      */
     /// @gdb{tag="NETWORK:STATE_CALLBACKS", msg="is_backoff_expired"}
     bool is_backoff_expired(uint64_t current_time_ms);
+
+    // ========================================================================
+    // Private helpers (extracted from duplicated send/recv patterns)
+    // ========================================================================
+
+    /**
+     * @brief Common handling for a ConnectionLost result from the TCP client.
+     *
+     * Extracted from the ~20 sites that previously inlined:
+     *   `ConnectionLost → process_event → start_backoff → state callback`.
+     * Runs the state-machine ConnectionLost event, optionally starts the
+     * reconnect backoff (only when `auto_reconnect` is set and the caller
+     * confirms the loss is recoverable — e.g. NOT during a graceful
+     * disconnect), and fires the user state callback if the state changed.
+     *
+     * @param start_reconnect If true and m_config.auto_reconnect is set,
+     *                        calls start_backoff() to schedule a retry.
+     */
+    void handle_connection_lost(bool start_reconnect);
+
+    /**
+     * @brief Translate a TCP send result into a ClientOpResult.
+     *
+     * Extracted from the ~12 send_* sites that previously inlined:
+     *   `is_ready() → tcp_client->send_* → ConnectionLost handling → return`.
+     * The caller performs the `is_ready()` guard and the actual send, then
+     * passes the resulting ClientResult here. On ConnectionLost this routes
+     * through handle_connection_lost(false) (no backoff — the send methods
+     * are not allowed to trigger reconnect themselves; the update() loop
+     * owns the reconnect lifecycle). On any other non-success result the
+     * helper returns ClientOpResult::SendFailed without touching the state
+     * machine.
+     *
+     * @param send_result Result from the underlying ITcpClient send call.
+     * @return ClientOpResult::Success on success, SendFailed on any error.
+     */
+    ClientOpResult handle_send_result(ClientResult send_result);
 };
 
 /**

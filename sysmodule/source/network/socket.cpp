@@ -79,6 +79,15 @@
 namespace ryu_ldn::network {
 
 // =============================================================================
+// Socket timeout constants
+// =============================================================================
+// Named constants for the magic-number timeouts previously inlined in send_all
+// and connect. Preserves the existing 5-second per-chunk write timeout.
+
+/// @brief Per-chunk write timeout in send_all() (ms)
+constexpr uint32_t SOCKET_WRITE_TIMEOUT_MS = 5000;
+
+// =============================================================================
 // Static State
 // =============================================================================
 
@@ -176,21 +185,39 @@ namespace {
 #ifndef TEST_BUILD
 SocketResult errno_to_result(int err) {
     // Non-blocking operation would block
-    if (err == EAGAIN) return SocketResult::WouldBlock;
+    if (err == EAGAIN) {
+        return SocketResult::WouldBlock;
+    }
 #if EAGAIN != EWOULDBLOCK
-    if (err == EWOULDBLOCK) return SocketResult::WouldBlock;
+    if (err == EWOULDBLOCK) {
+        return SocketResult::WouldBlock;
+    }
 #endif
     // Connection errors
-    if (err == ECONNREFUSED) return SocketResult::ConnectionRefused;
-    if (err == ECONNRESET) return SocketResult::ConnectionReset;
+    if (err == ECONNREFUSED) {
+        return SocketResult::ConnectionRefused;
+    }
+    if (err == ECONNRESET) {
+        return SocketResult::ConnectionReset;
+    }
     // Network reachability errors
-    if (err == EHOSTUNREACH || err == ENETUNREACH) return SocketResult::HostUnreachable;
-    if (err == ENETDOWN) return SocketResult::NetworkDown;
+    if (err == EHOSTUNREACH || err == ENETUNREACH) {
+        return SocketResult::HostUnreachable;
+    }
+    if (err == ENETDOWN) {
+        return SocketResult::NetworkDown;
+    }
     // Socket state errors
-    if (err == ENOTCONN) return SocketResult::NotConnected;
-    if (err == EISCONN) return SocketResult::AlreadyConnected;
+    if (err == ENOTCONN) {
+        return SocketResult::NotConnected;
+    }
+    if (err == EISCONN) {
+        return SocketResult::AlreadyConnected;
+    }
     // Timeout
-    if (err == ETIMEDOUT) return SocketResult::Timeout;
+    if (err == ETIMEDOUT) {
+        return SocketResult::Timeout;
+    }
     // Everything else is a generic socket error
     return SocketResult::SocketError;
 }
@@ -560,7 +587,7 @@ SocketResult Socket::send_all(const uint8_t* data, size_t size) {
 
         if (result == SocketResult::WouldBlock) {
             // Wait for socket to become writable
-            result = wait_ready(5000, true);  // 5 second timeout per chunk
+            result = wait_ready(SOCKET_WRITE_TIMEOUT_MS, true);  // 5 second timeout per chunk
             if (result != SocketResult::Success) {
                 return result;
             }
@@ -892,17 +919,35 @@ namespace ryu_ldn::network {
 SocketResult errno_to_result(int err) {
     // Delegate to the anonymous namespace version by reimplementing
     // (the anonymous version is not accessible here)
-    if (err == EAGAIN) return SocketResult::WouldBlock;
+    if (err == EAGAIN) {
+        return SocketResult::WouldBlock;
+    }
 #if EAGAIN != EWOULDBLOCK
-    if (err == EWOULDBLOCK) return SocketResult::WouldBlock;
+    if (err == EWOULDBLOCK) {
+        return SocketResult::WouldBlock;
+    }
 #endif
-    if (err == ECONNREFUSED) return SocketResult::ConnectionRefused;
-    if (err == ECONNRESET) return SocketResult::ConnectionReset;
-    if (err == EHOSTUNREACH || err == ENETUNREACH) return SocketResult::HostUnreachable;
-    if (err == ENETDOWN) return SocketResult::NetworkDown;
-    if (err == ENOTCONN) return SocketResult::NotConnected;
-    if (err == EISCONN) return SocketResult::AlreadyConnected;
-    if (err == ETIMEDOUT) return SocketResult::Timeout;
+    if (err == ECONNREFUSED) {
+        return SocketResult::ConnectionRefused;
+    }
+    if (err == ECONNRESET) {
+        return SocketResult::ConnectionReset;
+    }
+    if (err == EHOSTUNREACH || err == ENETUNREACH) {
+        return SocketResult::HostUnreachable;
+    }
+    if (err == ENETDOWN) {
+        return SocketResult::NetworkDown;
+    }
+    if (err == ENOTCONN) {
+        return SocketResult::NotConnected;
+    }
+    if (err == EISCONN) {
+        return SocketResult::AlreadyConnected;
+    }
+    if (err == ETIMEDOUT) {
+        return SocketResult::Timeout;
+    }
     return SocketResult::SocketError;
 }
 
