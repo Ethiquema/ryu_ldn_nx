@@ -11,6 +11,7 @@
  */
 #pragma once
 
+#include <cstdio>
 #include <cstring>
 
 class OverlayState {
@@ -27,13 +28,7 @@ public:
 
     const char* GetVersion() const { return m_version; }
     void SetVersion(const char* v) {
-        if (v) {
-            strncpy(m_version, v, sizeof(m_version) - 1);
-            m_version[sizeof(m_version) - 1] = '\0';
-        } else {
-            strncpy(m_version, "Unknown", sizeof(m_version) - 1);
-            m_version[sizeof(m_version) - 1] = '\0';
-        }
+        snprintf(m_version, sizeof(m_version), "%s", v ? v : "Unknown");
     }
 
     bool IsDirty() const { return m_dirty; }
