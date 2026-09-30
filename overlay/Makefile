@@ -40,7 +40,8 @@ NO_ICON     := 1
 #---------------------------------------------------------------------------------
 # Include libultrahand sources and headers
 SOURCES  += libultrahand/common \
-            libultrahand/libultra/source
+            libultrahand/libultra/source \
+            libultrahand/libtesla/source
 INCLUDES += libultrahand/common \
             libultrahand/libultra/include \
             libultrahand/libtesla/include

@@ -1,0 +1,83 @@
+name: Submodule Updater
+
+# Bulk submodule updater (GitFlow-compliant):
+#   detect → ONE feature branch from develop → update ALL outdated submodules
+#   → one DCO-signed commit → ONE PR to develop.
+# Runtime decisions (enumeration, drift, commit) live in scripts/ci/*.sh —
+# this YAML only orchestrates: checkout, call scripts, branch, PR.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: submodule-updater
+  cancel-in-progress: false
+
+jobs:
+  update-submodules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (develop)
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # check-submodules.sh writes has_updates=true|false and outdated=<JSON>
+      # into $GITHUB_OUTPUT; log lines go to stderr, JSON array is the last
+      # stdout line. Local-equivalent behavior: no jq required (builtin fallback).
+      - name: Detect outdated submodules
+        id: detect
+        run: ./scripts/ci/check-submodules.sh
+        shell: bash
+
+      - name: Create feature branch
+        if: ${{ steps.detect.outputs.has_updates == 'true' }}
+        run: git checkout -b chore/bulk-update-submodules-${{ github.run_number }} develop
+        shell: bash
+
+      # bulk-update-submodules.sh refreshes every outdated submodule pointer,
+      # stages the gitlinks and creates ONE `git commit -s` whose message lists
+      # all updated submodules. Its last stdout line = comma-separated names,
+      # empty when nothing changed.
+      - name: Bulk-update submodules and commit
+        id: update
+        if: ${{ steps.detect.outputs.has_updates == 'true' }}
+        run: |
+          updated="$(./scripts/ci/bulk-update-submodules.sh)"
+          echo "names=${updated}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Push branch
+        if: ${{ steps.detect.outputs.has_updates == 'true' && steps.update.outputs.names != '' }}
+        run: git push origin "chore/bulk-update-submodules-${{ github.run_number }}"
+        shell: bash
+
+      - name: Open Pull Request to develop
+        if: ${{ steps.detect.outputs.has_updates == 'true' && steps.update.outputs.names != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: chore/bulk-update-submodules-${{ github.run_number }}
+          NAMES: ${{ steps.update.outputs.names }}
+          OUTDATED: ${{ steps.detect.outputs.outdated }}
+        run: |
+          gh pr create \
+            --base develop \
+            --head "${BRANCH}" \
+            --title "chore(deps): update submodules [${NAMES}]" \
+            --label dependencies \
+            --body "Bulk submodule update.\n\nUpdated: **${NAMES}**\n\n<details><summary>Details</summary>\n\n\`\`\`json\n${OUTDATED}\n\`\`\`\n\n</details>"
+
+      - name: No submodule updates
+        if: ${{ steps.detect.outputs.has_updates == 'false' }}
+        run: echo "All submodules are up-to-date — nothing to do."
+        shell: bash
