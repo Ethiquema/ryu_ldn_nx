@@ -98,7 +98,7 @@ public:
      * @return Result code
      */
     /// @gdb{tag="LDN:OPS", msg="GetIpv4Address"}
-    Result GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask);
+    Result GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask) const;
 
     /**
      * @brief Get last disconnect reason
@@ -340,7 +340,7 @@ public:
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="SetWirelessControllerRestriction"}
-    Result SetWirelessControllerRestriction();
+    static Result SetWirelessControllerRestriction();
 
     /**
      * @brief Reject a node from the network
@@ -356,14 +356,14 @@ public:
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="AddAcceptFilterEntry"}
-    Result AddAcceptFilterEntry();
+    static Result AddAcceptFilterEntry();
 
     /**
      * @brief Clear accept filter
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="ClearAcceptFilter"}
-    Result ClearAcceptFilter();
+    static Result ClearAcceptFilter();
 
 private:
     /**

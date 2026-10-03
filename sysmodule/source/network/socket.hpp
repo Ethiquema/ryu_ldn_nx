@@ -151,28 +151,28 @@ public:
      * @param non_blocking true for non-blocking, false for blocking
      * @return SocketResult::Success or error
      */
-    SocketResult set_non_blocking(bool non_blocking);
+    SocketResult set_non_blocking(bool non_blocking) const;
 
     /**
      * @brief Set TCP_NODELAY option (disable Nagle's algorithm)
      * @param nodelay true to disable Nagle
      * @return SocketResult::Success or error
      */
-    SocketResult set_nodelay(bool nodelay);
+    SocketResult set_nodelay(bool nodelay) const;
 
     /**
      * @brief Set socket receive buffer size
      * @param size Buffer size in bytes
      * @return SocketResult::Success or error
      */
-    SocketResult set_recv_buffer_size(int size);
+    SocketResult set_recv_buffer_size(int size) const;
 
     /**
      * @brief Set socket send buffer size
      * @param size Buffer size in bytes
      * @return SocketResult::Success or error
      */
-    SocketResult set_send_buffer_size(int size);
+    SocketResult set_send_buffer_size(int size) const;
 
 private:
     int m_fd;

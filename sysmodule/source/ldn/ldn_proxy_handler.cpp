@@ -154,7 +154,7 @@ void LdnProxyHandler::handle_proxy_config(const protocol::LdnHeader& header,
     m_configured = true;
 
     // Notify application
-    if (m_config_callback) {
+    if (m_config_callback != nullptr) {
         m_config_callback(config);
     }
 }
@@ -187,7 +187,7 @@ void LdnProxyHandler::handle_proxy_connect(const protocol::LdnHeader& header,
     }
 
     // Notify application
-    if (m_connect_callback) {
+    if (m_connect_callback != nullptr) {
         m_connect_callback(req.info);
     }
 }
@@ -209,7 +209,7 @@ void LdnProxyHandler::handle_proxy_connect_reply(const protocol::LdnHeader& head
     (void)header;  // Unused
 
     // Notify application
-    if (m_connect_reply_callback) {
+    if (m_connect_reply_callback != nullptr) {
         m_connect_reply_callback(resp.info);
     }
 }
@@ -237,7 +237,7 @@ void LdnProxyHandler::handle_proxy_data(const protocol::LdnHeader& header,
     (void)header;  // Unused
 
     // Notify application with data
-    if (m_data_callback) {
+    if (m_data_callback != nullptr) {
         m_data_callback(data_header.info, payload, payload_length);
     }
 }
@@ -263,7 +263,7 @@ void LdnProxyHandler::handle_proxy_disconnect(const protocol::LdnHeader& header,
     remove_connection(msg.info);
 
     // Notify application
-    if (m_disconnect_callback) {
+    if (m_disconnect_callback != nullptr) {
         m_disconnect_callback(msg.info, msg.disconnect_reason);
     }
 }

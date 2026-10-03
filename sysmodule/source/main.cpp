@@ -213,7 +213,7 @@ namespace ams {
 
         void Deallocate(void* p, size_t size) {
             AMS_UNUSED(size);
-            return lmem::FreeToExpHeap(GetHeapHandle(), p);
+            lmem::FreeToExpHeap(GetHeapHandle(), p);
         }
 
         namespace {
@@ -238,7 +238,7 @@ namespace ams {
             /// Custom server manager for MITM (ldn:u + bsd:u)
             class ServerManager final : public sf::hipc::ServerManager<MITM_PORT_COUNT, LdnMitmManagerOptions, MaxSessions> {
             private:
-                virtual ams::Result OnNeedsToAccept(int port_index, Server* server) override;
+                ams::Result OnNeedsToAccept(int port_index, Server* server) override;
             };
 
             /**
@@ -272,7 +272,7 @@ namespace ams {
              *               server manager dispatch loop, so the increment is implicitly serialized.
              *               Reads from other threads would be racy; no such reads exist today.
              */
-            static u32 g_ldn_session_counter = 0;
+            u32 g_ldn_session_counter = 0;
 
             /**
              * @brief Monotonic counter assigning a unique ID to each accepted bsd:u MITM session.
@@ -284,7 +284,7 @@ namespace ams {
              * @thread_safety Not protected by any mutex. Same single-threaded-accept rationale as
              *               g_ldn_session_counter; only `OnNeedsToAccept` mutates it.
              */
-            static u32 g_bsd_session_counter = 0;
+            u32 g_bsd_session_counter = 0;
 
             Result ServerManager::OnNeedsToAccept(int port_index, Server* server) {
                 LOG_INFO("OnNeedsToAccept: port_index=%d, server=%p", port_index, server);
@@ -339,11 +339,11 @@ namespace ams {
             alignas(os::MemoryPageSize) u8 g_extra_thread_stacks[NumExtraThreads][ThreadStackSize];
             os::ThreadType g_extra_threads[NumExtraThreads];
 
-            void LoopServerThread(void*) {
+            void LoopServerThread(void* /*unused*/) {
                 g_server_manager.LoopProcess();
             }
 
-            void ProcessForServerOnAllThreads(void*) {
+            void ProcessForServerOnAllThreads(void* /*unused*/) {
                 // Initialize extra threads
                 if constexpr (NumExtraThreads > 0) {
                     const s32 priority = os::GetThreadCurrentPriority(os::GetCurrentThread());
@@ -424,7 +424,7 @@ namespace ams {
         ConfigServerManager g_config_server_manager;
 
         /// Config service thread entry point
-        void LoopConfigServerThread(void*) {
+        void LoopConfigServerThread(void* /*unused*/) {
             g_config_server_manager.LoopProcess();
         }
 
@@ -433,7 +433,7 @@ namespace ams {
         os::ThreadType g_log_thread;
 
         /// Log maintenance thread entry point (checks file idle timeout)
-        void LoopLogMaintenanceThread(void*) {
+        void LoopLogMaintenanceThread(void* /*unused*/) {
             while (true) {
                 // Sleep for 2 seconds
                 svc::SleepThread(TimeSpan::FromSeconds(LOG_MAINTENANCE_INTERVAL_SEC).GetNanoSeconds());
@@ -626,32 +626,32 @@ void* operator new(size_t size) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new(size_t size, const std::nothrow_t&) {
+void* operator new(size_t size, const std::nothrow_t& /*tag*/) {
     return ams::mitm::Allocate(size);
 }
 
 void operator delete(void* p) {
-    return ams::mitm::Deallocate(p, 0);
+    ams::mitm::Deallocate(p, 0);
 }
 
 void operator delete(void* p, size_t size) {
-    return ams::mitm::Deallocate(p, size);
+    ams::mitm::Deallocate(p, size);
 }
 
 void* operator new[](size_t size) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new[](size_t size, const std::nothrow_t&) {
+void* operator new[](size_t size, const std::nothrow_t& /*tag*/) {
     return ams::mitm::Allocate(size);
 }
 
 void operator delete[](void* p) {
-    return ams::mitm::Deallocate(p, 0);
+    ams::mitm::Deallocate(p, 0);
 }
 
 void operator delete[](void* p, size_t size) {
-    return ams::mitm::Deallocate(p, size);
+    ams::mitm::Deallocate(p, size);
 }
 
 // ============================================================================
@@ -671,30 +671,30 @@ void* operator new(size_t size, std::align_val_t /*alignment*/) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new(size_t size, std::align_val_t /*alignment*/, const std::nothrow_t&) {
+void* operator new(size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) {
     return ams::mitm::Allocate(size);
 }
 
 void operator delete(void* p, std::align_val_t /*alignment*/) {
-    return ams::mitm::Deallocate(p, 0);
+    ams::mitm::Deallocate(p, 0);
 }
 
 void operator delete(void* p, size_t size, std::align_val_t /*alignment*/) {
-    return ams::mitm::Deallocate(p, size);
+    ams::mitm::Deallocate(p, size);
 }
 
 void* operator new[](size_t size, std::align_val_t /*alignment*/) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new[](size_t size, std::align_val_t /*alignment*/, const std::nothrow_t&) {
+void* operator new[](size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) {
     return ams::mitm::Allocate(size);
 }
 
 void operator delete[](void* p, std::align_val_t /*alignment*/) {
-    return ams::mitm::Deallocate(p, 0);
+    ams::mitm::Deallocate(p, 0);
 }
 
 void operator delete[](void* p, size_t size, std::align_val_t /*alignment*/) {
-    return ams::mitm::Deallocate(p, size);
+    ams::mitm::Deallocate(p, size);
 }

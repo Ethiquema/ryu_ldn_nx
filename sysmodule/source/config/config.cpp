@@ -84,13 +84,16 @@ bool parse_bool(const char* value) {
     // (Switch) and the host g++ test build without pulling in <strings.h>.
     auto ieq = [](char a, char b) {
         // ASCII-only lowercasing; fine for the literal tokens "true"/"false".
-        if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
-        if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+        if (a >= 'A' && a <= 'Z') { a = static_cast<char>(a - 'A' + 'a');
+}
+        if (b >= 'A' && b <= 'Z') { b = static_cast<char>(b - 'A' + 'a');
+}
         return a == b;
     };
     auto ieqstr = [&](const char* a, const char* b) {
         while (*a && *b) {
-            if (!ieq(*a, *b)) return false;
+            if (!ieq(*a, *b)) { return false;
+}
             a++; b++;
         }
         return *a == '\0' && *b == '\0';
@@ -183,10 +186,14 @@ enum class Section {
  * @brief Identify section from header line
  */
 Section parse_section(const char* line) {
-    if (std::strcmp(line, "[server]") == 0) return Section::Server;
-    if (std::strcmp(line, "[ldn]") == 0) return Section::Ldn;
-    if (std::strcmp(line, "[debug]") == 0) return Section::Debug;
-    if (line[0] == '[') return Section::Unknown;
+    if (std::strcmp(line, "[server]") == 0) { return Section::Server;
+}
+    if (std::strcmp(line, "[ldn]") == 0) { return Section::Ldn;
+}
+    if (std::strcmp(line, "[debug]") == 0) { return Section::Debug;
+}
+    if (line[0] == '[') { return Section::Unknown;
+}
     return Section::None;
 }
 
@@ -267,7 +274,7 @@ void parse_config_content(const char* content, size_t size, Config& config) {
                                    current_section != Section::Unknown) {
                             // Parse key=value
                             char* eq_pos = std::strchr(line, '=');
-                            if (eq_pos) {
+                            if (eq_pos != nullptr) {
                                 *eq_pos = '\0';
                                 char* key = line;
                                 char* value = eq_pos + 1;
@@ -432,7 +439,7 @@ ConfigResult load_config(const char* path, Config& config) {
 
     // Allocate buffer and read file
     char* content = new (std::nothrow) char[file_size + 1];
-    if (!content) {
+    if (content == nullptr) {
         ams::fs::CloseFile(file);
         return ConfigResult::IoError;
     }
@@ -461,7 +468,7 @@ ConfigResult save_config(const char* path, const Config& config) {
     safe_strcpy(dir_path, path, sizeof(dir_path) - 1);
 
     char* last_slash = std::strrchr(dir_path, '/');
-    if (last_slash) {
+    if (last_slash != nullptr) {
         *last_slash = '\0';
         // Use ams::fs::EnsureDirectory which creates recursively
         ams::fs::EnsureDirectory(dir_path);
@@ -470,7 +477,7 @@ ConfigResult save_config(const char* path, const Config& config) {
     // Format config content
     constexpr size_t buffer_size = 4096;
     char* buffer = new (std::nothrow) char[buffer_size];
-    if (!buffer) {
+    if (buffer == nullptr) {
         return ConfigResult::IoError;
     }
 

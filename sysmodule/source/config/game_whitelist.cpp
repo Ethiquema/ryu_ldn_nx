@@ -40,7 +40,7 @@ constexpr size_t BYTES_PER_ENTRY = 18;
  *                `IsGameWhitelisted`; the load-then-freeze pattern means later
  *                read-only access from MITM threads is safe by happens-before.
  */
-static u64* g_whitelist = nullptr;
+u64* g_whitelist = nullptr;
 
 /**
  * @brief Capacity (in u64 entries) of the g_whitelist array.
@@ -52,7 +52,7 @@ static u64* g_whitelist = nullptr;
  * @thread_safety Same load-then-freeze discipline as g_whitelist; read-only
  *                after initialization.
  */
-static size_t g_whitelist_capacity = 0;
+size_t g_whitelist_capacity = 0;
 
 /**
  * @brief Number of valid entries currently stored in g_whitelist.
@@ -64,7 +64,7 @@ static size_t g_whitelist_capacity = 0;
  * @thread_safety Read-only after the one-shot `LoadWhitelist` run; no mutex
  *                needed by the load-then-freeze contract.
  */
-static size_t g_whitelist_count = 0;
+size_t g_whitelist_count = 0;
 
 /**
  * @brief One-shot "initialized" flag preventing double-loads of the whitelist.
@@ -77,13 +77,14 @@ static size_t g_whitelist_count = 0;
  * @thread_safety Read-only after the first `LoadWhitelist`; checked at the top
  *                of `LoadWhitelist` under the same load-then-freeze discipline.
  */
-static bool g_whitelist_loaded = false;
+bool g_whitelist_loaded = false;
 
 /**
  * @brief Parse a hex string like "0x0100152000022000" to u64
  */
 u64 ParseHexId(const char* str, size_t len) {
-    if (!str || len == 0) return 0;
+    if ((str == nullptr) || len == 0) { return 0;
+}
 
     size_t i = 0;
 
@@ -148,7 +149,7 @@ void LoadWhitelist() {
     // Calculate capacity based on file size and allocate
     g_whitelist_capacity = static_cast<size_t>(file_size / BYTES_PER_ENTRY) + 100;  // +100 margin
     g_whitelist = new (std::nothrow) u64[g_whitelist_capacity];
-    if (!g_whitelist) {
+    if (g_whitelist == nullptr) {
         ams::fs::CloseFile(file);
         LOG_ERROR("GameWhitelist: failed to allocate %zu entries", g_whitelist_capacity);
         g_whitelist_loaded = true;
@@ -165,7 +166,7 @@ void LoadWhitelist() {
     s64 offset = 0;
 
     while (offset < file_size && g_whitelist_count < g_whitelist_capacity) {
-        size_t to_read = static_cast<size_t>(
+        auto to_read = static_cast<size_t>(
             (file_size - offset) < static_cast<s64>(CHUNK_SIZE)
             ? (file_size - offset)
             : static_cast<s64>(CHUNK_SIZE)

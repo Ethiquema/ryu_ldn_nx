@@ -261,7 +261,7 @@ bool resolve_host(const char* host, struct sockaddr_in& addr) {
     struct addrinfo* result = nullptr;
     int ret = getaddrinfo(host, nullptr, &hints, &result);
 
-    if (ret != 0 || !result) {
+    if (ret != 0 || (result == nullptr)) {
         // DNS resolution failed
         // Common causes: network offline, DNS server unreachable, invalid hostname
         return false;
@@ -643,7 +643,7 @@ SocketResult Socket::recv(uint8_t* buffer, size_t buffer_size, size_t& received,
     else if (timeout_ms == 0) {
         // Temporarily set non-blocking mode if needed
         int flags = fcntl(m_fd, F_GETFL, 0);
-        bool was_blocking = !(flags & O_NONBLOCK);
+        bool was_blocking = (flags & O_NONBLOCK) == 0;
 
         if (was_blocking) {
             fcntl(m_fd, F_SETFL, flags | O_NONBLOCK);
@@ -750,7 +750,7 @@ bool Socket::is_valid() const {
  * @note Generally you don't need to call this directly - the timeout
  *       parameters on connect/recv handle non-blocking behavior.
  */
-SocketResult Socket::set_non_blocking(bool non_blocking) {
+SocketResult Socket::set_non_blocking(bool non_blocking) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -786,7 +786,7 @@ SocketResult Socket::set_non_blocking(bool non_blocking) {
  *
  * @note Recommended: true for gaming/realtime applications
  */
-SocketResult Socket::set_nodelay(bool nodelay) {
+SocketResult Socket::set_nodelay(bool nodelay) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -811,7 +811,7 @@ SocketResult Socket::set_nodelay(bool nodelay) {
  *
  * @note The kernel may not honor the exact size requested
  */
-SocketResult Socket::set_recv_buffer_size(int size) {
+SocketResult Socket::set_recv_buffer_size(int size) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -835,7 +835,7 @@ SocketResult Socket::set_recv_buffer_size(int size) {
  *
  * @note The kernel may not honor the exact size requested
  */
-SocketResult Socket::set_send_buffer_size(int size) {
+SocketResult Socket::set_send_buffer_size(int size) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -892,7 +892,7 @@ SocketResult Socket::wait_ready(uint32_t timeout_ms, bool for_write) {
     // we do for recv() == 0 or ECONNRESET — and map to ConnectionReset so
     // the TcpClient stack propagates ConnectionLost and triggers
     // auto-reconnect.
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    if ((pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
         // Flush — this log is the key diagnostic event for "master TCP dies
         // while game IPC is still running". Without flushing we lose it if
         // a KP follows (the logger's 2s idle-flush hasn't triggered yet).

@@ -9,12 +9,14 @@
 
 #include "log.hpp"
 #include "../config/config.hpp"
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cstdarg>
 
 #ifdef __SWITCH__
 #include <stratosphere.hpp>
+#include <utility>
 #endif
 
 namespace ryu_ldn::debug {
@@ -72,7 +74,8 @@ void format_log_message(char* buffer, size_t buffer_size, LogLevel level,
 
 void format_log_message_v(char* buffer, size_t buffer_size, LogLevel level,
                           const char* format, va_list args) {
-    if (buffer_size == 0) return;
+    if (buffer_size == 0) { return;
+}
 
     // Format: [TIMESTAMP] [LEVEL] message
     char timestamp[16];
@@ -101,7 +104,8 @@ void LogBuffer::init(size_t capacity) {
 }
 
 void LogBuffer::add(const char* message) {
-    if (message == nullptr || m_capacity == 0) return;
+    if (message == nullptr || m_capacity == 0) { return;
+}
 
     // Copy message to current tail position
     safe_strcpy(m_messages[m_tail], message, MAX_LOG_MESSAGE_LENGTH - 1);
@@ -118,28 +122,29 @@ void LogBuffer::add(const char* message) {
 }
 
 const char* LogBuffer::get(size_t index) const {
-    if (index >= m_count) return nullptr;
+    if (index >= m_count) { return nullptr;
+}
 
     size_t actual_index = (m_head + index) % m_capacity;
     return m_messages[actual_index];
 }
 
 void LogBuffer::get_all(char* buffer, size_t buffer_size) const {
-    if (buffer == nullptr || buffer_size == 0) return;
+    if (buffer == nullptr || buffer_size == 0) { return;
+}
 
     buffer[0] = '\0';
     size_t offset = 0;
 
     for (size_t i = 0; i < m_count && offset < buffer_size - 1; i++) {
         const char* msg = get(i);
-        if (msg == nullptr) continue;
+        if (msg == nullptr) { continue;
+}
 
         size_t msg_len = strlen(msg);
         size_t remaining = buffer_size - offset - 1;
 
-        if (msg_len > remaining) {
-            msg_len = remaining;
-        }
+        msg_len = std::min(msg_len, remaining);
 
         memcpy(buffer + offset, msg, msg_len);
         offset += msg_len;
@@ -195,12 +200,14 @@ void Logger::init(const config::DebugConfig& config, const char* log_path) {
 }
 
 bool Logger::should_log(LogLevel level) const {
-    if (!m_enabled) return false;
+    if (!m_enabled) { return false;
+}
     return static_cast<uint32_t>(level) <= static_cast<uint32_t>(m_level);
 }
 
 void Logger::log(LogLevel level, const char* format, ...) {
-    if (!should_log(level)) return;
+    if (!should_log(level)) { return;
+}
 
     va_list args;
     va_start(args, format);
@@ -209,7 +216,8 @@ void Logger::log(LogLevel level, const char* format, ...) {
 }
 
 void Logger::log_v(LogLevel level, const char* format, va_list args) {
-    if (!should_log(level)) return;
+    if (!should_log(level)) { return;
+}
 
     char message[MAX_LOG_MESSAGE_LENGTH];
     format_log_message_v(message, sizeof(message), level, format, args);
@@ -285,14 +293,15 @@ void Logger::output_message(const char* message) {
 }
 
 void Logger::open_file() {
-    if (m_file_open) return;
+    if (m_file_open) { return;
+}
 
 #ifdef __SWITCH__
     // Ensure parent directory exists
     char dir_path[256];
     safe_strcpy(dir_path, m_log_path, sizeof(dir_path) - 1);
     char* last_slash = std::strrchr(dir_path, '/');
-    if (last_slash) {
+    if (last_slash != nullptr) {
         *last_slash = '\0';
         ams::fs::EnsureDirectory(dir_path);
     }
@@ -376,7 +385,8 @@ void Logger::close_file() {
 void Logger::check_idle_timeout() {
 #ifdef __SWITCH__
     std::scoped_lock lock(m_mutex);
-    if (!m_file_open) return;
+    if (!m_file_open) { return;
+}
 
     uint64_t current_tick = armGetSystemTick();
     uint64_t elapsed_ns = armTicksToNs(current_tick - m_last_write_tick);

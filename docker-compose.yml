@@ -28,6 +28,7 @@ services:
   # ──────────────────────────────────────────────────────────────────────────
   build:
     <<: *build-base
+    pull_policy: always
 
   # ──────────────────────────────────────────────────────────────────────────
   # Build with LOCAL atmosphere-libs (./sysmodule/Atmosphere-libs)

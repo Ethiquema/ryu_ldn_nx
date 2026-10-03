@@ -318,9 +318,9 @@ BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmPro
 {
     // Get more info about the forward service
     ::Service* fwd = m_forward_service.get();
-    Handle session_handle = fwd ? fwd->session : INVALID_HANDLE;
-    bool is_domain = fwd ? serviceIsDomain(fwd) : false;
-    u32 object_id = fwd ? fwd->object_id : 0;
+    Handle session_handle = (fwd != nullptr) ? fwd->session : INVALID_HANDLE;
+    bool is_domain = (fwd != nullptr) ? serviceIsDomain(fwd) : false;
+    u32 object_id = (fwd != nullptr) ? fwd->object_id : 0;
 
     LOG_INFO("[BSD#%u] CONSTRUCTOR: program_id=0x%016lx, pid=%lu, fwd_srv=%p (handle=0x%x, domain=%d, object_id=%u)",
              m_session_id, c.program_id.value, m_client_pid, fwd, session_handle, is_domain, object_id);
@@ -431,7 +431,7 @@ BsdMitmService::~BsdMitmService() {
     // but the sysmodule itself stays alive. The session counter resets
     // naturally when a new game opens new ldn:u/bsd:u sessions.
     ::Service* fwd = m_forward_service.get();
-    Handle session_handle = fwd ? fwd->session : INVALID_HANDLE;
+    Handle session_handle = (fwd != nullptr) ? fwd->session : INVALID_HANDLE;
     LOG_INFO("[BSD#%u] DESTRUCTOR: pid=%lu, fwd_srv=%p (handle=0x%x), commands=%u, registered=%d",
              m_session_id, m_client_pid, fwd, session_handle, m_command_count, m_registered);
 
@@ -465,7 +465,8 @@ BsdMitmService::~BsdMitmService() {
                         slot.valid = true;
                         size_t count = 0;
                         for (const auto& s : g_abandoned_forward_services) {
-                            if (s.valid) count++;
+                            if (s.valid) { count++;
+}
                         }
                         LOG_INFO("[BSD#%u] Abandoned services count: %zu", m_session_id, count);
                         return true;
@@ -595,7 +596,8 @@ void BsdMitmService::CleanupAbandonedServices() {
 
     size_t count = 0;
     for (const auto& slot : g_abandoned_forward_services) {
-        if (slot.valid) count++;
+        if (slot.valid) { count++;
+}
     }
     if (count == 0) {
         return;
@@ -684,7 +686,7 @@ Result BsdMitmService::RegisterClient(
         ryu_ldn::bsd::LibraryConfigData config;
         u64 pid_placeholder;  // Always 0
         u64 tmem_size;
-    } forward_input = { config, 0, tmem_size };
+    } forward_input = { .config=config, .pid_placeholder=0, .tmem_size=tmem_size };
 
     u64 pid_out = 0;
 
@@ -800,7 +802,7 @@ Result BsdMitmService::Socket(
         s32 domain;
         s32 type;
         s32 protocol;
-    } in = { domain, type, protocol };
+    } in = { .domain=domain, .type=type, .protocol=protocol };
 
     struct {
         s32 errno_val;
@@ -819,7 +821,7 @@ Result BsdMitmService::Socket(
     // Track socket info for later Bind/Connect calls
     if (R_SUCCEEDED(rc) && out.errno_val == 0 && out.fd >= 0) {
         // Determine protocol from type if not specified
-        ryu_ldn::bsd::ProtocolType proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
+        auto proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
         if (protocol == 0) {
             // Default protocol based on type
             if (type == static_cast<s32>(ryu_ldn::bsd::SocketType::Stream)) {
@@ -879,7 +881,7 @@ Result BsdMitmService::SocketExempt(
         s32 domain;
         s32 type;
         s32 protocol;
-    } in = { domain, type, protocol };
+    } in = { .domain=domain, .type=type, .protocol=protocol };
 
     struct {
         s32 errno_val;
@@ -895,7 +897,7 @@ Result BsdMitmService::SocketExempt(
 
     // Track socket info (same logic as Socket)
     if (R_SUCCEEDED(rc) && out.errno_val == 0 && out.fd >= 0) {
-        ryu_ldn::bsd::ProtocolType proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
+        auto proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
         if (protocol == 0) {
             if (type == static_cast<s32>(ryu_ldn::bsd::SocketType::Stream)) {
                 proto = ryu_ldn::bsd::ProtocolType::Tcp;
@@ -1069,7 +1071,7 @@ Result BsdMitmService::DuplicateSocket(
         s32 fd;
         u32 _pad;
         u64 target_pid;
-    } in = { fd, 0, target_pid };
+    } in = { .fd=fd, ._pad=0, .target_pid=target_pid };
 
     struct {
         s32 errno_val;
@@ -1124,7 +1126,7 @@ Result BsdMitmService::RegisterClientShared(
         ryu_ldn::bsd::LibraryConfigData config;
         u64 pid_placeholder;
         u64 tmem_size;
-    } forward_input = { config, 0, tmem_size };
+    } forward_input = { .config=config, .pid_placeholder=0, .tmem_size=tmem_size };
 
     u64 pid_out = 0;
 
@@ -1196,7 +1198,7 @@ Result BsdMitmService::RecvMMsg(
     }
 
     // Forward to real service
-    struct { s32 fd; s32 vlen; s32 flags; s32 timeout; } in = { fd, vlen, flags, timeout };
+    struct { s32 fd; s32 vlen; s32 flags; s32 timeout; } in = { .fd=fd, .vlen=vlen, .flags=flags, .timeout=timeout };
     struct { s32 errno_val; s32 count; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
@@ -1238,7 +1240,7 @@ Result BsdMitmService::SendMMsg(
     }
 
     // Forward to real service
-    struct { s32 fd; s32 vlen; s32 flags; } in = { fd, vlen, flags };
+    struct { s32 fd; s32 vlen; s32 flags; } in = { .fd=fd, .vlen=vlen, .flags=flags };
     struct { s32 errno_val; s32 count; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
@@ -1259,7 +1261,7 @@ Result BsdMitmService::EventFd(
     m_command_count++;
     LOG_INFO("BSD EventFd: initval=%lu, flags=%d", initval, flags);
 
-    struct { u64 initval; s32 flags; u32 _pad; } in = { initval, flags, 0 };
+    struct { u64 initval; s32 flags; u32 _pad; } in = { .initval=initval, .flags=flags, ._pad=0 };
     struct { s32 errno_val; s32 fd; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
@@ -1905,7 +1907,7 @@ Result BsdMitmService::Send(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -2073,7 +2075,7 @@ Result BsdMitmService::SendTo(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -2175,7 +2177,7 @@ Result BsdMitmService::Recv(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -2283,7 +2285,7 @@ Result BsdMitmService::RecvFrom(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 ret;
@@ -2538,19 +2540,23 @@ Result BsdMitmService::Select(
 
     // Helper to check if fd is set in fd_set
     auto fd_isset = [](s32 fd, const void* fds, size_t size) -> bool {
-        if (fds == nullptr || fd < 0) return false;
+        if (fds == nullptr || fd < 0) { return false;
+}
         size_t byte_idx = static_cast<size_t>(fd) / 8;
-        if (byte_idx >= size) return false;
-        uint8_t bit = 1u << (fd % 8);
+        if (byte_idx >= size) { return false;
+}
+        uint8_t bit = 1U << (fd % 8);
         return (static_cast<const uint8_t*>(fds)[byte_idx] & bit) != 0;
     };
 
     // Helper to set fd in fd_set
     auto fd_set_bit = [](s32 fd, void* fds, size_t size) {
-        if (fds == nullptr || fd < 0) return;
+        if (fds == nullptr || fd < 0) { return;
+}
         size_t byte_idx = static_cast<size_t>(fd) / 8;
-        if (byte_idx >= size) return;
-        uint8_t bit = 1u << (fd % 8);
+        if (byte_idx >= size) { return;
+}
+        uint8_t bit = 1U << (fd % 8);
         static_cast<uint8_t*>(fds)[byte_idx] |= bit;
     };
 
@@ -2611,7 +2617,8 @@ Result BsdMitmService::Select(
         bool in_write = fd_isset(fd, writefds_in.GetPointer(), writefds_in.GetSize());
         bool in_error = fd_isset(fd, errorfds_in.GetPointer(), errorfds_in.GetSize());
 
-        if (!in_read && !in_write && !in_error) continue;
+        if (!in_read && !in_write && !in_error) { continue;
+}
 
         ProxySocket* proxy = manager.GetProxySocket(fd);
         if (proxy != nullptr) {
@@ -2784,12 +2791,12 @@ Result BsdMitmService::Poll(
 
             // Use system POLL* macros from poll.h
             // Check read readiness
-            if ((poll_fds[i].events & POLLIN) && proxy->HasPendingData()) {
+            if (((poll_fds[i].events & POLLIN) != 0) && proxy->HasPendingData()) {
                 poll_fds[i].revents |= static_cast<int16_t>(POLLIN);
             }
 
             // Proxy sockets are always writable (write goes to queue)
-            if (poll_fds[i].events & POLLOUT) {
+            if ((poll_fds[i].events & POLLOUT) != 0) {
                 poll_fds[i].revents |= static_cast<int16_t>(POLLOUT);
             }
 
@@ -2835,7 +2842,7 @@ Result BsdMitmService::Poll(
     struct {
         s32 nfds;
         s32 timeout;
-    } in = { nfds, timeout };
+    } in = { .nfds=nfds, .timeout=timeout };
 
     struct {
         s32 errno_val;
@@ -2862,11 +2869,11 @@ Result BsdMitmService::Poll(
             if (proxy != nullptr) {
                 poll_fds[i].revents = 0;
 
-                if ((poll_fds[i].events & POLLIN) && proxy->HasPendingData()) {
+                if (((poll_fds[i].events & POLLIN) != 0) && proxy->HasPendingData()) {
                     poll_fds[i].revents |= static_cast<int16_t>(POLLIN);
                     out.count++;
                 }
-                if (poll_fds[i].events & POLLOUT) {
+                if ((poll_fds[i].events & POLLOUT) != 0) {
                     poll_fds[i].revents |= static_cast<int16_t>(POLLOUT);
                     out.count++;
                 }
@@ -3004,7 +3011,7 @@ Result BsdMitmService::Ioctl(
         s32 fd;
         u32 request;
         u32 bufcount;
-    } in = { fd, request, bufcount };
+    } in = { .fd=fd, .request=request, .bufcount=bufcount };
 
     struct {
         s32 errno_val;
@@ -3095,7 +3102,7 @@ Result BsdMitmService::Fcntl(
         s32 fd;
         s32 cmd;
         s32 arg;
-    } in = { fd, cmd, arg };
+    } in = { .fd=fd, .cmd=cmd, .arg=arg };
 
     struct {
         s32 errno_val;
@@ -3165,7 +3172,7 @@ Result BsdMitmService::GetSockOpt(
         s32 fd;
         s32 level;
         s32 optname;
-    } in = { fd, level, optname };
+    } in = { .fd=fd, .level=level, .optname=optname };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3249,7 +3256,7 @@ Result BsdMitmService::SetSockOpt(
         s32 fd;
         s32 level;
         s32 optname;
-    } in = { fd, level, optname };
+    } in = { .fd=fd, .level=level, .optname=optname };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3296,7 +3303,7 @@ Result BsdMitmService::Listen(
     struct {
         s32 fd;
         s32 backlog;
-    } in = { fd, backlog };
+    } in = { .fd=fd, .backlog=backlog };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3337,7 +3344,7 @@ Result BsdMitmService::Shutdown(
     struct {
         s32 fd;
         s32 how;
-    } in = { fd, how };
+    } in = { .fd=fd, .how=how };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3378,7 +3385,7 @@ Result BsdMitmService::ShutdownAllSockets(
     struct {
         u64 pid;
         s32 how;
-    } in = { pid, how };
+    } in = { .pid=pid, .how=how };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(

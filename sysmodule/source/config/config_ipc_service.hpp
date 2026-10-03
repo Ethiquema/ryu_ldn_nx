@@ -208,6 +208,11 @@ using RyuCfgInServerAddress   = const ryu_ldn::ipc::ServerAddressIpc &;
  *
  * Interface ID: 0x52594343 ("RYCC" - RYu Config Controller)
  */
+// The macro expansion internally declares a forwarding object (`args`) that
+// CodeQL classifies as an unused local/static variable. This is a macro-level
+// false positive: the object is consumed by perfect forwarding inside the
+// macro body, so no standalone [[maybe_unused]] declaration is possible.
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 // codeql[cpp/unused-local-variable,cpp/unused-static-variable] — macro
 // expansion uses `args` via perfect forwarding
 AMS_SF_DEFINE_INTERFACE(ryu_ldn::ipc, IConfigService, AMS_RYU_CFG_SERVICE_INTERFACE, 0x52594343)
@@ -227,49 +232,49 @@ public:
 
     /** @brief Get the sysmodule version string */
     /// @gdb{tag="CONFIG:IPC", msg="GetVersion"}
-    ams::Result GetVersion(RyuCfgOutVersionString out);
+    static ams::Result GetVersion(RyuCfgOutVersionString out);
 
     /** @brief Get connection status (0 = service running) */
     /// @gdb{tag="CONFIG:IPC", msg="GetConnectionStatus"}
-    ams::Result GetConnectionStatus(ams::sf::Out<u32> out);
+    static ams::Result GetConnectionStatus(ams::sf::Out<u32> out);
 
     /** @brief Check if the IPC service is active */
     /// @gdb{tag="CONFIG:IPC", msg="IsServiceActive"}
-    ams::Result IsServiceActive(ams::sf::Out<u32> out);
+    static ams::Result IsServiceActive(ams::sf::Out<u32> out);
 
     /** @brief Check if a game is actively using LDN
      *  @param out 1 if a game is using LDN, 0 otherwise
      */
     /// @gdb{tag="CONFIG:IPC", msg="IsGameActive"}
-    ams::Result IsGameActive(ams::sf::Out<u32> out);
+    static ams::Result IsGameActive(ams::sf::Out<u32> out);
 
     /** @brief Get current LDN CommState
      *  @param out CommState value (0=None, 1=Initialized, 2=AccessPoint, 3=AccessPointCreated, 4=Station, 5=StationConnected)
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetLdnState"}
-    ams::Result GetLdnState(ams::sf::Out<u32> out);
+    static ams::Result GetLdnState(ams::sf::Out<u32> out);
 
     /** @brief Get session information
      *  @param out SessionInfoIpc struct (node count, max, local ID, is_host)
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetSessionInfo"}
-    ams::Result GetSessionInfo(RyuCfgOutSessionInfo out);
+    static ams::Result GetSessionInfo(RyuCfgOutSessionInfo out);
 
     /** @brief Get last measured RTT
      *  @param out RTT in milliseconds
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetLastRtt"}
-    ams::Result GetLastRtt(ams::sf::Out<u32> out);
+    static ams::Result GetLastRtt(ams::sf::Out<u32> out);
 
     /** @brief Request the MITM service to reconnect */
     /// @gdb{tag="CONFIG:IPC", msg="ForceReconnect"}
-    ams::Result ForceReconnect();
+    static ams::Result ForceReconnect();
 
     /** @brief Get the process ID of the active game
      *  @param out Process id (for debugging)
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetActiveProcessId"}
-    ams::Result GetActiveProcessId(ams::sf::Out<u64> out);
+    static ams::Result GetActiveProcessId(ams::sf::Out<u64> out);
 
     // =========================================================================
     // Sysmodule General Settings (IDs 9-14)
@@ -277,31 +282,31 @@ public:
 
     /** @brief Get whether debug logging is enabled */
     /// @gdb{tag="CONFIG:IPC", msg="GetDebugEnabled"}
-    ams::Result GetDebugEnabled(ams::sf::Out<u32> out);
+    static ams::Result GetDebugEnabled(ams::sf::Out<u32> out);
     /** @brief Enable or disable debug logging
      *  @param enabled 1 to enable, 0 to disable
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetDebugEnabled"}
-    ams::Result SetDebugEnabled(u32 enabled);
+    static ams::Result SetDebugEnabled(u32 enabled);
     /** @brief Get the debug log level (0=errors, 1=warnings, 2=info, 3=verbose) */
     /// @gdb{tag="CONFIG:IPC", msg="GetDebugLevel"}
-    ams::Result GetDebugLevel(ams::sf::Out<u32> out);
+    static ams::Result GetDebugLevel(ams::sf::Out<u32> out);
     /** @brief Set the debug log level
      *  @param level 0=errors, 1=warnings, 2=info, 3=verbose
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetDebugLevel"}
-    ams::Result SetDebugLevel(u32 level);
+    static ams::Result SetDebugLevel(u32 level);
 
     /** @brief Save current configuration to disk
      *  @param out Result of the save operation
      */
     /// @gdb{tag="CONFIG:IPC", msg="SaveConfig"}
-    ams::Result SaveConfig(RyuCfgOutConfigResult out);
+    static ams::Result SaveConfig(RyuCfgOutConfigResult out);
     /** @brief Reload configuration from disk
      *  @param out Result of the reload operation
      */
     /// @gdb{tag="CONFIG:IPC", msg="ReloadConfig"}
-    ams::Result ReloadConfig(RyuCfgOutConfigResult out);
+    static ams::Result ReloadConfig(RyuCfgOutConfigResult out);
 
     // =========================================================================
     // Sysmodule Configuration Manager (IDs 15-24)
@@ -309,33 +314,33 @@ public:
 
     /** @brief Get the configured server address (host + port) */
     /// @gdb{tag="CONFIG:IPC", msg="GetServerAddress"}
-    ams::Result GetServerAddress(RyuCfgOutServerAddress out);
+    static ams::Result GetServerAddress(RyuCfgOutServerAddress out);
     /** @brief Set the server address (host + port)
      *  @param address New server address to use
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetServerAddress"}
-    ams::Result SetServerAddress(RyuCfgInServerAddress address);
+    static ams::Result SetServerAddress(RyuCfgInServerAddress address);
 
     /** @brief Get whether LDN emulation is enabled */
     /// @gdb{tag="CONFIG:IPC", msg="GetLdnEnabled"}
-    ams::Result GetLdnEnabled(ams::sf::Out<u32> out);
+    static ams::Result GetLdnEnabled(ams::sf::Out<u32> out);
     /** @brief Enable or disable LDN emulation
      *  @param enabled 1 to enable, 0 to disable
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetLdnEnabled"}
-    ams::Result SetLdnEnabled(u32 enabled);
+    static ams::Result SetLdnEnabled(u32 enabled);
 
     /** @brief Get whether P2P proxy is disabled
      *  @param out 1 if P2P proxy is disabled, 0 if enabled
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetDisableP2p"}
-    ams::Result GetDisableP2p(ams::sf::Out<u32> out);
+    static ams::Result GetDisableP2p(ams::sf::Out<u32> out);
 
     /** @brief Set P2P proxy disabled state
      *  @param disabled 1 to disable P2P proxy, 0 to enable
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetDisableP2p"}
-    ams::Result SetDisableP2p(u32 disabled);
+    static ams::Result SetDisableP2p(u32 disabled);
 
     /** @brief Get whether passphrase filtering is enabled
      *  When use_passphrase is true, LDN rooms are filtered by the
@@ -344,21 +349,21 @@ public:
      *  @param out 1 if passphrase filtering is enabled, 0 if public
      */
     /// @gdb{tag="CONFIG:IPC", msg="GetUsePassphrase"}
-    ams::Result GetUsePassphrase(ams::sf::Out<u32> out);
+    static ams::Result GetUsePassphrase(ams::sf::Out<u32> out);
     /** @brief Enable or disable passphrase filtering
      *  @param enabled 1 to enable passphrase filtering, 0 for public rooms
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetUsePassphrase"}
-    ams::Result SetUsePassphrase(u32 enabled);
+    static ams::Result SetUsePassphrase(u32 enabled);
 
     /** @brief Get the current LDN room passphrase */
     /// @gdb{tag="CONFIG:IPC", msg="GetPassphrase"}
-    ams::Result GetPassphrase(RyuCfgOutPassphraseString out);
+    static ams::Result GetPassphrase(RyuCfgOutPassphraseString out);
     /** @brief Set the LDN room passphrase
      *  @param passphrase Null-terminated passphrase string (max 63 chars)
      */
     /// @gdb{tag="CONFIG:IPC", msg="SetPassphrase"}
-    ams::Result SetPassphrase(RyuCfgPassphraseString passphrase);
+    static ams::Result SetPassphrase(RyuCfgPassphraseString passphrase);
 };
 
 } // namespace ryu_ldn::ipc

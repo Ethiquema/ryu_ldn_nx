@@ -29,10 +29,7 @@ using Errno = ryu_ldn::bsd::BsdErrno;
 ProxySocket::ProxySocket(ryu_ldn::bsd::SocketType type, ryu_ldn::bsd::ProtocolType protocol)
     : m_type(type)
     , m_protocol(protocol)
-    , m_state(ProxySocketState::Created)
-    , m_non_blocking(false)
-    , m_shutdown_read(false)
-    , m_shutdown_write(false)
+     
 {
     // Initialize addresses to zero
     std::memset(&m_local_addr, 0, sizeof(m_local_addr));
@@ -316,7 +313,7 @@ void ProxySocket::IncomingData(const void* data, size_t len, const ryu_ldn::bsd:
     // load (~100+ packets/sec during gameplay).
     if (len > 0 && data != nullptr &&
         ryu_ldn::debug::g_logger.should_log(ryu_ldn::debug::LogLevel::Verbose)) {
-        const uint8_t* bytes = static_cast<const uint8_t*>(data);
+        const auto* bytes = static_cast<const uint8_t*>(data);
         size_t log_len = std::min(len, size_t(32));
         char hex_buf[128];
         char* p = hex_buf;
@@ -686,9 +683,8 @@ bool ProxySocket::WaitForData(u64 timeout_ms) {
     if (timeout_ms == 0) {
         m_receive_event.Wait();
         return true;
-    } else {
-        return m_receive_event.TimedWait(TimeSpan::FromMilliSeconds(timeout_ms));
-    }
+    }         return m_receive_event.TimedWait(TimeSpan::FromMilliSeconds(timeout_ms));
+   
 }
 
 } // namespace ams::mitm::bsd

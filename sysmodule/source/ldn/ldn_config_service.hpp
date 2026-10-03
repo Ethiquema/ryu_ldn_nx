@@ -140,7 +140,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:LIFECYCLE", msg="Version queried"}
-    Result GetVersion(sf::Out<std::array<char, 32>> out);
+    static Result GetVersion(sf::Out<std::array<char, 32>> out);
 
     /**
      * @brief Get current connection status
@@ -149,7 +149,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:LIFECYCLE", msg="Connection status queried"}
-    Result GetConnectionStatus(sf::Out<ConnectionStatus> out);
+    static Result GetConnectionStatus(sf::Out<ConnectionStatus> out);
 
     /**
      * @brief Get current LDN state
@@ -158,7 +158,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:LIFECYCLE", msg="LDN state queried"}
-    Result GetLdnState(sf::Out<u32> out);
+    static Result GetLdnState(sf::Out<u32> out);
 
     /**
      * @brief Get session information
@@ -167,7 +167,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:LIFECYCLE", msg="Session info queried"}
-    Result GetSessionInfo(sf::Out<SessionInfo> out);
+    static Result GetSessionInfo(sf::Out<SessionInfo> out);
 
     /**
      * @brief Get server address
@@ -176,7 +176,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetServerAddress"}
-    Result GetServerAddress(sf::Out<ServerAddress> out);
+    static Result GetServerAddress(sf::Out<ServerAddress> out);
 
     /**
      * @brief Set server address
@@ -185,7 +185,7 @@ public:
      * @return ResultSuccess on success
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetServerAddress"}
-    Result SetServerAddress(const ServerAddress &address);
+    static Result SetServerAddress(const ServerAddress &address);
 
     /**
      * @brief Get debug logging state
@@ -194,7 +194,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetDebugEnabled"}
-    Result GetDebugEnabled(sf::Out<u32> out);
+    static Result GetDebugEnabled(sf::Out<u32> out);
 
     /**
      * @brief Set debug logging state
@@ -203,7 +203,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetDebugEnabled"}
-    Result SetDebugEnabled(u32 enabled);
+    static Result SetDebugEnabled(u32 enabled);
 
     /**
      * @brief Force server reconnection
@@ -211,7 +211,7 @@ public:
      * @return ResultSuccess on success
      */
     /// @gdb{tag="LDN:OPS", msg="ForceReconnect"}
-    Result ForceReconnect();
+    static Result ForceReconnect();
 
     /**
      * @brief Get last RTT in milliseconds
@@ -220,7 +220,7 @@ public:
      * @return Always succeeds
      */
     /// @gdb{tag="LDN:OPS", msg="GetLastRtt"}
-    Result GetLastRtt(sf::Out<u32> out);
+    static Result GetLastRtt(sf::Out<u32> out);
 
     // =========================================================================
     // Extended Configuration Commands (65011-65030)
@@ -230,97 +230,97 @@ public:
      * @brief Get passphrase (65011)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetPassphrase"}
-    Result GetPassphrase(sf::Out<Passphrase> out);
+    static Result GetPassphrase(sf::Out<Passphrase> out);
 
     /**
      * @brief Set passphrase (65012)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetPassphrase"}
-    Result SetPassphrase(Passphrase passphrase);
+    static Result SetPassphrase(Passphrase passphrase);
 
     /**
      * @brief Get LDN enabled state (65013)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetLdnEnabled"}
-    Result GetLdnEnabled(sf::Out<u32> out);
+    static Result GetLdnEnabled(sf::Out<u32> out);
 
     /**
      * @brief Set LDN enabled state (65014)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetLdnEnabled"}
-    Result SetLdnEnabled(u32 enabled);
+    static Result SetLdnEnabled(u32 enabled);
 
     /**
      * @brief Get connect timeout in ms (65017)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetConnectTimeout"}
-    Result GetConnectTimeout(sf::Out<u32> out);
+    static Result GetConnectTimeout(sf::Out<u32> out);
 
     /**
      * @brief Set connect timeout in ms (65018)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetConnectTimeout"}
-    Result SetConnectTimeout(u32 timeout_ms);
+    static Result SetConnectTimeout(u32 timeout_ms);
 
     /**
      * @brief Get ping interval in ms (65019)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetPingInterval"}
-    Result GetPingInterval(sf::Out<u32> out);
+    static Result GetPingInterval(sf::Out<u32> out);
 
     /**
      * @brief Set ping interval in ms (65020)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetPingInterval"}
-    Result SetPingInterval(u32 interval_ms);
+    static Result SetPingInterval(u32 interval_ms);
 
     /**
      * @brief Get reconnect delay in ms (65021)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetReconnectDelay"}
-    Result GetReconnectDelay(sf::Out<u32> out);
+    static Result GetReconnectDelay(sf::Out<u32> out);
 
     /**
      * @brief Set reconnect delay in ms (65022)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetReconnectDelay"}
-    Result SetReconnectDelay(u32 delay_ms);
+    static Result SetReconnectDelay(u32 delay_ms);
 
     /**
      * @brief Get max reconnect attempts (65023)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetMaxReconnectAttempts"}
-    Result GetMaxReconnectAttempts(sf::Out<u32> out);
+    static Result GetMaxReconnectAttempts(sf::Out<u32> out);
 
     /**
      * @brief Set max reconnect attempts (65024)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetMaxReconnectAttempts"}
-    Result SetMaxReconnectAttempts(u32 attempts);
+    static Result SetMaxReconnectAttempts(u32 attempts);
 
     /**
      * @brief Get debug level 0-3 (65025)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetDebugLevel"}
-    Result GetDebugLevel(sf::Out<u32> out);
+    static Result GetDebugLevel(sf::Out<u32> out);
 
     /**
      * @brief Set debug level 0-3 (65026)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetDebugLevel"}
-    Result SetDebugLevel(u32 level);
+    static Result SetDebugLevel(u32 level);
 
     /**
      * @brief Get log to file state (65027)
      */
     /// @gdb{tag="LDN:CONFIG", msg="GetLogToFile"}
-    Result GetLogToFile(sf::Out<u32> out);
+    static Result GetLogToFile(sf::Out<u32> out);
 
     /**
      * @brief Set log to file state (65028)
      */
     /// @gdb{tag="LDN:CONFIG", msg="SetLogToFile"}
-    Result SetLogToFile(u32 enabled);
+    static Result SetLogToFile(u32 enabled);
 
     /**
      * @brief Save config to file (65029)
@@ -328,7 +328,7 @@ public:
      * @param out Result of save operation
      */
     /// @gdb{tag="LDN:CONFIG", msg="SaveConfig"}
-    Result SaveConfig(sf::Out<ConfigResult> out);
+    static Result SaveConfig(sf::Out<ConfigResult> out);
 
     /**
      * @brief Reload config from file (65030)
@@ -336,7 +336,7 @@ public:
      * @param out Result of reload operation
      */
     /// @gdb{tag="LDN:CONFIG", msg="ReloadConfig"}
-    Result ReloadConfig(sf::Out<ConfigResult> out);
+    static Result ReloadConfig(sf::Out<ConfigResult> out);
 
 private:
     /**

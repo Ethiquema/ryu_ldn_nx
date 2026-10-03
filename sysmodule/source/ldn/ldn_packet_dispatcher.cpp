@@ -383,7 +383,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::ScanReplyEnd:
             // Empty packet - no payload validation needed
-            if (m_scan_reply_end_handler) {
+            if (m_scan_reply_end_handler != nullptr) {
                 m_scan_reply_end_handler(header);
             }
             break;
@@ -418,7 +418,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::ProxyData:
             // Special handling: header struct + variable-length data
-            if (m_proxy_data_handler) {
+            if (m_proxy_data_handler != nullptr) {
                 // Validate minimum size for header
                 if (data_size < sizeof(ProxyDataHeader)) {
                     return;  // Packet too small
@@ -454,7 +454,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::RejectReply:
             // Empty packet - no payload validation needed
-            if (m_reject_reply_handler) {
+            if (m_reject_reply_handler != nullptr) {
                 m_reject_reply_handler(header);
             }
             break;

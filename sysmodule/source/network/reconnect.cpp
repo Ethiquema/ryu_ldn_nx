@@ -49,8 +49,10 @@
 
 #include "reconnect.hpp"
 
-namespace ryu_ldn {
-namespace network {
+#include <algorithm>
+
+
+namespace ryu_ldn::network {
 
 /**
  * @brief Constructor with default configuration
@@ -66,8 +68,8 @@ namespace network {
  * The retry count starts at 0 and the initial delay is pre-calculated.
  */
 ReconnectManager::ReconnectManager()
-    : m_config()
-    , m_retry_count(0)
+    : 
+     m_retry_count(0)
     , m_current_delay_ms(0)
 {
     // Calculate initial delay (will be initial_delay_ms for retry_count=0)
@@ -188,7 +190,7 @@ uint32_t ReconnectManager::get_next_delay_ms_with_jitter(uint32_t seed) const {
     // Map hash to range [-jitter_percent, +jitter_percent]
     // hash % (2 * jitter + 1) gives [0, 2*jitter]
     // Subtract jitter to get [-jitter, +jitter]
-    uint32_t jitter_range = 2 * m_config.jitter_percent + 1;
+    uint32_t jitter_range = (2 * m_config.jitter_percent) + 1;
     int32_t jitter_offset = static_cast<int32_t>(hash % jitter_range) -
                             static_cast<int32_t>(m_config.jitter_percent);
 
@@ -197,12 +199,8 @@ uint32_t ReconnectManager::get_next_delay_ms_with_jitter(uint32_t seed) const {
                        (100 + jitter_offset) / 100;
 
     // Ensure result is positive and within bounds
-    if (adjusted < 1) {
-        adjusted = 1;
-    }
-    if (adjusted > m_config.max_delay_ms) {
-        adjusted = m_config.max_delay_ms;
-    }
+    adjusted = std::max<int64_t>(adjusted, 1);
+    adjusted = std::min<int64_t>(adjusted, m_config.max_delay_ms);
 
     return static_cast<uint32_t>(adjusted);
 }
@@ -278,5 +276,5 @@ void ReconnectManager::set_config(const ReconnectConfig& config) {
     calculate_delay();
 }
 
-} // namespace network
-} // namespace ryu_ldn
+} // namespace ryu_ldn::network
+

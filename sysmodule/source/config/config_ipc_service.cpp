@@ -123,7 +123,7 @@ bool ValidatePassphrase(const char* str, size_t max_len) {
         if (i >= max_len) {
             return false;  // Too long
         }
-        const unsigned char c = static_cast<unsigned char>(str[i]);
+        const auto c = static_cast<unsigned char>(str[i]);
         if (c < 0x20 || c > 0x7E) {
             return false;  // Non-printable
         }
@@ -183,8 +183,8 @@ ams::Result ConfigService::GetVersion(RyuCfgOutVersionString out) {
     static constexpr const char* VERSION = "1.0.0";
 
     // Clear output buffer
-    std::memset(out->buf.data(), 0, out->size());
-    safe_strcpy(out->buf.data(), VERSION, out->size() - 1);
+    std::memset(out->buf.data(), 0, RyuCfgVersionString::size());
+    safe_strcpy(out->buf.data(), VERSION, RyuCfgVersionString::size() - 1);
 
     LOG_VERBOSE("Config IPC: GetVersion called -> %s", VERSION);
     R_SUCCEED();
@@ -246,8 +246,8 @@ ams::Result ConfigService::IsServiceActive(ams::sf::Out<u32> out) {
 ams::Result ConfigService::GetPassphrase(RyuCfgOutPassphraseString out) {
     std::scoped_lock lk(g_config_mutex);
 
-    std::memset(out->buf.data(), 0, out->size());
-    safe_strcpy(out->buf.data(), g_config.ldn.passphrase, out->size() - 1);
+    std::memset(out->buf.data(), 0, RyuCfgPassphraseString::size());
+    safe_strcpy(out->buf.data(), g_config.ldn.passphrase, RyuCfgPassphraseString::size() - 1);
 
     LOG_VERBOSE("Config IPC: GetPassphrase called");
     R_SUCCEED();
@@ -474,7 +474,9 @@ ams::Result ConfigService::GetLdnState(ams::sf::Out<u32> out) {
 
 ams::Result ConfigService::GetSessionInfo(RyuCfgOutSessionInfo out) {
     auto& state = ams::mitm::ldn::SharedState::GetInstance();
-    u8 node_count, max_nodes, local_node_id;
+    u8 node_count;
+    u8 max_nodes;
+    u8 local_node_id;
     bool is_host;
     state.GetSessionInfo(node_count, max_nodes, local_node_id, is_host);
 

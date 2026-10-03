@@ -378,7 +378,7 @@ private:
      * @brief Lease renewal thread function
      */
     /// @gdb{tag="P2P:NAT", msg="Lease renewal loop"}
-    void LeaseRenewalLoop();
+    void LeaseRenewalLoop() const;
 
     /**
      * @brief Start lease renewal background thread
@@ -516,7 +516,7 @@ public:
      * @return true if send succeeded
      */
     /// @gdb{tag="P2P:ROUTE", msg="Session send"}
-    bool Send(const void* data, size_t size);
+    bool Send(const void* data, size_t size) const;
 
     /**
      * @brief Disconnect and stop

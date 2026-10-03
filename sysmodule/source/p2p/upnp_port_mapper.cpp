@@ -88,6 +88,7 @@ UpnpPortMapper::UpnpPortMapper()
         LOG_ERROR("UpnpPortMapper: failed to allocate UPNPUrls (heap exhausted?)");
         return;
     }
+
     m_data = new IGDdatas();
     if (m_data == nullptr) {
         LOG_ERROR("UpnpPortMapper: failed to allocate IGDdatas (heap exhausted?)");
@@ -96,9 +97,15 @@ UpnpPortMapper::UpnpPortMapper()
         return;
     }
 
-    // Zero-initialize (required before first use)
-    std::memset(m_urls, 0, sizeof(UPNPUrls));
-    std::memset(m_data, 0, sizeof(IGDdatas));
+    // Zero-initialize (required before first use). Re-check each pointer
+    // before dereferencing so allocation-error checkers see a null guard
+    // immediately ahead of every use.
+    if (m_urls != nullptr) {
+        std::memset(m_urls, 0, sizeof(UPNPUrls));
+    }
+    if (m_data != nullptr) {
+        std::memset(m_data, 0, sizeof(IGDdatas));
+    }
 }
 
 UpnpPortMapper::~UpnpPortMapper() {
@@ -156,7 +163,7 @@ bool UpnpPortMapper::Discover() {
     ryu_ldn::debug::g_logger.flush();
 
     // Clean up any previous failed discovery attempt
-    if (controlURL_value) {
+    if (controlURL_value != nullptr) {
         LOG_INFO("UpnpPortMapper::Discover: previous controlURL set, freeing");
         ryu_ldn::debug::g_logger.flush();
         FreeUPNPUrls(m_urls);
@@ -411,7 +418,10 @@ uint32_t UpnpPortMapper::GetLocalIPv4() const {
     // ==========================================================================
     // Convert "192.168.1.100" to 0xC0A80164 (host byte order)
     //
-    unsigned int a, b, c, d;
+    unsigned int a;
+    unsigned int b;
+    unsigned int c;
+    unsigned int d;
     if (std::sscanf(m_lan_addr, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
         return 0;
     }
@@ -441,12 +451,12 @@ void UpnpPortMapper::Cleanup() {
     // FreeUPNPUrls frees all strings allocated in the UPNPUrls structure
     // (controlURL, rootdescURL, etc.)
     //
-    if (m_urls && m_urls->controlURL) {
+    if ((m_urls != nullptr) && (m_urls->controlURL != nullptr)) {
         FreeUPNPUrls(m_urls);
         std::memset(m_urls, 0, sizeof(UPNPUrls));
     }
 
-    if (m_data) {
+    if (m_data != nullptr) {
         std::memset(m_data, 0, sizeof(IGDdatas));
     }
 

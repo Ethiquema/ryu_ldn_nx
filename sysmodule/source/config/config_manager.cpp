@@ -70,8 +70,8 @@ void GenerateRandomPassphrase(char* out, size_t out_size) {
 
     const char* hex_chars = "0123456789abcdef";
 
-    // Copy prefix
-    std::strcpy(out, "Ryujinx-");
+    // Copy prefix (out_size >= 17 is guaranteed by the guard above)
+    std::memcpy(out, "Ryujinx-", 8);
 
     // Generate 8 random hex chars
     for (int i = 0; i < 8; i++) {
@@ -157,7 +157,8 @@ ConfigResult ConfigManager::Reload() {
 // =============================================================================
 
 void ConfigManager::SetServerHost(const char* host) {
-    if (host == nullptr) return;
+    if (host == nullptr) { return;
+}
 
     std::strncpy(m_config.server.host, host, MAX_HOST_LENGTH);
     m_config.server.host[MAX_HOST_LENGTH] = '\0';

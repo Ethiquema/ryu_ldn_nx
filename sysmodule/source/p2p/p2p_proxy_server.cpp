@@ -166,6 +166,7 @@
 #include <poll.h>         // poll(), pollfd, POLLIN — see AcceptLoop
 #include <cerrno>         // errno
 #include <cstring>        // memcmp(), memset()
+#include <utility>
 
 namespace ams::mitm::p2p {
 
@@ -185,8 +186,8 @@ namespace ams::mitm::p2p {
 // Move the stacks out of the class into BSS, where the linker honors
 // the alignment, and have the (singleton) server reference them.
 // Single-host model means we only ever need one set of stacks.
-alignas(os::ThreadStackAlignment) constinit u8 g_p2p_accept_thread_stack[0x4000];
-alignas(os::ThreadStackAlignment) constinit u8 g_p2p_lease_thread_stack[0x2000];
+alignas(os::ThreadStackAlignment) static constinit u8 g_p2p_accept_thread_stack[0x4000];
+alignas(os::ThreadStackAlignment) static constinit u8 g_p2p_lease_thread_stack[0x2000];
 
 // =============================================================================
 // Session Recv Thread Stack Pool
@@ -203,13 +204,13 @@ alignas(os::ThreadStackAlignment) constinit u8 g_p2p_lease_thread_stack[0x2000];
 // with the next accept) don't double-allocate or leak slots.
 constexpr int P2P_SESSION_STACK_COUNT = P2pProxyServer::MAX_PLAYERS;
 constexpr size_t P2P_SESSION_STACK_SIZE = 0x4000;
-alignas(os::ThreadStackAlignment) constinit u8
+alignas(os::ThreadStackAlignment) static constinit u8
     g_p2p_session_stacks[P2P_SESSION_STACK_COUNT][P2P_SESSION_STACK_SIZE];
-constinit bool g_p2p_session_stack_used[P2P_SESSION_STACK_COUNT] = {};
-constinit os::SdkMutex g_p2p_session_stack_mutex;
+static constinit bool g_p2p_session_stack_used[P2P_SESSION_STACK_COUNT] = {};
+static constinit os::SdkMutex g_p2p_session_stack_mutex;
 
 // Returns slot index in [0, P2P_SESSION_STACK_COUNT), or -1 if the pool is full.
-int AllocateSessionStackSlot() {
+static int AllocateSessionStackSlot() {
     std::scoped_lock lock(g_p2p_session_stack_mutex);
     for (int i = 0; i < P2P_SESSION_STACK_COUNT; ++i) {
         if (!g_p2p_session_stack_used[i]) {
@@ -220,8 +221,9 @@ int AllocateSessionStackSlot() {
     return -1;
 }
 
-void ReleaseSessionStackSlot(int slot) {
-    if (slot < 0 || slot >= P2P_SESSION_STACK_COUNT) return;
+static void ReleaseSessionStackSlot(int slot) {
+    if (slot < 0 || slot >= P2P_SESSION_STACK_COUNT) { return;
+}
     std::scoped_lock lock(g_p2p_session_stack_mutex);
     g_p2p_session_stack_used[slot] = false;
 }
@@ -319,11 +321,11 @@ P2pProxyServer::P2pProxyServer(MasterSendCallback master_callback, void* user_da
 {
     // Initialize session array to nullptr
     // This is important - we use nullptr to detect empty slots
-    for (int i = 0; i < MAX_PLAYERS; i++) {
-        m_sessions[i].reset();
+    for (auto & m_session : m_sessions) {
+        m_session.reset();
     }
-    for (int i = 0; i < MAX_ZOMBIE_SESSIONS; i++) {
-        m_zombie_sessions[i].reset();
+    for (auto & m_zombie_session : m_zombie_sessions) {
+        m_zombie_session.reset();
     }
 }
 
@@ -560,10 +562,10 @@ void P2pProxyServer::Stop() {
         // We disconnect with from_master=true to prevent sessions from
         // calling OnSessionDisconnected (since we're shutting down anyway).
 
-        for (int i = 0; i < MAX_PLAYERS; i++) {
-            if (m_sessions[i] != nullptr) {
-                m_sessions[i]->Disconnect(true);  // from_master = true
-                m_sessions[i].reset();
+        for (auto & m_session : m_sessions) {
+            if (m_session != nullptr) {
+                m_session->Disconnect(true);  // from_master = true
+                m_session.reset();
             }
         }
         m_session_count = 0;
@@ -801,7 +803,7 @@ void P2pProxyServer::StartLeaseRenewal() {
  *
  * This matches Ryujinx's timing exactly for compatibility.
  */
-void P2pProxyServer::LeaseRenewalLoop() {
+void P2pProxyServer::LeaseRenewalLoop() const {
     LOG_INFO("P2P LeaseRenewalLoop: entry, m_lease_thread_running=%d, m_disposed=%d",
              static_cast<int>(m_lease_thread_running), static_cast<int>(m_disposed));
     ryu_ldn::debug::g_logger.flush();
@@ -970,8 +972,8 @@ bool P2pProxyServer::TryRegisterUser(P2pProxySession* session,
             // 2. PhysicalIP is set: Must match client's IP
 
             bool is_private = true;
-            for (int j = 0; j < 16; j++) {
-                if (token.physical_ip[j] != 0) {
+            for (unsigned char j : token.physical_ip) {
+                if (j != 0) {
                     is_private = false;
                     break;
                 }
@@ -1052,9 +1054,9 @@ bool P2pProxyServer::TryRegisterUser(P2pProxySession* session,
                 }
 
                 // Add session to player list
-                for (int j = 0; j < MAX_PLAYERS; j++) {
-                    if (m_sessions[j] == nullptr) {
-                        m_sessions[j].reset(session);
+                for (auto & m_session : m_sessions) {
+                    if (m_session == nullptr) {
+                        m_session.reset(session);
                         m_session_count++;
                         break;
                     }
@@ -1183,19 +1185,19 @@ bool P2pProxyServer::BroadcastFromHost(ryu_ldn::protocol::ProxyDataHeader& heade
 
     bool any_sent = false;
     if (is_broadcast) {
-        for (int i = 0; i < MAX_PLAYERS; i++) {
-            if (m_sessions[i] != nullptr && m_sessions[i]->IsAuthenticated()) {
-                if (m_sessions[i]->Send(packet, encoded)) {
+        for (const auto & m_session : m_sessions) {
+            if (m_session != nullptr && m_session->IsAuthenticated()) {
+                if (m_session->Send(packet, encoded)) {
                     any_sent = true;
                 }
             }
         }
     } else {
-        for (int i = 0; i < MAX_PLAYERS; i++) {
-            if (m_sessions[i] != nullptr &&
-                m_sessions[i]->IsAuthenticated() &&
-                m_sessions[i]->GetVirtualIpAddress() == dest_ip) {
-                any_sent = m_sessions[i]->Send(packet, encoded);
+        for (const auto & m_session : m_sessions) {
+            if (m_session != nullptr &&
+                m_session->IsAuthenticated() &&
+                m_session->GetVirtualIpAddress() == dest_ip) {
+                any_sent = m_session->Send(packet, encoded);
                 break;
             }
         }
@@ -1349,7 +1351,10 @@ void P2pProxyServer::AcceptLoop() {
             close(client_fd);
             continue;
         }
-        session->Start();  // Start receive thread
+
+        if (session != nullptr) {
+            session->Start();  // Start receive thread
+        }
     }
 }
 
@@ -1472,8 +1477,10 @@ static inline bool HostShouldReceive(uint32_t dest_ip,
     if (dest_ip == 0xc0a800ff) {
         dest_ip = broadcast_address;
     }
-    if (dest_ip == broadcast_address) return true;
-    if (host_vip != 0 && dest_ip == host_vip) return true;
+    if (dest_ip == broadcast_address) { return true;
+}
+    if (host_vip != 0 && dest_ip == host_vip) { return true;
+}
     return false;
 }
 
@@ -1696,9 +1703,9 @@ void P2pProxyServer::OnSessionDisconnected(P2pProxySession* session) {
 
     // Find and remove from session array
     bool found = false;
-    for (int i = 0; i < MAX_PLAYERS; i++) {
-        if (m_sessions[i].get() == session) {
-            m_sessions[i].reset();
+    for (auto & m_session : m_sessions) {
+        if (m_session.get() == session) {
+            m_session.reset();
             m_session_count--;
             found = true;
             LOG_INFO("P2P session disconnected: virtual IP 0x%08X",
@@ -1847,7 +1854,7 @@ void P2pProxySession::Start() {
  *
  * Uses blocking send(). TCP guarantees delivery order and reliability.
  */
-bool P2pProxySession::Send(const void* data, size_t size) {
+bool P2pProxySession::Send(const void* data, size_t size) const {
     if (!m_connected || m_socket_fd < 0) {
         LOG_WARN("P2pProxySession::Send skipped: m_connected=%d, fd=%d, size=%zu",
                  static_cast<int>(m_connected), m_socket_fd, size);
@@ -1859,7 +1866,7 @@ bool P2pProxySession::Send(const void* data, size_t size) {
     // network/socket.cpp does for the master TCP client.
     ssize_t sent = send(m_socket_fd, data, size, MSG_NOSIGNAL);
 
-    if (sent != static_cast<ssize_t>(size)) {
+    if (sent < 0 || static_cast<size_t>(sent) != size) {
         LOG_WARN("P2pProxySession::Send short/failed: fd=%d size=%zu sent=%zd errno=%d",
                  m_socket_fd, size, sent, errno);
         return false;

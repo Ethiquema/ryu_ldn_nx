@@ -185,8 +185,8 @@ private:
      * @return true if transition is valid
      */
     /// @gdb{tag="NETWORK:STATE_MACHINE", msg="is_valid_transition"}
-    bool is_valid_transition(ConnectionState from, ConnectionEvent event,
-                             ConnectionState& to) const;
+    static bool is_valid_transition(ConnectionState from, ConnectionEvent event,
+                             ConnectionState& to) ;
 
     /**
      * @brief Perform the state transition

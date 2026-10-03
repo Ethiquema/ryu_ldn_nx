@@ -16,6 +16,10 @@
 #include "../p2p/p2p_proxy_server.hpp"
 #include <arpa/inet.h>
 
+#include <utility>
+
+#include <algorithm>
+
 namespace ams::mitm::ldn {
 
 // =============================================================================
@@ -204,8 +208,8 @@ static_assert(sizeof(ConnectNetworkData) == 0x7C, "sizeof(ConnectNetworkData) sh
 static_assert(sizeof(ScanFilter) == 0x60, "sizeof(ScanFilter) should be 0x60");
 
 ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
-    : m_state_machine()
-    , m_error_state(0)
+    : 
+     m_error_state(0)
     , m_client_process_id(0)
     , m_network_info{}
     , m_disconnect_reason(DisconnectReason::None)
@@ -213,9 +217,8 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_subnet_mask(0)
     , m_server_client(ryu_ldn::network::RyuLdnClientConfig(ryu_ldn::ipc::g_config))
     , m_server_connected(false)
-    , m_node_mapper()
-    , m_proxy_buffer()
-    , m_response_event(os::EventClearMode_AutoClear)
+    , 
+     m_response_event(os::EventClearMode_AutoClear)
     , m_scan_event(os::EventClearMode_AutoClear)
     , m_error_event(os::EventClearMode_ManualClear)
     , m_reject_event(os::EventClearMode_AutoClear)
@@ -236,13 +239,13 @@ ICommunicationService::ICommunicationService(ncm::ProgramId program_id)
     , m_p2p_server(nullptr)
     , m_p2p_connect_thread{}
     , m_p2p_connect_thread_active{false}
-    , m_p2p_connect_thread_initialized(false)
-    , m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
+    , 
+     m_inactivity_timeout(NetworkTimeout::DEFAULT_IDLE_TIMEOUT_MS, &ICommunicationService::OnInactivityTimeout)
     , m_recv_thread{}
     , m_recv_thread_running(false)
     , m_recv_thread_stopped(false)
-    , m_shared_mutex{}
-    , m_program_id(program_id)
+    , 
+     m_program_id(program_id)
     , m_local_communication_id(0)
     , m_expected_scene_id(0)
 {
@@ -714,7 +717,7 @@ Result ICommunicationService::GetNetworkInfo(ams::sf::Out<NetworkInfo> buffer) {
     R_SUCCEED();
 }
 
-Result ICommunicationService::GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask) {
+Result ICommunicationService::GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask) const {
     // If connected to RyuLdn server and we have a proxy config, return the virtual IP
     // This is critical for LDN communication - the game needs to use the proxy IP
     if (m_server_connected && m_proxy_config.proxy_ip != 0) {
@@ -728,7 +731,11 @@ Result ICommunicationService::GetIpv4Address(ams::sf::Out<u32> address, ams::sf:
     }
 
     // Fallback: Get current IP from nifm service
-    u32 addr, netmask, gateway, primary_dns, secondary_dns;
+    u32 addr;
+    u32 netmask;
+    u32 gateway;
+    u32 primary_dns;
+    u32 secondary_dns;
     Result rc = nifmGetCurrentIpConfigInfo(&addr, &netmask, &gateway, &primary_dns, &secondary_dns);
 
     if (R_SUCCEEDED(rc)) {
@@ -785,7 +792,7 @@ Result ICommunicationService::GetNetworkInfoLatestUpdate(
         size_t update_count = std::min(pUpdates.GetSize(), static_cast<size_t>(NodeCountMax));
 
         for (size_t i = 0; i < update_count; i++) {
-            bool current_connected = (i < NodeCountMax) && m_network_info.ldn.nodes[i].isConnected;
+            bool current_connected = (i < NodeCountMax) && (m_network_info.ldn.nodes[i].isConnected != 0);
             bool prev_connected = m_prev_node_connected[i];
 
             if (current_connected && !prev_connected) {
@@ -834,7 +841,7 @@ Result ICommunicationService::Scan(
 
     // Debug: dump raw filter bytes to understand what the game sends
     {
-        const uint8_t* raw = reinterpret_cast<const uint8_t*>(&filter);
+        const auto* raw = reinterpret_cast<const uint8_t*>(&filter);
         LOG_INFO("ScanFilter raw[0-31]: %08X %08X %08X %08X %08X %08X %08X %08X",
                  *reinterpret_cast<const uint32_t*>(raw + 0),
                  *reinterpret_cast<const uint32_t*>(raw + 4),
@@ -950,9 +957,7 @@ Result ICommunicationService::Scan(
     // Copy results to output buffer
     size_t result_count = m_scan_result_count;
     size_t max_results = buffer.GetSize();
-    if (result_count > max_results) {
-        result_count = max_results;
-    }
+    result_count = std::min(result_count, max_results);
 
     for (size_t i = 0; i < result_count; i++) {
         buffer[i] = m_scan_results[i];
@@ -2045,7 +2050,7 @@ void ICommunicationService::HandleConnectedPacket(const uint8_t* data, size_t si
 
         // Update session info in shared state
         auto& shared_state = SharedState::GetInstance();
-        bool is_host = (m_network_info.ldn.nodes[0].isConnected &&
+        bool is_host = ((m_network_info.ldn.nodes[0].isConnected != 0) &&
                        m_state_machine.GetState() == CommState::AccessPointCreated);
         shared_state.SetSessionInfo(
             m_network_info.ldn.nodeCount,
@@ -2608,9 +2613,11 @@ void ICommunicationService::HandleExternalProxyConnect(
     // ExternalProxyConfig has proxy_ip[16] for IPv4/IPv6
     // address_family indicates IPv4 (2) or IPv6 (23)
     bool connected = false;
-    if (config.address_family == 2) {  // AF_INET
+    if (m_p2p_client != nullptr && config.address_family == 2) {  // AF_INET
         // IPv4 address - first 4 bytes of proxy_ip
         connected = m_p2p_client->Connect(config.proxy_ip, 4, config.proxy_port);
+    } else if (m_p2p_client == nullptr) {
+        LOG_ERROR("ConnectP2pProxy: P2pProxyClient is null after allocation");
     } else {
         LOG_WARN("Unsupported address family: %u", config.address_family);
     }
@@ -2622,7 +2629,7 @@ void ICommunicationService::HandleExternalProxyConnect(
     }
 
     // Perform authentication with ExternalProxyConfig
-    if (!m_p2p_client->PerformAuth(config)) {
+    if (m_p2p_client != nullptr && !m_p2p_client->PerformAuth(config)) {
         LOG_ERROR("P2P authentication failed");
         DisconnectP2pProxy();
         return;
@@ -2695,10 +2702,11 @@ bool ICommunicationService::StartP2pProxyServer() {
     // Use static callback with user_data pattern (cannot use lambda with capture)
     auto master_send_callback = [](const void* data, size_t size, void* user_data) {
         auto* self = static_cast<ICommunicationService*>(user_data);
-        if (self->IsServerConnected()) {
+        if (self != nullptr && self->IsServerConnected()) {
             self->m_server_client.send_raw_packet(data, size);
         }
     };
+
     m_p2p_server = new p2p::P2pProxyServer(master_send_callback, this);
     if (m_p2p_server == nullptr) {
         // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
@@ -2711,8 +2719,12 @@ bool ICommunicationService::StartP2pProxyServer() {
     }
 
     // Start listening on an available port
-    if (!m_p2p_server->Start()) {
-        LOG_ERROR("StartP2pProxyServer: failed to start TCP server");
+    if (m_p2p_server == nullptr || !m_p2p_server->Start()) {
+        if (m_p2p_server == nullptr) {
+            LOG_ERROR("StartP2pProxyServer: P2pProxyServer is null after allocation");
+        } else {
+            LOG_ERROR("StartP2pProxyServer: failed to start TCP server");
+        }
         StopP2pProxyServer();
         return false;
     }
@@ -2725,8 +2737,10 @@ bool ICommunicationService::StartP2pProxyServer() {
     // to ProxySocketManager::RouteIncomingData via the static callback below
     // (mirrors the relay-mode ProxyData sink in HandleServerPacket).
     constexpr uint32_t kPredictedHostIp = 0x0A720001;
-    m_p2p_server->SetHostVirtualIp(kPredictedHostIp);
-    m_p2p_server->SetHostDataCallback(HostP2pInboundDataCallback, this);
+    if (m_p2p_server != nullptr) {
+        m_p2p_server->SetHostVirtualIp(kPredictedHostIp);
+        m_p2p_server->SetHostDataCallback(HostP2pInboundDataCallback, this);
+    }
 
     LOG_INFO("StartP2pProxyServer: server started on port %u",
              m_p2p_server->GetPrivatePort());
@@ -2824,7 +2838,7 @@ u8 ICommunicationService::FindLocalNodeId() const {
     // Search nodes array for our IP address
     for (u8 i = 0; i < NodeCountMax; i++) {
         const auto& node = m_network_info.ldn.nodes[i];
-        if (node.isConnected && node.ipv4Address == m_ipv4_address) {
+        if ((node.isConnected != 0) && node.ipv4Address == m_ipv4_address) {
             return i;
         }
     }

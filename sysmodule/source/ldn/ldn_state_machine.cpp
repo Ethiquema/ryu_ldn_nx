@@ -11,16 +11,15 @@
 namespace ams::mitm::ldn {
 
 LdnStateMachine::LdnStateMachine()
-    : m_mutex()
-    , m_state(CommState::None)
+    : 
+     m_state(CommState::None)
     , m_state_event(os::EventClearMode_AutoClear, true)
     , m_callback(nullptr)
     , m_callback_user_data(nullptr)
 {
 }
 
-LdnStateMachine::~LdnStateMachine() {
-}
+LdnStateMachine::~LdnStateMachine() = default;
 
 // ============================================================================
 // State Queries
@@ -65,7 +64,7 @@ StateTransitionResult LdnStateMachine::Initialize() {
     m_state = CommState::Initialized;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -83,7 +82,7 @@ StateTransitionResult LdnStateMachine::Finalize() {
     m_state = CommState::None;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -104,7 +103,7 @@ StateTransitionResult LdnStateMachine::OpenAccessPoint() {
     m_state = CommState::AccessPoint;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -125,7 +124,7 @@ StateTransitionResult LdnStateMachine::CloseAccessPoint() {
     m_state = CommState::Initialized;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -146,7 +145,7 @@ StateTransitionResult LdnStateMachine::CreateNetwork() {
     m_state = CommState::AccessPointCreated;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -167,7 +166,7 @@ StateTransitionResult LdnStateMachine::DestroyNetwork() {
     m_state = CommState::AccessPoint;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -188,7 +187,7 @@ StateTransitionResult LdnStateMachine::OpenStation() {
     m_state = CommState::Station;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -209,7 +208,7 @@ StateTransitionResult LdnStateMachine::CloseStation() {
     m_state = CommState::Initialized;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -230,7 +229,7 @@ StateTransitionResult LdnStateMachine::Connect() {
     m_state = CommState::StationConnected;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -251,7 +250,7 @@ StateTransitionResult LdnStateMachine::Disconnect() {
     m_state = CommState::Station;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -269,7 +268,7 @@ StateTransitionResult LdnStateMachine::SetError() {
     m_state = CommState::Error;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 
@@ -333,7 +332,7 @@ StateTransitionResult LdnStateMachine::TransitionTo(CommState new_state) {
     m_state = new_state;
     SignalStateChange();
 
-    if (m_callback) {
+    if (m_callback != nullptr) {
         m_callback(old_state, m_state, m_callback_user_data);
     }
 

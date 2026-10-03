@@ -31,7 +31,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <errno.h>
+#include <cerrno>
 
 #include "../debug/log.hpp"
 
@@ -44,11 +44,7 @@
  * unit's minimal dependency set. We declare the function with plain
  * C types (uint32_t*) and check the return value against 0 (success).
  */
-extern "C" uint32_t nifmGetCurrentIpConfigInfo(uint32_t* out_addr,
-                                                uint32_t* out_subnet,
-                                                uint32_t* out_gw,
-                                                uint32_t* out_dns1,
-                                                uint32_t* out_dns2);
+
 #endif
 
 #include <unistd.h>
@@ -59,6 +55,7 @@ extern "C" uint32_t nifmGetCurrentIpConfigInfo(uint32_t* out_addr,
 // and (under DEBUG_HEX_DUMP) by the DNS response hex-dump diagnostic. It
 // stays included unconditionally because getnameinfo always needs it.
 #include <cstdio>
+#include <utility>
 
 // Forward declaration needed for EAI_MEMORY cleanup in __wrap_getaddrinfo
 extern "C" void __wrap_freeaddrinfo(struct addrinfo* res);
@@ -170,17 +167,17 @@ namespace {
  * "www.example.com" becomes "\x03www\x07example\x03com\x00".
  */
 size_t EncodeDnsName(const char* hostname, uint8_t* buf, size_t buf_size) {
-    if (!hostname || !buf || buf_size == 0) {
+    if ((hostname == nullptr) || (buf == nullptr) || buf_size == 0) {
         return 0;
     }
 
     size_t pos = 0;
     const char* src = hostname;
 
-    while (*src) {
+    while (*src != 0U) {
         // Find the next dot (or end of string)
         const char* dot = std::strchr(src, '.');
-        size_t label_len = dot ? static_cast<size_t>(dot - src) : std::strlen(src);
+        size_t label_len = (dot != nullptr) ? static_cast<size_t>(dot - src) : std::strlen(src);
 
         // DNS labels must be 1..63 bytes
         if (label_len == 0 || label_len > MAX_DNS_LABEL_LEN) {
@@ -196,7 +193,7 @@ size_t EncodeDnsName(const char* hostname, uint8_t* buf, size_t buf_size) {
         std::memcpy(buf + pos, src, label_len);
         pos += label_len;
 
-        if (dot) {
+        if (dot != nullptr) {
             src = dot + 1;  // Skip the dot
         } else {
             break;
@@ -225,7 +222,7 @@ size_t EncodeDnsName(const char* hostname, uint8_t* buf, size_t buf_size) {
  */
 ssize_t BuildDnsQuery(const char* hostname, uint16_t query_id,
                       uint8_t* packet, size_t packet_size) {
-    if (!hostname || hostname[0] == '\0' || !packet) {
+    if ((hostname == nullptr) || hostname[0] == '\0' || (packet == nullptr)) {
         return -1;
     }
 
@@ -284,10 +281,13 @@ ssize_t BuildDnsQuery(const char* hostname, uint16_t query_id,
  * in network byte order — no bswap32 is applied. If both are 0.0.0.0, or
  * if nifm fails, falls back to Google DNS (8.8.8.8).
  */
-static bool GetDnsServerIp(uint32_t& dns_ip) {
+bool GetDnsServerIp(uint32_t& dns_ip) {
 #ifdef __SWITCH__
-    uint32_t out_addr = 0, out_subnet = 0, out_gw = 0;
-    uint32_t out_dns1 = 0, out_dns2 = 0;
+    uint32_t out_addr = 0;
+    uint32_t out_subnet = 0;
+    uint32_t out_gw = 0;
+    uint32_t out_dns1 = 0;
+    uint32_t out_dns2 = 0;
 
     uint32_t rc = nifmGetCurrentIpConfigInfo(&out_addr, &out_subnet, &out_gw,
                                             &out_dns1, &out_dns2);
@@ -319,8 +319,8 @@ static bool GetDnsServerIp(uint32_t& dns_ip) {
  * pointers (2-byte entries starting with 0xC0). This function advances past
  * the name without following pointers, since we only need to skip over it.
  */
-static const uint8_t* SkipDnsName(const uint8_t* p, const uint8_t* end) {
-    if (!p || !end) {
+const uint8_t* SkipDnsName(const uint8_t* p, const uint8_t* end) {
+    if ((p == nullptr) || (end == nullptr)) {
         return nullptr;
     }
 
@@ -365,9 +365,9 @@ static const uint8_t* SkipDnsName(const uint8_t* p, const uint8_t* end) {
  * CLASS=1, RDLENGTH=4). Returns EAI_NONAME for NXDOMAIN, EAI_FAIL for
  * SERVFAIL/REFUSED, EAI_AGAIN for truncated responses.
  */
-static int ParseDnsResponse(const uint8_t* response, size_t resp_len,
+int ParseDnsResponse(const uint8_t* response, size_t resp_len,
                              uint32_t* out_ips, int max_ips) {
-    if (!response || resp_len < DNS_HEADER_SIZE || !out_ips || max_ips <= 0) {
+    if ((response == nullptr) || resp_len < DNS_HEADER_SIZE || (out_ips == nullptr) || max_ips <= 0) {
         return -1;
     }
 
@@ -376,12 +376,12 @@ static int ParseDnsResponse(const uint8_t* response, size_t resp_len,
     uint16_t rcode = flags & DNS_RCODE_MASK;
 
     // QR bit must be 1 (response)
-    if (!(flags & DNS_QR_MASK)) {
+    if ((flags & DNS_QR_MASK) == 0) {
         return -1;
     }
 
     // TC (truncated) bit
-    if (flags & DNS_TC_MASK) {
+    if ((flags & DNS_TC_MASK) != 0) {
         return -EAI_AGAIN;
     }
 
@@ -408,7 +408,7 @@ static int ParseDnsResponse(const uint8_t* response, size_t resp_len,
     // Skip all question sections (name + QTYPE + QCLASS each)
     for (uint16_t q = 0; q < qdcount; ++q) {
         p = SkipDnsName(p, end);
-        if (!p || p + DNS_QTYPE_QCLASS_SIZE > end) {
+        if ((p == nullptr) || p + DNS_QTYPE_QCLASS_SIZE > end) {
             return -1;
         }
         p += DNS_QTYPE_QCLASS_SIZE;  // Skip QTYPE and QCLASS (4 bytes)
@@ -419,7 +419,7 @@ static int ParseDnsResponse(const uint8_t* response, size_t resp_len,
     for (uint16_t i = 0; i < ancount && ip_count < max_ips; ++i) {
         // Skip the name
         p = SkipDnsName(p, end);
-        if (!p || p + DNS_RR_FIXED_SIZE > end) {
+        if ((p == nullptr) || p + DNS_RR_FIXED_SIZE > end) {
             return -1;
         }
 
@@ -469,8 +469,8 @@ static int ParseDnsResponse(const uint8_t* response, size_t resp_len,
  * (IPv4). Truncated responses (TC bit) return EAI_AGAIN since TCP
  * fallback is not implemented.
  */
-static int ResolveHostnameDns(const char* hostname, uint32_t* out_ips, int max_ips) {
-    if (!hostname || !out_ips || max_ips <= 0) {
+int ResolveHostnameDns(const char* hostname, uint32_t* out_ips, int max_ips) {
+    if ((hostname == nullptr) || (out_ips == nullptr) || max_ips <= 0) {
         return -EAI_FAIL;
     }
 
@@ -625,23 +625,23 @@ extern "C" {
 int __wrap_getaddrinfo(const char* node, const char* service,
                        const struct addrinfo* hints,
                        struct addrinfo** res) {
-    if (!res) {
+    if (res == nullptr) {
         errno = EINVAL;
         return EAI_SYSTEM;
     }
     *res = nullptr;
 
-    if (!node && !service) {
+    if ((node == nullptr) && (service == nullptr)) {
         return EAI_NONAME;
     }
 
-    int family = hints ? hints->ai_family : AF_UNSPEC;
+    int family = (hints != nullptr) ? hints->ai_family : AF_UNSPEC;
     if (family != AF_UNSPEC && family != AF_INET) {
         return EAI_FAMILY;
     }
 
     uint16_t port = 0;
-    if (service) {
+    if (service != nullptr) {
         port = static_cast<uint16_t>(std::atoi(service));
     }
 
@@ -649,18 +649,22 @@ int __wrap_getaddrinfo(const char* node, const char* service,
     sa.sin_family = AF_INET;
     sa.sin_port = htons(port);
 
-    if (node) {
+    if (node != nullptr) {
         if (::inet_pton(AF_INET, node, &sa.sin_addr) != 1) {
             // Not an IP literal — attempt DNS resolution
             uint32_t resolved_ips[MAX_RESOLVED_IPS];
             int num_ips = ResolveHostnameDns(node, resolved_ips, MAX_RESOLVED_IPS);
 
             if (num_ips <= 0) {
-                if (num_ips == 0) return EAI_NONAME;
+                if (num_ips == 0) { return EAI_NONAME;
+}
                 // Map negative EAI codes back to positive for getaddrinfo
-                if (num_ips == -EAI_AGAIN) return EAI_AGAIN;
-                if (num_ips == -EAI_NONAME) return EAI_NONAME;
-                if (num_ips == -EAI_FAIL)   return EAI_FAIL;
+                if (num_ips == -EAI_AGAIN) { return EAI_AGAIN;
+}
+                if (num_ips == -EAI_NONAME) { return EAI_NONAME;
+}
+                if (num_ips == -EAI_FAIL) {   return EAI_FAIL;
+}
                 return EAI_AGAIN;  // unknown error → retryable
             }
 
@@ -678,23 +682,24 @@ int __wrap_getaddrinfo(const char* node, const char* service,
                 // containing addrinfo + sockaddr_in, not an array of addrinfo.
                 auto* storage = static_cast<AddrinfoStorage*>(
                     std::malloc(sizeof(AddrinfoStorage)));
-                if (!storage) {
-                    if (head) __wrap_freeaddrinfo(head);
+                if (storage == nullptr) {
+                    if (head != nullptr) { __wrap_freeaddrinfo(head);
+}
                     return EAI_MEMORY;
                 }
 
                 std::memset(&storage->ai, 0, sizeof(struct addrinfo));
                 storage->sa = ip_sa;
                 storage->ai.ai_family   = AF_INET;
-                storage->ai.ai_socktype = hints ? hints->ai_socktype : 0;
-                storage->ai.ai_protocol = hints ? hints->ai_protocol : 0;
+                storage->ai.ai_socktype = (hints != nullptr) ? hints->ai_socktype : 0;
+                storage->ai.ai_protocol = (hints != nullptr) ? hints->ai_protocol : 0;
                 storage->ai.ai_addrlen  = sizeof(struct sockaddr_in);
                 storage->ai.ai_addr     = reinterpret_cast<struct sockaddr*>(&storage->sa);
                 storage->ai.ai_canonname = nullptr;
                 storage->ai.ai_next      = nullptr;
 
                 auto* ai = &storage->ai;
-                if (!head) {
+                if (head == nullptr) {
                     head = ai;
                 } else {
                     tail->ai_next = ai;
@@ -706,7 +711,7 @@ int __wrap_getaddrinfo(const char* node, const char* service,
             return 0;
         }
     } else {
-        const bool passive = hints && (hints->ai_flags & AI_PASSIVE);
+        const bool passive = (hints != nullptr) && ((hints->ai_flags & AI_PASSIVE) != 0);
         sa.sin_addr.s_addr = htonl(passive ? INADDR_ANY : INADDR_LOOPBACK);
     }
 
@@ -714,13 +719,14 @@ int __wrap_getaddrinfo(const char* node, const char* service,
     // containing addrinfo + sockaddr_in, not an array of addrinfo.
     auto* storage = static_cast<AddrinfoStorage*>(
         std::malloc(sizeof(AddrinfoStorage)));
-    if (!storage) return EAI_MEMORY;
+    if (storage == nullptr) { return EAI_MEMORY;
+}
 
     std::memset(&storage->ai, 0, sizeof(struct addrinfo));
     storage->sa = sa;
     storage->ai.ai_family   = AF_INET;
-    storage->ai.ai_socktype = hints ? hints->ai_socktype : 0;
-    storage->ai.ai_protocol = hints ? hints->ai_protocol : 0;
+    storage->ai.ai_socktype = (hints != nullptr) ? hints->ai_socktype : 0;
+    storage->ai.ai_protocol = (hints != nullptr) ? hints->ai_protocol : 0;
     storage->ai.ai_addrlen  = sizeof(struct sockaddr_in);
     storage->ai.ai_addr     = reinterpret_cast<struct sockaddr*>(&storage->sa);
     storage->ai.ai_canonname = nullptr;
@@ -731,7 +737,7 @@ int __wrap_getaddrinfo(const char* node, const char* service,
 }
 
 void __wrap_freeaddrinfo(struct addrinfo* res) {
-    while (res) {
+    while (res != nullptr) {
         struct addrinfo* next = res->ai_next;
         std::free(res);   // ai_addr is inside the same allocation block
         res = next;
@@ -741,7 +747,7 @@ void __wrap_freeaddrinfo(struct addrinfo* res) {
 int __wrap_getnameinfo(const struct sockaddr* sa, socklen_t salen,
                        char* host, socklen_t hostlen,
                        char* serv, socklen_t servlen, int /*flags*/) {
-    if (!sa || salen < static_cast<socklen_t>(sizeof(struct sockaddr_in))) {
+    if ((sa == nullptr) || salen < static_cast<socklen_t>(sizeof(struct sockaddr_in))) {
         return EAI_FAMILY;
     }
     if (sa->sa_family != AF_INET) {
@@ -750,12 +756,12 @@ int __wrap_getnameinfo(const struct sockaddr* sa, socklen_t salen,
 
     const auto* sin = reinterpret_cast<const struct sockaddr_in*>(sa);
 
-    if (host && hostlen > 0) {
+    if ((host != nullptr) && hostlen > 0) {
         if (::inet_ntop(AF_INET, &sin->sin_addr, host, hostlen) == nullptr) {
             return EAI_OVERFLOW;
         }
     }
-    if (serv && servlen > 0) {
+    if ((serv != nullptr) && servlen > 0) {
         std::snprintf(serv, servlen, "%u", ntohs(sin->sin_port));
     }
     return 0;

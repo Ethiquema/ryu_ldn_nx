@@ -31,8 +31,8 @@ namespace ams::mitm::ldn {
  * All indices start at 0, buffer is empty.
  */
 LdnProxyBuffer::LdnProxyBuffer()
-    : m_mutex()
-    , m_packets{}
+    : 
+     m_packets{}
     , m_packet_read_idx(0)
     , m_packet_write_idx(0)
     , m_packet_count(0)
@@ -239,10 +239,9 @@ size_t LdnProxyBuffer::GetUsedBytes() const {
 
     if (m_data_write_pos >= m_data_read_pos) {
         return m_data_write_pos - m_data_read_pos;
-    } else {
-        // Wrapped around
+    }         // Wrapped around
         return BufferSize - m_data_read_pos + m_data_write_pos;
-    }
+   
 }
 
 } // namespace ams::mitm::ldn
