@@ -13,6 +13,7 @@
 
 #include <stratosphere.hpp>
 #include <atomic>
+#include <memory>
 #include "ldn_types.hpp"
 #include "ldn_state_machine.hpp"
 #include "ldn_node_mapper.hpp"
@@ -549,8 +550,11 @@ private:
     bool m_use_p2p_proxy;                                   ///< True if P2P proxy enabled
     ryu_ldn::protocol::ProxyConfig m_proxy_config;          ///< Current proxy configuration
     ryu_ldn::protocol::ExternalProxyConfig m_external_proxy_config; ///< External proxy config
-    p2p::P2pProxyClient* m_p2p_client;                      ///< Connected P2P proxy client (joiner side)
-    p2p::P2pProxyServer* m_p2p_server;                      ///< Hosted P2P proxy server (host side)
+    // Owning pointers (cppcoreguidelines-owning-memory): released
+    // automatically on service destruction — no manual delete path
+    // can be forgotten.
+    std::unique_ptr<p2p::P2pProxyClient> m_p2p_client;      ///< Connected P2P proxy client (joiner side)
+    std::unique_ptr<p2p::P2pProxyServer> m_p2p_server;     ///< Hosted P2P proxy server (host side)
 
     // Async ExternalProxy connect thread — mirrors Ryujinx's architecture
     // where HandleExternalProxy runs on the receive thread (NetCoreServer

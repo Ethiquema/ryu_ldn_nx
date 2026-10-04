@@ -196,10 +196,9 @@ RyuLdnClient::RyuLdnClient()
 RyuLdnClient::RyuLdnClient(const RyuLdnClientConfig& config)
     : m_config(config)
     , m_tcp_client(std::make_unique<TcpClient>())
-    , 
+    ,
      m_reconnect_manager(config.reconnect)
     , m_state_callback(nullptr)
-    , m_state_callback_user_data(nullptr)
     , m_packet_callback(nullptr)
     , m_packet_callback_user_data(nullptr)
     , m_last_ping_time_ms(0)
@@ -225,10 +224,9 @@ RyuLdnClient::RyuLdnClient(const RyuLdnClientConfig& config)
 RyuLdnClient::RyuLdnClient(const RyuLdnClientConfig& config, std::unique_ptr<ITcpClient> tcp_client)
     : m_config(config)
     , m_tcp_client(std::move(tcp_client))
-    , 
+    ,
      m_reconnect_manager(config.reconnect)
     , m_state_callback(nullptr)
-    , m_state_callback_user_data(nullptr)
     , m_packet_callback(nullptr)
     , m_packet_callback_user_data(nullptr)
     , m_last_ping_time_ms(0)
@@ -505,14 +503,13 @@ void RyuLdnClient::update(uint64_t current_time_ms) {
     ConnectionState state = m_state_machine.get_state();
 
     switch (state) {
+        // Disconnected: nothing to do.
+        // Connecting/Retrying: the connection attempt is synchronous in
+        // TcpClient; if we're still in this state, something went wrong —
+        // do not retry from here (would double-connect, see AGENTS.md).
         case ConnectionState::Disconnected:
-            // Nothing to do
-            break;
-
         case ConnectionState::Connecting:
         case ConnectionState::Retrying:
-            // Connection attempt is synchronous in TcpClient
-            // If we're still in this state, something went wrong
             break;
 
         case ConnectionState::Connected:

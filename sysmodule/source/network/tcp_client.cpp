@@ -680,7 +680,7 @@ ClientResult TcpClient::receive_packet(protocol::PacketId& type,
     }
 
     // Decode header to get type and payload size
-    protocol::LdnHeader header;
+    protocol::LdnHeader header{};
     protocol::DecodeResult decode_result = protocol::decode_header(
         m_recv_buffer.data(), m_recv_buffer.size(), header);
 
@@ -749,11 +749,13 @@ ClientResult TcpClient::set_nodelay(bool enable) {
  */
 ClientResult TcpClient::socket_to_client_result(SocketResult socket_result) {
     switch (socket_result) {
+        // WouldBlock is mapped to Success because in non-blocking mode a
+        // recv/send returning EAGAIN/EWOULDBLOCK means "no data yet, try
+        // later" — the caller's polling loop treats this the same as a
+        // successful zero-byte read and retries on the next iteration.
         case SocketResult::Success:
-            return ClientResult::Success;
-
         case SocketResult::WouldBlock:
-            return ClientResult::Success;  // Not an error in async context
+            return ClientResult::Success;
 
         case SocketResult::Timeout:
             return ClientResult::Timeout;

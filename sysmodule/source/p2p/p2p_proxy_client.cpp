@@ -175,7 +175,7 @@ bool P2pProxyClient::Connect(const char* address, uint16_t port) {
     }
 
     // Parse IP address
-    struct in_addr addr;
+    struct in_addr addr{};
     if (inet_pton(AF_INET, address, &addr) != 1) {
         LOG_ERROR("P2P client: invalid address '%s'", address);
         return false;
@@ -272,7 +272,7 @@ bool P2pProxyClient::Connect(const uint8_t* ip_bytes, size_t ip_len, uint16_t po
         FD_ZERO(&write_fds);
         FD_SET(m_socket_fd, &write_fds);
 
-        struct timeval timeout;
+        struct timeval timeout{};
         timeout.tv_sec = CONNECT_TIMEOUT_MS / 1000;
         timeout.tv_usec = (CONNECT_TIMEOUT_MS % 1000) * 1000;
 

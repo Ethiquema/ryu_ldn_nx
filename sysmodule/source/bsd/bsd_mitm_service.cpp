@@ -106,7 +106,7 @@ struct SocketInfo {
  */
 struct SocketInfoEntry {
     s32 fd = -1;
-    SocketInfo info;
+    SocketInfo info{};
     bool valid = false;
 };
 /**
@@ -311,7 +311,10 @@ static os::Mutex g_abandoned_services_mutex{false};
  * @param s Shared pointer to the original bsd:u service session
  * @param c Process information for the client (PID, program ID, etc.)
  */
-BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)
+// rvalue reference is forwarded to the MitmServiceImplBase constructor
+// ( Atmosphere mitm pattern) — the check cannot see the move through
+// std::forward.
+BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     : MitmServiceImplBase(std::forward<std::shared_ptr<::Service>>(s), c)
     , m_client_pid(c.process_id.value)
     , m_session_id(++s_next_session_id)
@@ -660,7 +663,7 @@ Result BsdMitmService::RegisterClient(
     const ryu_ldn::bsd::LibraryConfigData& config,
     const sf::ClientProcessId& client_pid,
     u64 tmem_size,
-    sf::CopyHandle&& transfer_memory)
+    sf::CopyHandle&& transfer_memory)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — forwarded to real bsd:u below
 {
     m_command_count++;
 
@@ -1246,7 +1249,9 @@ Result BsdMitmService::SendMMsg(
     Result rc = serviceMitmDispatchInOut(
         m_forward_service.get(), 30, in, out,
         .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcAutoSelect },
-        .buffers = { { const_cast<void*>(static_cast<const void*>(in_data.GetPointer())), in_data.GetSize() } },
+        // const_cast: the Atmosphere sf C API takes void* for ALL buffers
+        // (In and Out alike) — the const-ness is expressed by SfBufferAttr_In.
+        .buffers = { { const_cast<void*>(static_cast<const void*>(in_data.GetPointer())), in_data.GetSize() } },  // NOLINT(cppcoreguidelines-pro-type-const-cast)
     );
 
     out_errno.SetValue(out.errno_val);
@@ -1285,7 +1290,9 @@ Result BsdMitmService::RegisterResourceStatisticsName(
     Result rc = serviceMitmDispatchInOut(
         m_forward_service.get(), 32, pid, errno_out,
         .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcMapAlias },
-        .buffers = { { const_cast<void*>(static_cast<const void*>(name.GetPointer())), name.GetSize() } },
+        // const_cast: the Atmosphere sf C API takes void* for ALL buffers
+        // (In and Out alike) — the const-ness is expressed by SfBufferAttr_In.
+        .buffers = { { const_cast<void*>(static_cast<const void*>(name.GetPointer())), name.GetSize() } },  // NOLINT(cppcoreguidelines-pro-type-const-cast)
     );
 
     out_errno.SetValue(errno_out);
@@ -1337,7 +1344,7 @@ Result BsdMitmService::Bind(
     // Copy to aligned stack buffer — IPC pointer may be misaligned,
     // and SockAddrIn::IsLdnAddress() does __builtin_bswap32 which faults on ARM64.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn sock_addr_copy;
+        ryu_ldn::bsd::SockAddrIn sock_addr_copy{};
         __builtin_memcpy(&sock_addr_copy, addr.GetPointer(), sizeof(sock_addr_copy));
 
         // Log the bind address for debugging
@@ -1365,7 +1372,7 @@ Result BsdMitmService::Bind(
                          sock_addr_copy.GetPort());
 
                 // Get socket info (type and protocol) under lock
-                SocketInfo socket_info;
+                SocketInfo socket_info{};
                 bool found = false;
                 {
                     std::scoped_lock lock(g_socket_info_mutex);
@@ -1535,7 +1542,7 @@ Result BsdMitmService::Connect(
     // Copy to aligned stack buffer — IPC pointer may be misaligned,
     // and SockAddrIn::IsLdnAddress() does __builtin_bswap32 which faults on ARM64.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn sock_addr_copy;
+        ryu_ldn::bsd::SockAddrIn sock_addr_copy{};
         __builtin_memcpy(&sock_addr_copy, addr.GetPointer(), sizeof(sock_addr_copy));
 
         // Check address family is IPv4 and address is LDN
@@ -1551,7 +1558,7 @@ Result BsdMitmService::Connect(
                      sock_addr_copy.GetPort());
 
             // Get socket info (type and protocol) under lock
-            SocketInfo socket_info;
+            SocketInfo socket_info{};
             bool found = false;
             {
                 std::scoped_lock lock(g_socket_info_mutex);
@@ -1976,7 +1983,7 @@ Result BsdMitmService::SendTo(
 
     // Check if this is a proxy socket or if dest is LDN
     bool is_proxy = false;
-    SocketInfo socket_info;
+    SocketInfo socket_info{};
     bool found = false;
 
     {
@@ -1994,7 +2001,7 @@ Result BsdMitmService::SendTo(
     // may be misaligned, and SockAddrIn::IsLdnAddress() does
     // __builtin_bswap32 on sin_addr which faults on ARM64 if unaligned.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn dest_addr_copy;
+        ryu_ldn::bsd::SockAddrIn dest_addr_copy{};
         __builtin_memcpy(&dest_addr_copy, addr.GetPointer(), sizeof(dest_addr_copy));
 
         if (dest_addr_copy.sin_family == static_cast<uint8_t>(ryu_ldn::bsd::AddressFamily::Inet) &&
@@ -2046,7 +2053,7 @@ Result BsdMitmService::SendTo(
             // Copy to aligned stack buffer — IPC buffer pointer may be misaligned,
             // and dereferencing a packed struct via reinterpret_cast faults on ARM64
             // when IsLdnAddress() uses __builtin_bswap32 on sin_addr.
-            ryu_ldn::bsd::SockAddrIn dest_addr_copy;
+            ryu_ldn::bsd::SockAddrIn dest_addr_copy{};
             __builtin_memcpy(&dest_addr_copy, addr.GetPointer(), sizeof(dest_addr_copy));
 
             // Send via proxy socket

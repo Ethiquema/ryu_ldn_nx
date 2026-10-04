@@ -1344,7 +1344,12 @@ void P2pProxyServer::AcceptLoop() {
         // return nullptr under pressure — the overridden `new` does NOT
         // throw. We must null-check before dereferencing `session`.
 
-        auto* session = new P2pProxySession(this, client_fd, remote_ip);
+        // Ownership: this raw pointer is the sole owner until the session
+        // self-registers into m_zombie_sessions via reset(session) in
+        // OnSessionDisconnected (see cppcoreguidelines-owning-memory note
+        // there). A unique_ptr here would not survive the handoff pattern
+        // (session outlives this loop iteration by design).
+        auto* session = new P2pProxySession(this, client_fd, remote_ip);  // NOLINT(cppcoreguidelines-owning-memory)
         if (session == nullptr) {
             LOG_ERROR("P2P AcceptLoop: failed to allocate P2pProxySession "
                        "(heap exhausted?) — closing client_fd=%d", client_fd);
@@ -1633,9 +1638,13 @@ void P2pProxyServer::ReapZombieSessions() {
         // Thread has returned — join and destroy the ThreadType, then free
         // the object. The destructor releases m_stack_slot back to the BSS
         // pool so a future joiner can reuse the slot.
+        // Ownership note (cppcoreguidelines-owning-memory): the owning
+        // unique_ptr slot was already reset above (kept..MAX loop), so this
+        // raw pointer is the sole owner between the reset and this delete —
+        // no double-free path.
         os::WaitThread(&z->m_recv_thread);
         os::DestroyThread(&z->m_recv_thread);
-        delete z;
+        delete z;  // NOLINT(cppcoreguidelines-owning-memory) — see note above
     }
 }
 
@@ -2022,8 +2031,7 @@ void P2pProxySession::ProcessData(const uint8_t* data, size_t size) {
             case ryu_ldn::protocol::PacketId::ProxyData: {
                 // Data transfer packet
                 if (static_cast<size_t>(header->data_size) >= sizeof(ryu_ldn::protocol::ProxyDataHeader)) {
-                    auto* pheader = const_cast<ryu_ldn::protocol::ProxyDataHeader*>(
-                        reinterpret_cast<const ryu_ldn::protocol::ProxyDataHeader*>(packet_data));
+                    const auto* pheader = reinterpret_cast<const ryu_ldn::protocol::ProxyDataHeader*>(packet_data);
                     const uint8_t* payload = packet_data + sizeof(ryu_ldn::protocol::ProxyDataHeader);
                     size_t payload_len = static_cast<size_t>(header->data_size) - sizeof(ryu_ldn::protocol::ProxyDataHeader);
                     HandleProxyData(*pheader, payload, payload_len);
@@ -2034,8 +2042,7 @@ void P2pProxySession::ProcessData(const uint8_t* data, size_t size) {
             case ryu_ldn::protocol::PacketId::ProxyConnect: {
                 // Virtual TCP connect request
                 if (static_cast<size_t>(header->data_size) >= sizeof(ryu_ldn::protocol::ProxyConnectRequest)) {
-                    auto* request = const_cast<ryu_ldn::protocol::ProxyConnectRequest*>(
-                        reinterpret_cast<const ryu_ldn::protocol::ProxyConnectRequest*>(packet_data));
+                    const auto* request = reinterpret_cast<const ryu_ldn::protocol::ProxyConnectRequest*>(packet_data);
                     HandleProxyConnect(*request);
                 }
                 break;
@@ -2044,8 +2051,7 @@ void P2pProxySession::ProcessData(const uint8_t* data, size_t size) {
             case ryu_ldn::protocol::PacketId::ProxyConnectReply: {
                 // Virtual TCP connect response
                 if (static_cast<size_t>(header->data_size) >= sizeof(ryu_ldn::protocol::ProxyConnectResponse)) {
-                    auto* response = const_cast<ryu_ldn::protocol::ProxyConnectResponse*>(
-                        reinterpret_cast<const ryu_ldn::protocol::ProxyConnectResponse*>(packet_data));
+                    const auto* response = reinterpret_cast<const ryu_ldn::protocol::ProxyConnectResponse*>(packet_data);
                     HandleProxyConnectReply(*response);
                 }
                 break;
@@ -2054,8 +2060,7 @@ void P2pProxySession::ProcessData(const uint8_t* data, size_t size) {
             case ryu_ldn::protocol::PacketId::ProxyDisconnect: {
                 // Virtual TCP disconnect
                 if (static_cast<size_t>(header->data_size) >= sizeof(ryu_ldn::protocol::ProxyDisconnectMessage)) {
-                    auto* message = const_cast<ryu_ldn::protocol::ProxyDisconnectMessage*>(
-                        reinterpret_cast<const ryu_ldn::protocol::ProxyDisconnectMessage*>(packet_data));
+                    const auto* message = reinterpret_cast<const ryu_ldn::protocol::ProxyDisconnectMessage*>(packet_data);
                     HandleProxyDisconnect(*message);
                 }
                 break;

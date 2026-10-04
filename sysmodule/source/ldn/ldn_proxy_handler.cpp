@@ -340,7 +340,7 @@ bool LdnProxyHandler::add_connection(const protocol::ProxyInfo& info) {
         return false;
     }
 
-    ProxyConnection conn;
+    ProxyConnection conn{};
     conn.source_ipv4 = info.source_ipv4;
     conn.source_port = info.source_port;
     conn.dest_ipv4 = info.dest_ipv4;

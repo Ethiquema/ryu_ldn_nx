@@ -14,6 +14,7 @@
 
 #include <stratosphere.hpp>
 #include <cstring>
+#include <memory>
 #include <new>
 
 namespace ryu_ldn::config {
@@ -25,7 +26,10 @@ constexpr const char* WHITELIST_PATH = "sdmc:/config/ryu_ldn_nx/gamelist.txt";
 // Average bytes per line in gamelist.txt (e.g., "0x0100152000022000\n" = ~19 bytes)
 constexpr size_t BYTES_PER_ENTRY = 18;
 
-// Dynamically allocated whitelist (sized based on file)
+// Dynamically allocated whitelist (sized based on file).
+// Owned by a unique_ptr (cppcoreguidelines-owning-memory): the array is
+// allocated once at startup, populated, and released automatically at
+// sysmodule exit — no manual delete, no leak on any exit path.
 /**
  * @brief Heap-allocated array holding the parsed whitelist of program IDs.
  *
@@ -34,13 +38,13 @@ constexpr size_t BYTES_PER_ENTRY = 18;
  *       without touching the SD card on every IPC.
  * @modified_by `LoadWhitelist` (this file) — allocated via `new (std::nothrow)`
  *              once at startup, populated from `sdmc:/config/ryu_ldn_nx/gamelist.txt`,
- *              and never freed (sysmodule lifetime).
+ *              and owned by this unique_ptr for the sysmodule lifetime.
  * @thread_safety Not protected by a mutex. `LoadWhitelist` is invoked once during
  *                `InitializeSystemModule` before any MITM session can call
  *                `IsGameWhitelisted`; the load-then-freeze pattern means later
  *                read-only access from MITM threads is safe by happens-before.
  */
-u64* g_whitelist = nullptr;
+std::unique_ptr<u64[]> g_whitelist = nullptr;
 
 /**
  * @brief Capacity (in u64 entries) of the g_whitelist array.
@@ -125,7 +129,7 @@ void LoadWhitelist() {
     LOG_INFO("GameWhitelist: loading from %s", WHITELIST_PATH);
 
     // Open the file
-    ams::fs::FileHandle file;
+    ams::fs::FileHandle file{};
     ams::Result rc = ams::fs::OpenFile(std::addressof(file), WHITELIST_PATH, ams::fs::OpenMode_Read);
 
     if (R_FAILED(rc)) {
@@ -148,7 +152,7 @@ void LoadWhitelist() {
 
     // Calculate capacity based on file size and allocate
     g_whitelist_capacity = static_cast<size_t>(file_size / BYTES_PER_ENTRY) + 100;  // +100 margin
-    g_whitelist = new (std::nothrow) u64[g_whitelist_capacity];
+    g_whitelist = std::unique_ptr<u64[]>(new (std::nothrow) u64[g_whitelist_capacity]);
     if (g_whitelist == nullptr) {
         ams::fs::CloseFile(file);
         LOG_ERROR("GameWhitelist: failed to allocate %zu entries", g_whitelist_capacity);

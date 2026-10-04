@@ -493,14 +493,14 @@ Result ICommunicationService::ConnectToServer() {
         m_handshake_event.Clear();
         m_error_event.Clear();
 
-        os::MultiWaitType multi_wait;
+        os::MultiWaitType multi_wait{};
         os::InitializeMultiWait(std::addressof(multi_wait));
 
-        os::MultiWaitHolderType handshake_holder;
+        os::MultiWaitHolderType handshake_holder{};
         os::InitializeMultiWaitHolder(std::addressof(handshake_holder), m_handshake_event.GetBase());
         os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(handshake_holder));
 
-        os::MultiWaitHolderType error_holder;
+        os::MultiWaitHolderType error_holder{};
         os::InitializeMultiWaitHolder(std::addressof(error_holder), m_error_event.GetBase());
         os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(error_holder));
 
@@ -753,7 +753,7 @@ Result ICommunicationService::GetDisconnectReason(ams::sf::Out<u32> reason) {
 }
 
 Result ICommunicationService::GetSecurityParameter(ams::sf::Out<SecurityParameter> out) {
-    SecurityParameter param;
+    SecurityParameter param{};
     std::scoped_lock lock(m_shared_mutex);
     NetworkInfo2SecurityParameter(&m_network_info, &param);
     out.SetValue(param);
@@ -761,7 +761,7 @@ Result ICommunicationService::GetSecurityParameter(ams::sf::Out<SecurityParamete
 }
 
 Result ICommunicationService::GetNetworkConfig(ams::sf::Out<NetworkConfig> out) {
-    NetworkConfig config;
+    NetworkConfig config{};
     std::scoped_lock lock(m_shared_mutex);
     NetworkInfo2NetworkConfig(&m_network_info, &config);
     out.SetValue(config);
@@ -916,14 +916,14 @@ Result ICommunicationService::Scan(
     // WaitHandle.WaitAny([_scan, _error], ScanTimeout)). The receive thread
     // calls HandleServerPacket which signals m_scan_event on ScanReplyEnd
     // and m_error_event on NetworkError.
-    os::MultiWaitType multi_wait;
+    os::MultiWaitType multi_wait{};
     os::InitializeMultiWait(std::addressof(multi_wait));
 
-    os::MultiWaitHolderType scan_holder;
+    os::MultiWaitHolderType scan_holder{};
     os::InitializeMultiWaitHolder(std::addressof(scan_holder), m_scan_event.GetBase());
     os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(scan_holder));
 
-    os::MultiWaitHolderType error_holder;
+    os::MultiWaitHolderType error_holder{};
     os::InitializeMultiWaitHolder(std::addressof(error_holder), m_error_event.GetBase());
     os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(error_holder));
 
@@ -1694,14 +1694,14 @@ Result ICommunicationService::Reject(u32 nodeId) {
     {
         constexpr uint64_t reject_timeout_ms = 6000;  // InactiveTimeout (was 4000 FailureTimeout)
 
-        os::MultiWaitType multi_wait;
+        os::MultiWaitType multi_wait{};
         os::InitializeMultiWait(std::addressof(multi_wait));
 
-        os::MultiWaitHolderType reject_holder;
+        os::MultiWaitHolderType reject_holder{};
         os::InitializeMultiWaitHolder(std::addressof(reject_holder), m_reject_event.GetBase());
         os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(reject_holder));
 
-        os::MultiWaitHolderType error_holder;
+        os::MultiWaitHolderType error_holder{};
         os::InitializeMultiWaitHolder(std::addressof(error_holder), m_error_event.GetBase());
         os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(error_holder));
 
@@ -2375,14 +2375,14 @@ bool ICommunicationService::WaitForResponse(ryu_ldn::protocol::PacketId expected
     // Use os::MultiWait for event-driven wait — the kernel wakes this thread
     // immediately when the receive thread signals the event, instead of the
     // old polling loop that slept 5 ms between update() calls.
-    os::MultiWaitType multi_wait;
+    os::MultiWaitType multi_wait{};
     os::InitializeMultiWait(std::addressof(multi_wait));
 
-    os::MultiWaitHolderType response_holder;
+    os::MultiWaitHolderType response_holder{};
     os::InitializeMultiWaitHolder(std::addressof(response_holder), m_response_event.GetBase());
     os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(response_holder));
 
-    os::MultiWaitHolderType error_holder;
+    os::MultiWaitHolderType error_holder{};
     os::InitializeMultiWaitHolder(std::addressof(error_holder), m_error_event.GetBase());
     os::LinkMultiWaitHolder(std::addressof(multi_wait), std::addressof(error_holder));
 
@@ -2513,7 +2513,11 @@ ryu_ldn::network::ClientOpResult ICommunicationService::SendProxyDataToServer(
     // host would otherwise dial its own P2pProxyServer to register itself
     // in _players and reuse the same SendAsync path as joiners).
     if (m_p2p_server != nullptr && m_p2p_server->IsRunning()) {
-        if (m_p2p_server->BroadcastFromHost(const_cast<ryu_ldn::protocol::ProxyDataHeader&>(header),
+        // BroadcastFromHost fixes up header.info.source_ipv4 in place
+        // (0.0.0.0 -> host virtual IP), so hand it a mutable copy instead
+        // of const_casting the caller's const reference.
+        ryu_ldn::protocol::ProxyDataHeader bcast_header = header;
+        if (m_p2p_server->BroadcastFromHost(bcast_header,
                                              static_cast<const uint8_t*>(data), data_len)) {
             return ryu_ldn::network::ClientOpResult::Success;
         }
@@ -2601,7 +2605,7 @@ void ICommunicationService::HandleExternalProxyConnect(
     // return nullptr under pressure — the overridden `new` does NOT
     // throw. Null-check before dereferencing; on failure clean up the
     // way the surrounding "Failed to connect" path does (DisconnectP2pProxy).
-    m_p2p_client = new p2p::P2pProxyClient(packet_callback);
+    m_p2p_client = std::make_unique<p2p::P2pProxyClient>(packet_callback);
     if (m_p2p_client == nullptr) {
         LOG_ERROR("ConnectP2pProxy: failed to allocate P2pProxyClient "
                    "(heap exhausted?)");
@@ -2675,8 +2679,7 @@ void ICommunicationService::DisconnectP2pProxy() {
     if (m_p2p_client != nullptr) {
         LOG_INFO("Disconnecting P2P proxy client");
         m_p2p_client->Disconnect();
-        delete m_p2p_client;
-        m_p2p_client = nullptr;
+        m_p2p_client.reset();
     }
 }
 
@@ -2707,7 +2710,7 @@ bool ICommunicationService::StartP2pProxyServer() {
         }
     };
 
-    m_p2p_server = new p2p::P2pProxyServer(master_send_callback, this);
+    m_p2p_server = std::make_unique<p2p::P2pProxyServer>(master_send_callback, this);
     if (m_p2p_server == nullptr) {
         // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
         // return nullptr under pressure — the overridden `new` does NOT
@@ -2754,10 +2757,9 @@ void ICommunicationService::StopP2pProxyServer() {
         // Release UPnP port mapping
         m_p2p_server->ReleaseNatPunch();
 
-        // Stop server and delete
+        // Stop server and release
         m_p2p_server->Stop();
-        delete m_p2p_server;
-        m_p2p_server = nullptr;
+        m_p2p_server.reset();
     }
 }
 

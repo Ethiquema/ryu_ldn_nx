@@ -62,6 +62,34 @@ if [ -z "$GCC_VER" ]; then
     exit 1
 fi
 
+# Probe which -std the installed clang-tidy accepts for parsing. Some
+# clang-tidy builds reject gnu++23 ("invalid value"); try the historical
+# C++23 alias, then gnu++20. The first accepted standard is used for both
+# compile_commands.json and the final clang-tidy run.
+CXX_STD=""
+if command -v "$TIDY" > /dev/null 2>&1; then
+    PROBE_DIR=$(mktemp -d)
+    printf 'int main(){}\n' > "$PROBE_DIR/dummy.cpp"
+    for std in gnu++23 gnu++2b gnu++20; do
+        # Keep one check enabled: with -*, old clang-tidy builds abort with
+        # "Error: no checks enabled" before parsing, which masked the real
+        # "invalid value" rejection and made the probe always report success.
+        "$TIDY" --checks=-*,readability-else-after-return "$PROBE_DIR/dummy.cpp" -- -std=$std \
+            > "$PROBE_DIR/out.txt" 2>&1 || true
+        if ! grep -q "invalid value" "$PROBE_DIR/out.txt"; then
+            CXX_STD=$std
+            break
+        fi
+    done
+    rm -f "$PROBE_DIR/dummy.cpp" "$PROBE_DIR/out.txt"
+    rmdir "$PROBE_DIR"
+fi
+if [ -z "$CXX_STD" ]; then
+    echo "[lint] WARNING: no -std accepted by $TIDY, defaulting to gnu++23" >&2
+    CXX_STD=gnu++23
+fi
+echo "[lint] Using C++ standard: $CXX_STD"
+
 # Build include flags matching the sysmodule Makefile setup.
 # Order matters: the devkitA64 C++ headers must come BEFORE the newlib root
 # include, otherwise #include_next <stdlib.h> from c++/<ver>/cstdlib fails
@@ -100,7 +128,8 @@ INCLUDE_FLAGS=(
     # headers are not picked up (aarch64-none-elf = bare-metal newlib target).
     "--target=aarch64-none-elf"
     # Match the sysmodule build language level (ATMOSPHERE_CXXFLAGS).
-    "-std=gnu++23"
+    # $CXX_STD is probed at runtime above (gnu++23 >> gnu++2b >> gnu++20).
+    "-std=$CXX_STD"
     # libnx crc.h uses ARM CRC intrinsics unconditionally; enable the
     # ISA features on the parsing target so they resolve.
     "-march=armv8a+crc"
@@ -130,7 +159,13 @@ echo "[lint] Found $NUM_FILES source files to check"
 
 # Run clang-tidy with the compilation database
 # -p points to the build directory containing compile_commands.json
-# We use a subset of checks appropriate for embedded/system C++
+# Hardened check set for a boot2 sysmodule (10MB RAM budget, absolute
+# stability): cppcoreguidelines-* + hicpp-* enforce memory safety and
+# low-level correctness on top of the bugprone/performance baseline.
+# Fixed-size arrays are the project's preferred allocation strategy —
+# modernize-avoid-c-arrays stays disabled, and the special-memory
+# / ownership rules that would flag the lmem heap overrides are scoped
+# out rather than disabled wholesale.
 CHECKS="
     -*,clang-analyzer-*,
     bugprone-*,
@@ -138,6 +173,80 @@ CHECKS="
     -bugprone-implicit-widening-of-multiplication-result,
     -bugprone-narrowing-conversions,
     -bugprone-reserved-identifier,
+    clang-diagnostic-*,
+    -clang-diagnostic-error,
+    cppcoreguidelines-*,
+    -cppcoreguidelines-avoid-c-arrays,
+    # do-while is the natural shape of bare-metal retry loops (protocol
+    # handshake, socket poll); Core Guideline ES.75 is a style preference,
+    # not a memory-safety rule — disabled for this target.
+    -cppcoreguidelines-avoid-do-while,
+    -cppcoreguidelines-avoid-magic-numbers,
+    # The sysmodule legitimately uses non-const globals: the lmem heap
+    # (g_heap_memory), the shared-state bridge (LdnSharedState), and the
+    # Atmosphere service registration globals. Scope: boot2 single-instance
+    # process, globals are the project's documented pattern (AGENTS.md).
+    -cppcoreguidelines-avoid-non-const-global-variables,
+    -cppcoreguidelines-init-variables,
+    -cppcoreguidelines-macro-usage,
+    -cppcoreguidelines-narrowing-conversions,
+    -cppcoreguidelines-non-private-member-variables-in-classes,
+    -cppcoreguidelines-prefer-member-initializer,
+    -cppcoreguidelines-slicing,
+    -cppcoreguidelines-special-member-functions,
+    -cppcoreguidelines-virtual-class-destructor,
+    # Pointer arithmetic and constant-array-index are unavoidable in a
+    # wire-format parser (packet_buffer.hpp) and BSD socket code; the
+    # bounds are enforced by static_assert on struct sizes + data_size
+    # validation, not by the type system.
+    -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+    -cppcoreguidelines-pro-bounds-constant-array-index,
+    # Fixed-size buffers passed as function arguments decay to pointers —
+    # that is the documented project pattern (fixed buffers preferred over
+    # std::vector for memory predictability, AGENTS.md Memory Constraints).
+    -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+    # Horizon IPC service calls (fsOpenFile, svcGetInfo, tipc/cmif
+    # marshalling) and snprintf-based logging are C-style vararg APIs
+    # mandated by libnx/Atmosphere; there is no typed alternative.
+    -cppcoreguidelines-pro-type-vararg,
+    # reinterpret_cast is required for IPC marshalling (PointerBuffers),
+    # network byte-order shims, and the lmem heap overlays. Kept OUT of
+    # the enabled set: 63 sites, all mandated by the Horizon/libnx API.
+    -cppcoreguidelines-pro-type-reinterpret-cast,
+    # dns_wrap.cpp implements __wrap_getaddrinfo/__wrap_freeaddrinfo: the
+    # POSIX C ABI (malloc'd linked list freed by freeaddrinfo) is imposed
+    # by the --wrap linker flags and consumed by miniupnpc (C code). A
+    # container or smart pointer would break the ABI; the allocation pair
+    # is symmetric and audited (codeql annotations in the file).
+    -cppcoreguidelines-no-malloc,
+    hicpp-*,
+    # -hicpp-no-malloc mirrors the cppcoreguidelines exclusion above
+    # (same check registered under both names).
+    -hicpp-no-malloc,
+    -hicpp-avoid-c-arrays,
+    -hicpp-braced-list-init,
+    -hicpp-deprecated-headers,
+    -hicpp-ignored-remove-result,
+    # hicpp-no-array-decay / hicpp-vararg / hicpp-member-init are aliases
+    # of the cppcoreguidelines checks excluded above — keep the exclusion
+    # sets in sync so the alias does not re-enable what the main check
+    # disabled.
+    -hicpp-no-array-decay,
+    -hicpp-vararg,
+    -hicpp-member-init,
+    -hicpp-multiway-paths-with-side-effects,
+    -hicpp-named-parameter,
+    -hicpp-no-assembler,
+    -hicpp-noarray-decay,
+    -hicpp-signed-bitwise,
+    -hicpp-special-member-functions,
+    -hicpp-static-assert,
+    -hicpp-use-auto,
+    -hicpp-use-emplace,
+    -hicpp-use-equals-default,
+    -hicpp-use-equals-delete,
+    -hicpp-use-nullptr,
+    -hicpp-use-override,
     misc-*,
     -misc-const-correctness,
     -misc-include-cleaner,
@@ -164,8 +273,10 @@ CHECKS="
     -readability-redundant-access-specifiers,
     -readability-use-anyofallof
 "
-# Collapse whitespace
-CHECKS=$(echo "$CHECKS" | tr -d '\n' | tr -s ',')
+# Collapse whitespace: strip comment lines first (they would otherwise be
+# glued to the next token once newlines are removed and silently break the
+# check list), then join, then collapse duplicate commas and stray spaces.
+CHECKS=$(echo "$CHECKS" | grep -v '^\s*#' | tr -d '\n' | tr -s ' ,' ',')
 
 mkdir -p /workspace/build-logs
 

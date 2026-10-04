@@ -291,7 +291,7 @@ namespace ams {
 
                 // Acknowledge the MITM session
                 std::shared_ptr<::Service> fsrv;
-                sm::MitmProcessInfo client_info;
+                sm::MitmProcessInfo client_info{};
                 server->AcknowledgeMitmSession(std::addressof(fsrv), std::addressof(client_info));
 
                 LOG_INFO("OnNeedsToAccept: Acknowledged session for pid=%lu, program_id=0x%016lx, fsrv=%p (handle=0x%x)",
@@ -622,19 +622,24 @@ namespace ams {
 // Custom Memory Allocators
 // ============================================================================
 
+// Exception specifications match the standard declarations (C++17 [basic.stc.dynamic]):
+// throwing new is implicitly noexcept(false), nothrow new and ALL delete
+// overloads are noexcept. GCC accepts the mismatch but clang-tidy flags it,
+// and an exception escaping a delete would terminate mid-heap-operation.
+
 void* operator new(size_t size) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new(size_t size, const std::nothrow_t& /*tag*/) {
+void* operator new(size_t size, const std::nothrow_t& /*tag*/) noexcept {
     return ams::mitm::Allocate(size);
 }
 
-void operator delete(void* p) {
+void operator delete(void* p) noexcept {
     ams::mitm::Deallocate(p, 0);
 }
 
-void operator delete(void* p, size_t size) {
+void operator delete(void* p, size_t size) noexcept {
     ams::mitm::Deallocate(p, size);
 }
 
@@ -642,15 +647,15 @@ void* operator new[](size_t size) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new[](size_t size, const std::nothrow_t& /*tag*/) {
+void* operator new[](size_t size, const std::nothrow_t& /*tag*/) noexcept {
     return ams::mitm::Allocate(size);
 }
 
-void operator delete[](void* p) {
+void operator delete[](void* p) noexcept {
     ams::mitm::Deallocate(p, 0);
 }
 
-void operator delete[](void* p, size_t size) {
+void operator delete[](void* p, size_t size) noexcept {
     ams::mitm::Deallocate(p, size);
 }
 
@@ -671,15 +676,15 @@ void* operator new(size_t size, std::align_val_t /*alignment*/) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new(size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) {
+void* operator new(size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept {
     return ams::mitm::Allocate(size);
 }
 
-void operator delete(void* p, std::align_val_t /*alignment*/) {
+void operator delete(void* p, std::align_val_t /*alignment*/) noexcept {
     ams::mitm::Deallocate(p, 0);
 }
 
-void operator delete(void* p, size_t size, std::align_val_t /*alignment*/) {
+void operator delete(void* p, size_t size, std::align_val_t /*alignment*/) noexcept {
     ams::mitm::Deallocate(p, size);
 }
 
@@ -687,14 +692,14 @@ void* operator new[](size_t size, std::align_val_t /*alignment*/) {
     return ams::mitm::Allocate(size);
 }
 
-void* operator new[](size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) {
+void* operator new[](size_t size, std::align_val_t /*alignment*/, const std::nothrow_t& /*tag*/) noexcept {
     return ams::mitm::Allocate(size);
 }
 
-void operator delete[](void* p, std::align_val_t /*alignment*/) {
+void operator delete[](void* p, std::align_val_t /*alignment*/) noexcept {
     ams::mitm::Deallocate(p, 0);
 }
 
-void operator delete[](void* p, size_t size, std::align_val_t /*alignment*/) {
+void operator delete[](void* p, size_t size, std::align_val_t /*alignment*/) noexcept {
     ams::mitm::Deallocate(p, size);
 }

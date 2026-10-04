@@ -139,7 +139,7 @@ struct RyuLdnClientConfig {
     /**
      * @brief Server hostname or IP address
      */
-    char host[config::MAX_HOST_LENGTH + 1];
+    char host[config::MAX_HOST_LENGTH + 1]{};
 
     /**
      * @brief Server port number
@@ -176,7 +176,7 @@ struct RyuLdnClientConfig {
      *
      * Format: "Ryujinx-[0-9a-f]{8}" or empty string
      */
-    char passphrase[config::MAX_PASSPHRASE_LENGTH + 1];
+    char passphrase[config::MAX_PASSPHRASE_LENGTH + 1]{};
 
     /**
      * @brief Default constructor with sensible defaults
@@ -572,7 +572,7 @@ private:
 
     // --- Callbacks (set by user, invoked from update() / try_connect) ------
     ClientStateCallback m_state_callback;   ///< User callback for state changes
-    void* m_state_callback_user_data;       ///< User data for state callback
+    void* m_state_callback_user_data{};    ///< User data for state callback
     ClientPacketCallback m_packet_callback; ///< User callback for packets
     void* m_packet_callback_user_data;      ///< User data for packet callback
 

@@ -312,7 +312,7 @@ void PacketDispatcher::dispatch_typed(const protocol::LdnHeader& header,
 
     // Copy data into local struct for safe alignment and lifetime
     // Using memcpy ensures correct handling even if data is unaligned
-    T payload;
+    T payload{};
     std::memcpy(&payload, data, sizeof(T));
 
     // Invoke the registered handler
@@ -425,7 +425,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
                 }
 
                 // Parse proxy header
-                ProxyDataHeader proxy_header;
+                ProxyDataHeader proxy_header{};
                 std::memcpy(&proxy_header, data, sizeof(ProxyDataHeader));
 
                 // Calculate data pointer and size

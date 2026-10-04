@@ -333,12 +333,12 @@ private:
     // to the unimplemented aligned operator new and std::abort'd 0xFFE the
     // moment the server told us about the external proxy. Same root cause
     // as the P2pProxyServer/P2pProxySession fix.
-    os::ThreadType m_recv_thread;
+    os::ThreadType m_recv_thread{};
     bool m_recv_thread_running;
 
     // Receive buffer
     static constexpr size_t RECV_BUFFER_SIZE = 0x10000;
-    uint8_t m_recv_buffer[RECV_BUFFER_SIZE];
+    uint8_t m_recv_buffer[RECV_BUFFER_SIZE]{};
 
     // Packet callback
     ProxyPacketCallback m_packet_callback;

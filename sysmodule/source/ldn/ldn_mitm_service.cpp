@@ -13,7 +13,10 @@
 
 namespace ams::mitm::ldn {
 
-LdnMitMService::LdnMitMService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)
+// rvalue reference is forwarded to the MitmServiceImplBase constructor
+// (Atmosphere mitm pattern) — the check cannot see the move through
+// std::forward.
+LdnMitMService::LdnMitMService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     : MitmServiceImplBase(std::forward<std::shared_ptr<::Service>>(s), c)
     , m_program_id(c.program_id)
     , m_client_pid(c.process_id.value)

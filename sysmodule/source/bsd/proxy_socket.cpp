@@ -29,7 +29,7 @@ using Errno = ryu_ldn::bsd::BsdErrno;
 ProxySocket::ProxySocket(ryu_ldn::bsd::SocketType type, ryu_ldn::bsd::ProtocolType protocol)
     : m_type(type)
     , m_protocol(protocol)
-     
+    , m_rx_ring{}
 {
     // Initialize addresses to zero
     std::memset(&m_local_addr, 0, sizeof(m_local_addr));

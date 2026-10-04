@@ -83,13 +83,18 @@ UpnpPortMapper::UpnpPortMapper()
     // throw. Null-check both allocations; if either fails we leave
     // m_available=false and Discover() will early-out via the existing
     // nullptr guard at line ~129.
-    m_urls = new UPNPUrls();
+    // Ownership note (cppcoreguidelines-owning-memory): m_urls / m_data are
+    // C structs from miniupnpc wrapped for the C-API (FreeUPNPUrls takes the
+    // raw pointer). new/delete pairs are symmetric with the destructor; a
+    // unique_ptr would add .get() noise at every C-API boundary without
+    // changing the lifetime (single member, single owner, freed in dtor).
+    m_urls = new UPNPUrls();  // NOLINT(cppcoreguidelines-owning-memory)
     if (m_urls == nullptr) {
         LOG_ERROR("UpnpPortMapper: failed to allocate UPNPUrls (heap exhausted?)");
         return;
     }
 
-    m_data = new IGDdatas();
+    m_data = new IGDdatas();  // NOLINT(cppcoreguidelines-owning-memory)
     if (m_data == nullptr) {
         LOG_ERROR("UpnpPortMapper: failed to allocate IGDdatas (heap exhausted?)");
         delete m_urls;

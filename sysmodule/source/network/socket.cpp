@@ -424,7 +424,7 @@ SocketResult Socket::connect(const char* host, uint16_t port, uint32_t timeout_m
     }
 
     // Resolve hostname to IPv4 address
-    struct sockaddr_in addr;
+    struct sockaddr_in addr{};
     if (!resolve_host(host, addr)) {
         LOG_ERROR("Socket::connect: resolve_host failed for '%s'", host);
         close();  // Clean up the created socket on resolution failure
@@ -863,7 +863,7 @@ SocketResult Socket::set_send_buffer_size(int size) const {
  * @note poll() is preferred over select() for simplicity and efficiency
  */
 SocketResult Socket::wait_ready(uint32_t timeout_ms, bool for_write) {
-    struct pollfd pfd;
+    struct pollfd pfd{};
     pfd.fd = m_fd;
     pfd.events = for_write ? POLLOUT : POLLIN;
     pfd.revents = 0;

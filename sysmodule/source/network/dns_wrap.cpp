@@ -495,7 +495,7 @@ int ResolveHostnameDns(const char* hostname, uint32_t* out_ips, int max_ips) {
     }
 
     // Step 4: Set receive timeout (5 seconds)
-    struct timeval tv;
+    struct timeval tv{};
     tv.tv_sec = DNS_RECEIVE_TIMEOUT_SEC;
     tv.tv_usec = 0;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -680,6 +680,7 @@ int __wrap_getaddrinfo(const char* node, const char* service,
 
                 // codeql[cpp/suspicious-allocation-size] — AddrinfoStorage is a struct
                 // containing addrinfo + sockaddr_in, not an array of addrinfo.
+                // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) — POSIX C ABI, freed by __wrap_freeaddrinfo
                 auto* storage = static_cast<AddrinfoStorage*>(
                     std::malloc(sizeof(AddrinfoStorage)));
                 if (storage == nullptr) {
@@ -717,6 +718,7 @@ int __wrap_getaddrinfo(const char* node, const char* service,
 
     // codeql[cpp/suspicious-allocation-size] — AddrinfoStorage is a struct
     // containing addrinfo + sockaddr_in, not an array of addrinfo.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory) — POSIX C ABI, freed by __wrap_freeaddrinfo
     auto* storage = static_cast<AddrinfoStorage*>(
         std::malloc(sizeof(AddrinfoStorage)));
     if (storage == nullptr) { return EAI_MEMORY;
@@ -739,7 +741,11 @@ int __wrap_getaddrinfo(const char* node, const char* service,
 void __wrap_freeaddrinfo(struct addrinfo* res) {
     while (res != nullptr) {
         struct addrinfo* next = res->ai_next;
-        std::free(res);   // ai_addr is inside the same allocation block
+        // POSIX C ABI: res comes from the caller (miniupnpc), ownership
+        // transferred by the getaddrinfo contract. ai_addr is inside the
+        // same allocation block.
+        // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+        std::free(res);
         res = next;
     }
 }

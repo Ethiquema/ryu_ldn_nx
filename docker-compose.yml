@@ -85,6 +85,9 @@ services:
   # Usage: docker compose run --rm lint
   lint:
     <<: *service-base
+    build:
+      context: .
+      dockerfile: lint.Dockerfile
     entrypoint: ["/bin/bash", "/workspace/scripts/lint.sh"]
 
   # Run CodeQL analysis (standalone CLI, no GitHub Actions needed)

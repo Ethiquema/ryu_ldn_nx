@@ -10,10 +10,12 @@
  */
 
 #include "config.hpp"
+#include "../debug/log.hpp"
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <cerrno>
+#include <memory>
 
 #ifdef __SWITCH__
 #include <stratosphere.hpp>
@@ -416,7 +418,7 @@ ConfigResult load_config(const char* path, Config& config) {
     }
 
     // Open file for reading
-    ams::fs::FileHandle file;
+    ams::fs::FileHandle file{};
     if (R_FAILED(ams::fs::OpenFile(&file, path, ams::fs::OpenMode_Read))) {
         return ConfigResult::IoError;
     }
@@ -437,28 +439,27 @@ ConfigResult load_config(const char* path, Config& config) {
         return ConfigResult::ParseError;
     }
 
-    // Allocate buffer and read file
-    char* content = new (std::nothrow) char[file_size + 1];
+    // Allocate buffer and read file (RAII: freed on every exit path,
+    // including future early returns — cppcoreguidelines-owning-memory)
+    std::unique_ptr<char[]> content(new (std::nothrow) char[file_size + 1]);
     if (content == nullptr) {
         ams::fs::CloseFile(file);
         return ConfigResult::IoError;
     }
 
     size_t bytes_read;
-    ams::Result read_result = ams::fs::ReadFile(&bytes_read, file, 0, content, static_cast<size_t>(file_size));
+    ams::Result read_result = ams::fs::ReadFile(&bytes_read, file, 0, content.get(), static_cast<size_t>(file_size));
     ams::fs::CloseFile(file);
 
     if (R_FAILED(read_result)) {
-        delete[] content;
         return ConfigResult::IoError;
     }
 
     content[bytes_read] = '\0';
 
     // Parse content
-    parse_config_content(content, bytes_read, config);
+    parse_config_content(content.get(), bytes_read, config);
 
-    delete[] content;
     return ConfigResult::Success;
 }
 
@@ -470,18 +471,25 @@ ConfigResult save_config(const char* path, const Config& config) {
     char* last_slash = std::strrchr(dir_path, '/');
     if (last_slash != nullptr) {
         *last_slash = '\0';
-        // Use ams::fs::EnsureDirectory which creates recursively
-        ams::fs::EnsureDirectory(dir_path);
+        // Use ams::fs::EnsureDirectory which creates recursively.
+        // Best-effort: if the directory cannot be created, CreateFile below
+        // will surface the real error — but log the root cause first.
+        const ams::Result dir_rc = ams::fs::EnsureDirectory(dir_path);
+        if (R_FAILED(dir_rc)) {
+            LOG_WARN("save_config: EnsureDirectory('%s') failed (rc=0x%x)",
+                     dir_path, dir_rc.GetValue());
+        }
     }
 
-    // Format config content
+    // Format config content (RAII: freed on every exit path —
+    // cppcoreguidelines-owning-memory)
     constexpr size_t buffer_size = 4096;
-    char* buffer = new (std::nothrow) char[buffer_size];
+    std::unique_ptr<char[]> buffer(new (std::nothrow) char[buffer_size]);
     if (buffer == nullptr) {
         return ConfigResult::IoError;
     }
 
-    size_t content_size = format_config_content(buffer, buffer_size, config);
+    size_t content_size = format_config_content(buffer.get(), buffer_size, config);
 
     // Atomic write via temp file + rename to avoid TOCTOU window where the
     // config file is missing between DeleteFile and CreateFile succeeds.
@@ -495,38 +503,49 @@ ConfigResult save_config(const char* path, const Config& config) {
     // CreateFile does not fail with FileExists.
     ams::fs::DirectoryEntryType tmp_entry_type;
     if (R_SUCCEEDED(ams::fs::GetEntryType(&tmp_entry_type, tmp_path))) {
-        ams::fs::DeleteFile(tmp_path);
+        const ams::Result del_rc = ams::fs::DeleteFile(tmp_path);
+        if (R_FAILED(del_rc)) {
+            LOG_WARN("save_config: stale temp delete failed (rc=0x%x)", del_rc.GetValue());
+        }
     }
 
     // Create temp file
     if (R_FAILED(ams::fs::CreateFile(tmp_path, content_size))) {
-        delete[] buffer;
         return ConfigResult::IoError;
     }
 
     // Open temp file for writing
-    ams::fs::FileHandle tmp_file;
+    ams::fs::FileHandle tmp_file{};
     if (R_FAILED(ams::fs::OpenFile(&tmp_file, tmp_path, ams::fs::OpenMode_Write))) {
-        ams::fs::DeleteFile(tmp_path);
-        delete[] buffer;
+        const ams::Result del_rc = ams::fs::DeleteFile(tmp_path);
+        if (R_FAILED(del_rc)) {
+            LOG_WARN("save_config: temp cleanup after open failure failed (rc=0x%x)",
+                     del_rc.GetValue());
+        }
         return ConfigResult::IoError;
     }
 
     // Write content
-    ams::Result write_result = ams::fs::WriteFile(tmp_file, 0, buffer, content_size, ams::fs::WriteOption::Flush);
+    ams::Result write_result = ams::fs::WriteFile(tmp_file, 0, buffer.get(), content_size, ams::fs::WriteOption::Flush);
     ams::fs::CloseFile(tmp_file);
 
-    delete[] buffer;
-
     if (R_FAILED(write_result)) {
-        ams::fs::DeleteFile(tmp_path);
+        const ams::Result del_rc = ams::fs::DeleteFile(tmp_path);
+        if (R_FAILED(del_rc)) {
+            LOG_WARN("save_config: temp cleanup after write failure failed (rc=0x%x)",
+                     del_rc.GetValue());
+        }
         return ConfigResult::IoError;
     }
 
     // Atomically replace the original file. RenameFile overwrites the
     // destination on the SD card filesystem (FAT-like semantics).
     if (R_FAILED(ams::fs::RenameFile(tmp_path, path))) {
-        ams::fs::DeleteFile(tmp_path);
+        const ams::Result del_rc = ams::fs::DeleteFile(tmp_path);
+        if (R_FAILED(del_rc)) {
+            LOG_WARN("save_config: temp cleanup after rename failure failed (rc=0x%x)",
+                     del_rc.GetValue());
+        }
         return ConfigResult::IoError;
     }
 
