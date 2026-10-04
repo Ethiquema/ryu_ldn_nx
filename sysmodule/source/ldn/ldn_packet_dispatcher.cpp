@@ -312,7 +312,7 @@ void PacketDispatcher::dispatch_typed(const protocol::LdnHeader& header,
 
     // Copy data into local struct for safe alignment and lifetime
     // Using memcpy ensures correct handling even if data is unaligned
-    T payload;
+    T payload{};
     std::memcpy(&payload, data, sizeof(T));
 
     // Invoke the registered handler
@@ -383,7 +383,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::ScanReplyEnd:
             // Empty packet - no payload validation needed
-            if (m_scan_reply_end_handler) {
+            if (m_scan_reply_end_handler != nullptr) {
                 m_scan_reply_end_handler(header);
             }
             break;
@@ -418,14 +418,14 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::ProxyData:
             // Special handling: header struct + variable-length data
-            if (m_proxy_data_handler) {
+            if (m_proxy_data_handler != nullptr) {
                 // Validate minimum size for header
                 if (data_size < sizeof(ProxyDataHeader)) {
                     return;  // Packet too small
                 }
 
                 // Parse proxy header
-                ProxyDataHeader proxy_header;
+                ProxyDataHeader proxy_header{};
                 std::memcpy(&proxy_header, data, sizeof(ProxyDataHeader));
 
                 // Calculate data pointer and size
@@ -454,7 +454,7 @@ void PacketDispatcher::dispatch(const protocol::LdnHeader& header,
 
         case PacketId::RejectReply:
             // Empty packet - no payload validation needed
-            if (m_reject_reply_handler) {
+            if (m_reject_reply_handler != nullptr) {
                 m_reject_reply_handler(header);
             }
             break;

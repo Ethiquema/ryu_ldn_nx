@@ -378,7 +378,7 @@ private:
      * @brief Lease renewal thread function
      */
     /// @gdb{tag="P2P:NAT", msg="Lease renewal loop"}
-    void LeaseRenewalLoop();
+    void LeaseRenewalLoop() const;
 
     /**
      * @brief Start lease renewal background thread
@@ -407,10 +407,10 @@ private:
     // forced `new P2pProxyServer(...)` to call the unimplemented aligned
     // operator new and crashed the sysmodule (DABRT 0x101) the moment a
     // host pressed "create network".
-    os::ThreadType m_accept_thread;
+    os::ThreadType m_accept_thread{};
 
     // Lease renewal thread (stack: g_p2p_lease_thread_stack in BSS)
-    os::ThreadType m_lease_thread;
+    os::ThreadType m_lease_thread{};
     bool m_lease_thread_running;
 
     // Sessions
@@ -430,7 +430,7 @@ private:
 
     // Waiting tokens for auth
     static constexpr int MAX_WAITING_TOKENS = 16;
-    ryu_ldn::protocol::ExternalProxyToken m_waiting_tokens[MAX_WAITING_TOKENS];
+    ryu_ldn::protocol::ExternalProxyToken m_waiting_tokens[MAX_WAITING_TOKENS]{};
     int m_waiting_token_count;
     os::ConditionVariable m_token_cv;
 
@@ -516,7 +516,7 @@ public:
      * @return true if send succeeded
      */
     /// @gdb{tag="P2P:ROUTE", msg="Session send"}
-    bool Send(const void* data, size_t size);
+    bool Send(const void* data, size_t size) const;
 
     /**
      * @brief Disconnect and stop
@@ -578,7 +578,7 @@ private:
     // `new P2pProxySession(...)` with DABRT 0x101 — same root cause we
     // fixed in P2pProxyServer earlier. Keep it as a slot index so that
     // ~P2pProxySession can return the slot to the pool.
-    os::ThreadType m_recv_thread;
+    os::ThreadType m_recv_thread{};
     int m_stack_slot;            ///< Index in the global session-stack pool, -1 if unallocated
 
     // Set by SessionRecvThreadEntry just before the thread function returns,
@@ -589,7 +589,7 @@ private:
 
     // Receive buffer
     static constexpr size_t RECV_BUFFER_SIZE = 0x10000;
-    uint8_t m_recv_buffer[RECV_BUFFER_SIZE];
+    uint8_t m_recv_buffer[RECV_BUFFER_SIZE]{};
 
     friend class P2pProxyServer;  // for the reaper path
 };

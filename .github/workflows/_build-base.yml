@@ -1,0 +1,174 @@
+name: Reusable build & test base
+
+# Internal reusable workflow shared by build.yml and release.yml.
+# Extracts the ~200 lines of common logic (checkout, deps, tests with
+# coverage, Docker setup, sysmodule + overlay build, dist packaging,
+# artifact upload) so the two public workflows only declare their
+# triggers and their release-specific tail jobs.
+#
+# Inputs let callers vary the few real differences:
+#   - run-build:           gate the build job (build.yml skips it on PRs)
+#   - default-branch:      used for the git safe-directory symbolic-ref
+#   - artifact-name-zip:   artifact name for the release ZIP
+#   - artifact-name-debug: artifact name for the debug symbols
+#   - badge-always:        whether the coverage badge updates on every run
+#                         (release.yml: true; build.yml: only on push)
+
+on:
+  workflow_call:
+    inputs:
+      run-build:
+        description: 'Run the build & package job (false skips it).'
+        type: boolean
+        default: true
+      default-branch:
+        description: 'Fallback branch for git symbolic-ref in the build job.'
+        type: string
+        default: 'main'
+      artifact-name-zip:
+        description: 'Name of the release ZIP artifact.'
+        type: string
+        default: 'release-zip'
+      artifact-name-debug:
+        description: 'Name of the debug symbols artifact.'
+        type: string
+        default: 'debug-symbols'
+      badge-always:
+        description: 'Update the coverage badge on every run (not only push).'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    name: Tests & Coverage ≥ 80%
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential g++ netcat-openbsd
+          pip install gcovr
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Pull service images
+        run: docker compose pull
+
+      - name: Run unit tests with coverage
+        run: COVERAGE=1 docker compose run --rm test
+
+      - name: Build integration tests with coverage
+        run: docker compose run --rm -w /workspace/tests/integration test bash -c "make clean && make COV=1 all"
+
+      - name: Start LdnServer
+        run: |
+          cd tests/integration
+          bash prepare-compose.sh
+          docker compose -f docker-compose.yml up -d
+          bash wait-for-server.sh localhost 30456 60
+          sleep 2
+
+      - name: Run integration tests with coverage
+        run: |
+          cd tests/integration
+          INTEGRATION_COMPOSE_FILE="$(pwd)/docker-compose.yml" ./run_integration_tests localhost 30456
+
+      - name: Tear down LdnServer
+        if: always()
+        run: cd tests/integration && docker compose -f docker-compose.yml down -v
+
+      - name: Enforce per-file coverage ≥ 80%
+        run: python3 scripts/check-coverage.py --min 80 --root .
+
+      - name: Compute average coverage
+        id: coverage
+        run: |
+          python3 scripts/check-coverage.py --min 0 --root . --json /tmp/cov.json || true
+          python3 <<'PYEOF' > /tmp/avg.txt
+          import json
+          with open('/tmp/cov.json') as f:
+              d = json.load(f)
+          files = [f for f in d.get('files', []) if 'sysmodule/source/' in (f.get('file', f.get('filename', '')))]
+          total_lines = 0
+          total_covered = 0
+          for f in files:
+              lines = f.get('lines', [])
+              if isinstance(lines, list):
+                  total_lines += len(lines)
+                  total_covered += sum(1 for l in lines if l.get('count', 0) > 0)
+          avg = (total_covered / total_lines * 100) if total_lines > 0 else 0
+          print(f'{avg:.1f}')
+          PYEOF
+          echo "percent=$(cat /tmp/avg.txt)" >> $GITHUB_OUTPUT
+
+      - name: Update coverage badge
+        if: ${{ inputs.badge-always == true || github.event_name == 'push' }}
+        uses: schneegans/dynamic-badges-action@v1.8.0
+        with:
+          auth: ${{ secrets.GIST_BADGE_SECRET }}
+          gistID: 4277995494c6874ebb238bdbc499d9d0
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.percent }}%
+          valColorRange: ${{ steps.coverage.outputs.percent }}
+          maxColorRange: 100
+          minColorRange: 0
+
+  build:
+    name: Build & Package
+    runs-on: ubuntu-latest
+    needs: test
+    if: ${{ inputs.run-build }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull service images
+        run: docker compose pull
+
+      - name: Fix git safe directory
+        env:
+          DEFAULT_BRANCH: ${{ inputs.default-branch }}
+        run: |
+          git config --global --add safe.directory '*'
+          git symbolic-ref HEAD refs/heads/"${GITHUB_REF_NAME:-$DEFAULT_BRANCH}" 2>/dev/null || true
+
+      - name: Build sysmodule + overlay + dist ZIP
+        run: docker compose run --rm build
+
+      - name: Upload release ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name-zip }}
+          path: ryu_ldn_nx-release.zip
+
+      - name: Upload debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name-debug }}
+          path: |
+            sysmodule/ryu_ldn_nx.elf
+            sysmodule/ryu_ldn_nx.nso
+          if-no-files-found: warn

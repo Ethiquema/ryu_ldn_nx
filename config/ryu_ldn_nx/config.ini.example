@@ -9,9 +9,9 @@ host = ryuldnnx.ddns.net
 port = 30456
 
 [ldn]
-; Enable LDN emulation (0/1/true/false/yes/no)
+; Enable LDN emulation (true/false/1/0 only, case-insensitive)
 enabled = 1
-; Enable passphrase filtering (0/1)
+; Enable passphrase filtering (true/false/1/0 only)
 use_passphrase = 0
 ; Room passphrase (empty = public)
 passphrase =
@@ -21,7 +21,7 @@ passphrase =
 disable_p2p = 1
 
 [debug]
-; Enable debug logging (0/1/true/false/yes/no)
+; Enable debug logging (true/false/1/0 only, case-insensitive)
 ; When enabled, logs are written to both console and SD card file.
 enabled = 0
 ; Log level (0=errors, 1=warnings, 2=info, 3=verbose)

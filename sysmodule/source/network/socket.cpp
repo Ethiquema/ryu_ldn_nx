@@ -79,6 +79,15 @@
 namespace ryu_ldn::network {
 
 // =============================================================================
+// Socket timeout constants
+// =============================================================================
+// Named constants for the magic-number timeouts previously inlined in send_all
+// and connect. Preserves the existing 5-second per-chunk write timeout.
+
+/// @brief Per-chunk write timeout in send_all() (ms)
+constexpr uint32_t SOCKET_WRITE_TIMEOUT_MS = 5000;
+
+// =============================================================================
 // Static State
 // =============================================================================
 
@@ -176,21 +185,39 @@ namespace {
 #ifndef TEST_BUILD
 SocketResult errno_to_result(int err) {
     // Non-blocking operation would block
-    if (err == EAGAIN) return SocketResult::WouldBlock;
+    if (err == EAGAIN) {
+        return SocketResult::WouldBlock;
+    }
 #if EAGAIN != EWOULDBLOCK
-    if (err == EWOULDBLOCK) return SocketResult::WouldBlock;
+    if (err == EWOULDBLOCK) {
+        return SocketResult::WouldBlock;
+    }
 #endif
     // Connection errors
-    if (err == ECONNREFUSED) return SocketResult::ConnectionRefused;
-    if (err == ECONNRESET) return SocketResult::ConnectionReset;
+    if (err == ECONNREFUSED) {
+        return SocketResult::ConnectionRefused;
+    }
+    if (err == ECONNRESET) {
+        return SocketResult::ConnectionReset;
+    }
     // Network reachability errors
-    if (err == EHOSTUNREACH || err == ENETUNREACH) return SocketResult::HostUnreachable;
-    if (err == ENETDOWN) return SocketResult::NetworkDown;
+    if (err == EHOSTUNREACH || err == ENETUNREACH) {
+        return SocketResult::HostUnreachable;
+    }
+    if (err == ENETDOWN) {
+        return SocketResult::NetworkDown;
+    }
     // Socket state errors
-    if (err == ENOTCONN) return SocketResult::NotConnected;
-    if (err == EISCONN) return SocketResult::AlreadyConnected;
+    if (err == ENOTCONN) {
+        return SocketResult::NotConnected;
+    }
+    if (err == EISCONN) {
+        return SocketResult::AlreadyConnected;
+    }
     // Timeout
-    if (err == ETIMEDOUT) return SocketResult::Timeout;
+    if (err == ETIMEDOUT) {
+        return SocketResult::Timeout;
+    }
     // Everything else is a generic socket error
     return SocketResult::SocketError;
 }
@@ -234,7 +261,7 @@ bool resolve_host(const char* host, struct sockaddr_in& addr) {
     struct addrinfo* result = nullptr;
     int ret = getaddrinfo(host, nullptr, &hints, &result);
 
-    if (ret != 0 || !result) {
+    if (ret != 0 || (result == nullptr)) {
         // DNS resolution failed
         // Common causes: network offline, DNS server unreachable, invalid hostname
         return false;
@@ -397,7 +424,7 @@ SocketResult Socket::connect(const char* host, uint16_t port, uint32_t timeout_m
     }
 
     // Resolve hostname to IPv4 address
-    struct sockaddr_in addr;
+    struct sockaddr_in addr{};
     if (!resolve_host(host, addr)) {
         LOG_ERROR("Socket::connect: resolve_host failed for '%s'", host);
         close();  // Clean up the created socket on resolution failure
@@ -560,7 +587,7 @@ SocketResult Socket::send_all(const uint8_t* data, size_t size) {
 
         if (result == SocketResult::WouldBlock) {
             // Wait for socket to become writable
-            result = wait_ready(5000, true);  // 5 second timeout per chunk
+            result = wait_ready(SOCKET_WRITE_TIMEOUT_MS, true);  // 5 second timeout per chunk
             if (result != SocketResult::Success) {
                 return result;
             }
@@ -616,7 +643,7 @@ SocketResult Socket::recv(uint8_t* buffer, size_t buffer_size, size_t& received,
     else if (timeout_ms == 0) {
         // Temporarily set non-blocking mode if needed
         int flags = fcntl(m_fd, F_GETFL, 0);
-        bool was_blocking = !(flags & O_NONBLOCK);
+        bool was_blocking = (flags & O_NONBLOCK) == 0;
 
         if (was_blocking) {
             fcntl(m_fd, F_SETFL, flags | O_NONBLOCK);
@@ -723,7 +750,7 @@ bool Socket::is_valid() const {
  * @note Generally you don't need to call this directly - the timeout
  *       parameters on connect/recv handle non-blocking behavior.
  */
-SocketResult Socket::set_non_blocking(bool non_blocking) {
+SocketResult Socket::set_non_blocking(bool non_blocking) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -759,7 +786,7 @@ SocketResult Socket::set_non_blocking(bool non_blocking) {
  *
  * @note Recommended: true for gaming/realtime applications
  */
-SocketResult Socket::set_nodelay(bool nodelay) {
+SocketResult Socket::set_nodelay(bool nodelay) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -784,7 +811,7 @@ SocketResult Socket::set_nodelay(bool nodelay) {
  *
  * @note The kernel may not honor the exact size requested
  */
-SocketResult Socket::set_recv_buffer_size(int size) {
+SocketResult Socket::set_recv_buffer_size(int size) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -808,7 +835,7 @@ SocketResult Socket::set_recv_buffer_size(int size) {
  *
  * @note The kernel may not honor the exact size requested
  */
-SocketResult Socket::set_send_buffer_size(int size) {
+SocketResult Socket::set_send_buffer_size(int size) const {
     if (m_fd < 0) {
         return SocketResult::SocketError;
     }
@@ -836,7 +863,7 @@ SocketResult Socket::set_send_buffer_size(int size) {
  * @note poll() is preferred over select() for simplicity and efficiency
  */
 SocketResult Socket::wait_ready(uint32_t timeout_ms, bool for_write) {
-    struct pollfd pfd;
+    struct pollfd pfd{};
     pfd.fd = m_fd;
     pfd.events = for_write ? POLLOUT : POLLIN;
     pfd.revents = 0;
@@ -865,7 +892,7 @@ SocketResult Socket::wait_ready(uint32_t timeout_ms, bool for_write) {
     // we do for recv() == 0 or ECONNRESET — and map to ConnectionReset so
     // the TcpClient stack propagates ConnectionLost and triggers
     // auto-reconnect.
-    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+    if ((pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
         // Flush — this log is the key diagnostic event for "master TCP dies
         // while game IPC is still running". Without flushing we lose it if
         // a KP follows (the logger's 2s idle-flush hasn't triggered yet).
@@ -892,17 +919,35 @@ namespace ryu_ldn::network {
 SocketResult errno_to_result(int err) {
     // Delegate to the anonymous namespace version by reimplementing
     // (the anonymous version is not accessible here)
-    if (err == EAGAIN) return SocketResult::WouldBlock;
+    if (err == EAGAIN) {
+        return SocketResult::WouldBlock;
+    }
 #if EAGAIN != EWOULDBLOCK
-    if (err == EWOULDBLOCK) return SocketResult::WouldBlock;
+    if (err == EWOULDBLOCK) {
+        return SocketResult::WouldBlock;
+    }
 #endif
-    if (err == ECONNREFUSED) return SocketResult::ConnectionRefused;
-    if (err == ECONNRESET) return SocketResult::ConnectionReset;
-    if (err == EHOSTUNREACH || err == ENETUNREACH) return SocketResult::HostUnreachable;
-    if (err == ENETDOWN) return SocketResult::NetworkDown;
-    if (err == ENOTCONN) return SocketResult::NotConnected;
-    if (err == EISCONN) return SocketResult::AlreadyConnected;
-    if (err == ETIMEDOUT) return SocketResult::Timeout;
+    if (err == ECONNREFUSED) {
+        return SocketResult::ConnectionRefused;
+    }
+    if (err == ECONNRESET) {
+        return SocketResult::ConnectionReset;
+    }
+    if (err == EHOSTUNREACH || err == ENETUNREACH) {
+        return SocketResult::HostUnreachable;
+    }
+    if (err == ENETDOWN) {
+        return SocketResult::NetworkDown;
+    }
+    if (err == ENOTCONN) {
+        return SocketResult::NotConnected;
+    }
+    if (err == EISCONN) {
+        return SocketResult::AlreadyConnected;
+    }
+    if (err == ETIMEDOUT) {
+        return SocketResult::Timeout;
+    }
     return SocketResult::SocketError;
 }
 

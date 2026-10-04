@@ -463,7 +463,7 @@ public:
 private:
     Socket m_socket;                                 ///< Underlying TCP socket
     protocol::PacketBuffer<0x2000> m_recv_buffer;    ///< Buffer for TCP stream reassembly (8KB - saves 56KB!)
-    uint8_t m_send_buffer[2048];                     ///< Buffer for encoding outgoing packets
+    uint8_t m_send_buffer[2048]{};                   ///< Buffer for encoding outgoing packets (zero-initialized, LINT-22)
 
     // Internal thread-safety: protects m_send_buffer + socket send calls,
     // and m_recv_buffer + socket recv calls. They are separate so a long

@@ -14,6 +14,7 @@
 
 #include <stratosphere.hpp>
 #include <cstring>
+#include <memory>
 #include <new>
 
 namespace ryu_ldn::config {
@@ -25,17 +26,69 @@ constexpr const char* WHITELIST_PATH = "sdmc:/config/ryu_ldn_nx/gamelist.txt";
 // Average bytes per line in gamelist.txt (e.g., "0x0100152000022000\n" = ~19 bytes)
 constexpr size_t BYTES_PER_ENTRY = 18;
 
-// Dynamically allocated whitelist (sized based on file)
-static u64* g_whitelist = nullptr;
-static size_t g_whitelist_capacity = 0;
-static size_t g_whitelist_count = 0;
-static bool g_whitelist_loaded = false;
+// Dynamically allocated whitelist (sized based on file).
+// Owned by a unique_ptr (cppcoreguidelines-owning-memory): the array is
+// allocated once at startup, populated, and released automatically at
+// sysmodule exit — no manual delete, no leak on any exit path.
+/**
+ * @brief Heap-allocated array holding the parsed whitelist of program IDs.
+ *
+ * @role Backing storage for the whitelist consulted by `IsGameWhitelisted` so
+ *       the MITM ShouldMitm path can decide whether to intercept a game
+ *       without touching the SD card on every IPC.
+ * @modified_by `LoadWhitelist` (this file) — allocated via `new (std::nothrow)`
+ *              once at startup, populated from `sdmc:/config/ryu_ldn_nx/gamelist.txt`,
+ *              and owned by this unique_ptr for the sysmodule lifetime.
+ * @thread_safety Not protected by a mutex. `LoadWhitelist` is invoked once during
+ *                `InitializeSystemModule` before any MITM session can call
+ *                `IsGameWhitelisted`; the load-then-freeze pattern means later
+ *                read-only access from MITM threads is safe by happens-before.
+ */
+std::unique_ptr<u64[]> g_whitelist = nullptr;
+
+/**
+ * @brief Capacity (in u64 entries) of the g_whitelist array.
+ *
+ * @role Bounding size used by `LoadWhitelist` to stop parsing once the array
+ *       is full and by the loader's loop guards.
+ * @modified_by `LoadWhitelist` only — set during allocation, never mutated
+ *              afterwards.
+ * @thread_safety Same load-then-freeze discipline as g_whitelist; read-only
+ *                after initialization.
+ */
+size_t g_whitelist_capacity = 0;
+
+/**
+ * @brief Number of valid entries currently stored in g_whitelist.
+ *
+ * @role Active length of the whitelist; `IsGameWhitelisted` scans indices
+ *       `[0, g_whitelist_count)` to test membership.
+ * @modified_by `LoadWhitelist` only — incremented as each program ID is
+ *              parsed from the file, then frozen.
+ * @thread_safety Read-only after the one-shot `LoadWhitelist` run; no mutex
+ *                needed by the load-then-freeze contract.
+ */
+size_t g_whitelist_count = 0;
+
+/**
+ * @brief One-shot "initialized" flag preventing double-loads of the whitelist.
+ *
+ * @role Guarded latch so repeated `LoadWhitelist` calls (e.g. via IPC reconnect
+ *       paths) short-circuit after the first successful or failed load.
+ * @modified_by `LoadWhitelist` only — set to true on success and also on the
+ *              empty-file / allocation-failure paths so the sysmodule still
+ *              functions with an empty whitelist.
+ * @thread_safety Read-only after the first `LoadWhitelist`; checked at the top
+ *                of `LoadWhitelist` under the same load-then-freeze discipline.
+ */
+bool g_whitelist_loaded = false;
 
 /**
  * @brief Parse a hex string like "0x0100152000022000" to u64
  */
 u64 ParseHexId(const char* str, size_t len) {
-    if (!str || len == 0) return 0;
+    if ((str == nullptr) || len == 0) { return 0;
+}
 
     size_t i = 0;
 
@@ -76,7 +129,7 @@ void LoadWhitelist() {
     LOG_INFO("GameWhitelist: loading from %s", WHITELIST_PATH);
 
     // Open the file
-    ams::fs::FileHandle file;
+    ams::fs::FileHandle file{};
     ams::Result rc = ams::fs::OpenFile(std::addressof(file), WHITELIST_PATH, ams::fs::OpenMode_Read);
 
     if (R_FAILED(rc)) {
@@ -99,8 +152,8 @@ void LoadWhitelist() {
 
     // Calculate capacity based on file size and allocate
     g_whitelist_capacity = static_cast<size_t>(file_size / BYTES_PER_ENTRY) + 100;  // +100 margin
-    g_whitelist = new (std::nothrow) u64[g_whitelist_capacity];
-    if (!g_whitelist) {
+    g_whitelist = std::unique_ptr<u64[]>(new (std::nothrow) u64[g_whitelist_capacity]);
+    if (g_whitelist == nullptr) {
         ams::fs::CloseFile(file);
         LOG_ERROR("GameWhitelist: failed to allocate %zu entries", g_whitelist_capacity);
         g_whitelist_loaded = true;
@@ -117,7 +170,7 @@ void LoadWhitelist() {
     s64 offset = 0;
 
     while (offset < file_size && g_whitelist_count < g_whitelist_capacity) {
-        size_t to_read = static_cast<size_t>(
+        auto to_read = static_cast<size_t>(
             (file_size - offset) < static_cast<s64>(CHUNK_SIZE)
             ? (file_size - offset)
             : static_cast<s64>(CHUNK_SIZE)

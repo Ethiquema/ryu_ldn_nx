@@ -139,8 +139,8 @@ git rebase -i HEAD~N  # where N is the number of commits
 
 Before submitting, verify:
 
-- [ ] Code compiles without warnings
-- [ ] All tests pass
+- [ ] Code compiles without warnings (`docker compose run --rm build`)
+- [ ] All tests pass (`docker compose run --rm test`)
 - [ ] Documentation is updated
 - [ ] Commits are signed off (DCO)
 - [ ] Branch is up to date with main
@@ -193,9 +193,44 @@ make
 
 ### Running Tests
 
+All host unit tests are run inside the dev Docker container so the devkitPro
+toolchain is not required on the contributor's machine:
+
 ```bash
-docker-compose run --rm test
+docker compose run --rm test
 ```
+
+This is the command run by CI on every pull request. Run it locally **before
+opening a PR** and ensure every suite passes. The PR checklist below ("All tests
+pass") refers to this command.
+
+Per-suite targets are also available for faster iteration on a single area:
+
+```bash
+cd tests && make test-ldn-state-machine       # see tests/Makefile for the full list
+make COVERAGE=1 coverage                        # gcov coverage report
+```
+
+Available suites: `protocol`, `config`, `config-manager`, `log`, `socket`,
+`tcp-client`, `connection-state`, `reconnect`, `client`, `ldn-types`,
+`ldn-state-machine`, `ldn-proxy`, `ldn-error`, `ldn-integration`, `overlay`,
+`ipc-config`, `config-ipc-service`, `shared-state`, `packet-dispatcher`,
+`session-handler`, `proxy-handler`, `handler-integration`, `upnp`, `p2p-proxy`,
+`p2p-client`, `p2p-integration`, `p2p-create-network`.
+
+### Coverage
+
+Coverage is collected with `gcov` (host g++ build, `-DTEST_BUILD`). To produce a
+report locally:
+
+```bash
+cd tests && make COVERAGE=1 coverage
+```
+
+The CI `coverage` job uploads the resulting `coverage.json` and the README
+coverage badge reflects the latest run on the default branch. New code should
+keep or raise the global coverage figure; significant regressions will be
+flagged in review.
 
 ### Testing on Hardware
 

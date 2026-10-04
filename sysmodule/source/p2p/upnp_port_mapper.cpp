@@ -77,12 +77,40 @@ UpnpPortMapper::UpnpPortMapper()
 {
     // Allocate UPnP structures on the heap
     // These are C structs from miniupnpc, we manage their lifetime
-    m_urls = new UPNPUrls();
-    m_data = new IGDdatas();
+    //
+    // On Switch the custom heap allocator (lmem::ExpHeap, 384 KB) can
+    // return nullptr under pressure — the overridden `new` does NOT
+    // throw. Null-check both allocations; if either fails we leave
+    // m_available=false and Discover() will early-out via the existing
+    // nullptr guard at line ~129.
+    // Ownership note (cppcoreguidelines-owning-memory): m_urls / m_data are
+    // C structs from miniupnpc wrapped for the C-API (FreeUPNPUrls takes the
+    // raw pointer). new/delete pairs are symmetric with the destructor; a
+    // unique_ptr would add .get() noise at every C-API boundary without
+    // changing the lifetime (single member, single owner, freed in dtor).
+    m_urls = new UPNPUrls();  // NOLINT(cppcoreguidelines-owning-memory)
+    if (m_urls == nullptr) {
+        LOG_ERROR("UpnpPortMapper: failed to allocate UPNPUrls (heap exhausted?)");
+        return;
+    }
 
-    // Zero-initialize (required before first use)
-    std::memset(m_urls, 0, sizeof(UPNPUrls));
-    std::memset(m_data, 0, sizeof(IGDdatas));
+    m_data = new IGDdatas();  // NOLINT(cppcoreguidelines-owning-memory)
+    if (m_data == nullptr) {
+        LOG_ERROR("UpnpPortMapper: failed to allocate IGDdatas (heap exhausted?)");
+        delete m_urls;
+        m_urls = nullptr;
+        return;
+    }
+
+    // Zero-initialize (required before first use). Re-check each pointer
+    // before dereferencing so allocation-error checkers see a null guard
+    // immediately ahead of every use.
+    if (m_urls != nullptr) {
+        std::memset(m_urls, 0, sizeof(UPNPUrls));
+    }
+    if (m_data != nullptr) {
+        std::memset(m_data, 0, sizeof(IGDdatas));
+    }
 }
 
 UpnpPortMapper::~UpnpPortMapper() {
@@ -140,7 +168,7 @@ bool UpnpPortMapper::Discover() {
     ryu_ldn::debug::g_logger.flush();
 
     // Clean up any previous failed discovery attempt
-    if (controlURL_value) {
+    if (controlURL_value != nullptr) {
         LOG_INFO("UpnpPortMapper::Discover: previous controlURL set, freeing");
         ryu_ldn::debug::g_logger.flush();
         FreeUPNPUrls(m_urls);
@@ -395,7 +423,10 @@ uint32_t UpnpPortMapper::GetLocalIPv4() const {
     // ==========================================================================
     // Convert "192.168.1.100" to 0xC0A80164 (host byte order)
     //
-    unsigned int a, b, c, d;
+    unsigned int a;
+    unsigned int b;
+    unsigned int c;
+    unsigned int d;
     if (std::sscanf(m_lan_addr, "%u.%u.%u.%u", &a, &b, &c, &d) != 4) {
         return 0;
     }
@@ -425,12 +456,12 @@ void UpnpPortMapper::Cleanup() {
     // FreeUPNPUrls frees all strings allocated in the UPNPUrls structure
     // (controlURL, rootdescURL, etc.)
     //
-    if (m_urls && m_urls->controlURL) {
+    if ((m_urls != nullptr) && (m_urls->controlURL != nullptr)) {
         FreeUPNPUrls(m_urls);
         std::memset(m_urls, 0, sizeof(UPNPUrls));
     }
 
-    if (m_data) {
+    if (m_data != nullptr) {
         std::memset(m_data, 0, sizeof(IGDdatas));
     }
 

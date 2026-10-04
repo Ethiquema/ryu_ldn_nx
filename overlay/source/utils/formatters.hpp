@@ -66,7 +66,7 @@ inline void FormatPassphraseDisplay(const char* passphrase, char* buf, size_t bu
     if (passphrase == nullptr || passphrase[0] == '\0') {
         snprintf(buf, bufSize, "---");
     } else if (strlen(passphrase) == 16 && strncmp(passphrase, "Ryujinx-", 8) == 0) {
-        snprintf(buf, bufSize, "%s", passphrase + 8);
+        snprintf(buf, bufSize, "%.8s", passphrase + 8);
     } else {
         snprintf(buf, bufSize, "(invalid)");
     }

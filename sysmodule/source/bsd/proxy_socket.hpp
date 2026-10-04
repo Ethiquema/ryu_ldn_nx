@@ -43,8 +43,8 @@
 #pragma once
 
 #include <stratosphere.hpp>
-#include <deque>
-#include <vector>
+#include <array>
+#include <memory>
 #include "bsd_types.hpp"
 #include "../protocol/types.hpp"
 
@@ -60,6 +60,23 @@ class ProxySocketManager;
  * packets are dropped (UDP behavior).
  */
 constexpr size_t PROXY_SOCKET_MAX_QUEUE_SIZE = 32;
+
+/**
+ * @brief Maximum number of pending TCP accept connections per listening socket
+ *
+ * Static cap so the accept queue lives inline in ProxySocket with zero
+ * heap allocation. When full, incoming connections are dropped (logged).
+ */
+constexpr size_t MAX_ACCEPT_QUEUE = 16;
+
+/**
+ * @brief Maximum number of socket option entries stored per ProxySocket
+ *
+ * Static cap so socket options live inline in ProxySocket with zero
+ * heap allocation. When full, a new option that doesn't match an
+ * existing key is rejected (returns false from SetSocketOption).
+ */
+constexpr size_t MAX_SOCKET_OPTIONS = 32;
 
 /**
  * @brief Maximum payload size for a single ProxyData packet
@@ -500,6 +517,82 @@ private:
      */
     ReceivedPacket PopFrontPacket(bool peek);
 
+    // =========================================================================
+    // Accept queue ring buffer helpers (caller must hold m_queue_mutex)
+    // =========================================================================
+
+    bool IsAcceptQueueEmpty() const { return m_accept_queue_count == 0; }
+
+    bool IsAcceptQueueFull() const { return m_accept_queue_count >= MAX_ACCEPT_QUEUE; }
+
+    /// Push a new accepted socket at the tail. Caller must hold m_queue_mutex
+    /// and must have checked IsAcceptQueueFull() first.
+    void AcceptQueuePushBack(std::unique_ptr<ProxySocket> socket) {
+        // Defensive: drop if full (caller should already have checked)
+        if (m_accept_queue_count >= MAX_ACCEPT_QUEUE) {
+            return;
+        }
+        m_accept_queue[m_accept_queue_tail] = std::move(socket);
+        m_accept_queue_tail = (m_accept_queue_tail + 1) % MAX_ACCEPT_QUEUE;
+        m_accept_queue_count++;
+    }
+
+    /// Pop the front accepted socket. Caller must hold m_queue_mutex and
+    /// must have checked IsAcceptQueueEmpty() first. Returns nullptr if empty.
+    std::unique_ptr<ProxySocket> AcceptQueuePopFront() {
+        if (m_accept_queue_count == 0) {
+            return nullptr;
+        }
+        std::unique_ptr<ProxySocket> result = std::move(m_accept_queue[m_accept_queue_head]);
+        m_accept_queue[m_accept_queue_head].reset();
+        m_accept_queue_head = (m_accept_queue_head + 1) % MAX_ACCEPT_QUEUE;
+        m_accept_queue_count--;
+        return result;
+    }
+
+    // =========================================================================
+    // Socket option helpers (caller must hold m_queue_mutex)
+    // =========================================================================
+
+    /// Find a socket option by key. Returns pointer to the value or nullptr.
+    /// Linear scan is fine: ≤ MAX_SOCKET_OPTIONS entries.
+    s32* FindSocketOption(uint32_t key) {
+        for (auto& entry : m_socket_options) {
+            if (entry.valid && entry.key == key) {
+                return &entry.value;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Const overload.
+    const s32* FindSocketOption(uint32_t key) const {
+        for (const auto& entry : m_socket_options) {
+            if (entry.valid && entry.key == key) {
+                return &entry.value;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Set a socket option: update existing key, or insert in first free slot.
+    /// Returns false if no free slot.
+    bool SetSocketOption(uint32_t key, s32 value) {
+        if (s32* existing = FindSocketOption(key)) {
+            *existing = value;
+            return true;
+        }
+        for (auto& entry : m_socket_options) {
+            if (!entry.valid) {
+                entry.key = key;
+                entry.value = value;
+                entry.valid = true;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * @brief Socket type (Stream or Dgram)
      */
@@ -557,9 +650,16 @@ private:
     os::Event m_receive_event{os::EventClearMode_ManualClear};
 
     /**
-     * @brief TCP accept queue (pending connections)
+     * @brief TCP accept queue (pending connections) — fixed-size ring buffer.
+     *
+     * Producer: network thread via IncomingConnection. Consumer: game thread
+     * via Accept. Full = drop incoming connection (logged). Protected by
+     * m_queue_mutex. The slots are owned (destroyed when overwritten / popped).
      */
-    std::deque<std::unique_ptr<ProxySocket>> m_accept_queue;
+    std::array<std::unique_ptr<ProxySocket>, MAX_ACCEPT_QUEUE> m_accept_queue{};
+    size_t m_accept_queue_head = 0;  ///< Read index (next to pop)
+    size_t m_accept_queue_tail = 0;  ///< Write index (next push)
+    size_t m_accept_queue_count = 0; ///< Elements currently in the ring
 
     /**
      * @brief Event signaled when accept queue has connections
@@ -597,13 +697,18 @@ private:
     uint32_t m_broadcast_address{0};
 
     /**
-     * @brief Socket options storage
+     * @brief Socket options storage — fixed-size array (no heap allocation).
      *
      * Most options are stored locally since we're proxying.
-     * Format: map of (level << 16 | optname) -> value
-     * Currently stores integer options only (most common case).
+     * Format: (level << 16 | optname) -> value. Only integer options
+     * are stored (most common case). Linear search is fine: ≤32 entries.
      */
-    std::unordered_map<uint32_t, s32> m_socket_options;
+    struct SocketOptionEntry {
+        uint32_t key;
+        s32 value;
+        bool valid;
+    };
+    std::array<SocketOptionEntry, MAX_SOCKET_OPTIONS> m_socket_options{};
 
     /**
      * @brief Helper to get option key from level and optname

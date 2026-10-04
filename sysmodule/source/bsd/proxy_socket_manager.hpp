@@ -62,7 +62,7 @@
 #pragma once
 
 #include <stratosphere.hpp>
-#include <unordered_map>
+#include <array>
 #include <memory>
 #include "proxy_socket.hpp"
 #include "ephemeral_port_pool.hpp"
@@ -577,14 +577,37 @@ private:
                                         ProxySocket* out_sockets[], size_t max_sockets);
 
     /**
+     * @brief Map of file descriptor to ProxySocket — fixed-size flat array.
+     *
+     * No heap allocation per socket insert/remove. Linear scan is fine: the
+     * cap (MAX_PROXY_SOCKETS = 64) is small and game fds are mostly sequential.
+     */
+    struct ProxySocketEntry {
+        s32 fd = INVALID_FD;
+        std::unique_ptr<ProxySocket> socket;
+    };
+    std::array<ProxySocketEntry, MAX_PROXY_SOCKETS> m_sockets{};
+    size_t m_socket_count = 0;
+
+    /**
+     * @brief Find the socket entry for a given fd
+     *
+     * Linear scan over the flat array. Caller must hold m_mutex.
+     *
+     * @param fd File descriptor to look up
+     * @return Pointer to the entry, or nullptr if not found
+     */
+    ProxySocketEntry* FindSocketEntry(s32 fd);
+
+    /**
+     * @brief Const overload of FindSocketEntry
+     */
+    const ProxySocketEntry* FindSocketEntry(s32 fd) const;
+
+    /**
      * @brief Mutex for thread safety
      */
     mutable os::Mutex m_mutex{false};
-
-    /**
-     * @brief Map of file descriptor to ProxySocket
-     */
-    std::unordered_map<s32, std::unique_ptr<ProxySocket>> m_sockets;
 
     /**
      * @brief Ephemeral port pool

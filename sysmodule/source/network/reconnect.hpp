@@ -63,6 +63,34 @@
 namespace ryu_ldn {
 namespace network {
 
+// =============================================================================
+// Reconnection default constants
+// =============================================================================
+// Named constants for the default ReconnectConfig values. Kept at namespace
+// scope so callers (e.g. RyuLdnClientConfig) can reference the same values
+// instead of duplicating magic numbers.
+
+/// @brief Initial backoff delay before the first retry (ms)
+constexpr uint32_t RECONNECT_INITIAL_DELAY_MS = 1000;
+
+/// @brief Maximum backoff delay cap (ms)
+constexpr uint32_t RECONNECT_MAX_DELAY_MS = 30000;
+
+/// @brief Exponential multiplier as fixed-point percent (200 = 2.0x)
+constexpr uint16_t RECONNECT_MULTIPLIER_PERCENT = 200;
+
+/// @brief Jitter percentage (+/-) applied to each computed delay
+constexpr uint8_t RECONNECT_JITTER_PERCENT = 10;
+
+/// @brief Default max retry count (0 = auto-reconnect disabled)
+constexpr uint16_t RECONNECT_MAX_RETRIES_DEFAULT = 0;
+
+/// @brief Number of fast (short-delay) retries before exponential backoff
+constexpr uint8_t RECONNECT_FAST_RETRIES = 1;
+
+/// @brief Delay used for fast retries (ms)
+constexpr uint32_t RECONNECT_FAST_DELAY_MS = 200;
+
 /**
  * @brief Configuration for the reconnection manager
  *
@@ -145,13 +173,13 @@ struct ReconnectConfig {
      * - 1 fast retry at 200ms
      */
     ReconnectConfig()
-        : initial_delay_ms(1000)
-        , max_delay_ms(30000)
-        , multiplier_percent(200)
-        , jitter_percent(10)
-        , max_retries(0)
-        , fast_retries(1)
-        , fast_delay_ms(200)
+        : initial_delay_ms(RECONNECT_INITIAL_DELAY_MS)
+        , max_delay_ms(RECONNECT_MAX_DELAY_MS)
+        , multiplier_percent(RECONNECT_MULTIPLIER_PERCENT)
+        , jitter_percent(RECONNECT_JITTER_PERCENT)
+        , max_retries(RECONNECT_MAX_RETRIES_DEFAULT)
+        , fast_retries(RECONNECT_FAST_RETRIES)
+        , fast_delay_ms(RECONNECT_FAST_DELAY_MS)
     {}
 };
 

@@ -378,8 +378,8 @@ extern Logger g_logger;
  */
 #define LOG_ERROR(fmt, ...) \
     do { \
-        if (ryu_ldn::debug::g_logger.should_log(ryu_ldn::debug::LogLevel::Error)) { \
-            ryu_ldn::debug::g_logger.log(ryu_ldn::debug::LogLevel::Error, fmt, ##__VA_ARGS__); \
+        if (::ryu_ldn::debug::g_logger.should_log(::ryu_ldn::debug::LogLevel::Error)) { \
+            ::ryu_ldn::debug::g_logger.log(::ryu_ldn::debug::LogLevel::Error, fmt, ##__VA_ARGS__); \
         } \
     } while(0)
 
@@ -390,8 +390,8 @@ extern Logger g_logger;
  */
 #define LOG_WARN(fmt, ...) \
     do { \
-        if (ryu_ldn::debug::g_logger.should_log(ryu_ldn::debug::LogLevel::Warning)) { \
-            ryu_ldn::debug::g_logger.log(ryu_ldn::debug::LogLevel::Warning, fmt, ##__VA_ARGS__); \
+        if (::ryu_ldn::debug::g_logger.should_log(::ryu_ldn::debug::LogLevel::Warning)) { \
+            ::ryu_ldn::debug::g_logger.log(::ryu_ldn::debug::LogLevel::Warning, fmt, ##__VA_ARGS__); \
         } \
     } while(0)
 
@@ -402,8 +402,8 @@ extern Logger g_logger;
  */
 #define LOG_INFO(fmt, ...) \
     do { \
-        if (ryu_ldn::debug::g_logger.should_log(ryu_ldn::debug::LogLevel::Info)) { \
-            ryu_ldn::debug::g_logger.log(ryu_ldn::debug::LogLevel::Info, fmt, ##__VA_ARGS__); \
+        if (::ryu_ldn::debug::g_logger.should_log(::ryu_ldn::debug::LogLevel::Info)) { \
+            ::ryu_ldn::debug::g_logger.log(::ryu_ldn::debug::LogLevel::Info, fmt, ##__VA_ARGS__); \
         } \
     } while(0)
 
@@ -414,8 +414,8 @@ extern Logger g_logger;
  */
 #define LOG_VERBOSE(fmt, ...) \
     do { \
-        if (ryu_ldn::debug::g_logger.should_log(ryu_ldn::debug::LogLevel::Verbose)) { \
-            ryu_ldn::debug::g_logger.log(ryu_ldn::debug::LogLevel::Verbose, fmt, ##__VA_ARGS__); \
+        if (::ryu_ldn::debug::g_logger.should_log(::ryu_ldn::debug::LogLevel::Verbose)) { \
+            ::ryu_ldn::debug::g_logger.log(::ryu_ldn::debug::LogLevel::Verbose, fmt, ##__VA_ARGS__); \
         } \
     } while(0)
 

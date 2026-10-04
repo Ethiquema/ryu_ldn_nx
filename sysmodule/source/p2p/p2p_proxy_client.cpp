@@ -73,8 +73,9 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
+#include <cerrno>
 #include <cstring>
+#include <utility>
 
 namespace ams::mitm::p2p {
 
@@ -110,7 +111,7 @@ void ClientRecvThreadEntry(void* arg) {
 // One stack is enough — the sysmodule only ever holds a single P2pProxyClient
 // (via ICommunicationService::m_p2p_client) at a time.
 constexpr size_t P2P_CLIENT_STACK_SIZE = 0x4000;
-alignas(os::ThreadStackAlignment) constinit u8
+alignas(os::ThreadStackAlignment) static constinit u8
     g_p2p_client_recv_thread_stack[P2P_CLIENT_STACK_SIZE];
 
 // =============================================================================
@@ -174,7 +175,7 @@ bool P2pProxyClient::Connect(const char* address, uint16_t port) {
     }
 
     // Parse IP address
-    struct in_addr addr;
+    struct in_addr addr{};
     if (inet_pton(AF_INET, address, &addr) != 1) {
         LOG_ERROR("P2P client: invalid address '%s'", address);
         return false;
@@ -271,7 +272,7 @@ bool P2pProxyClient::Connect(const uint8_t* ip_bytes, size_t ip_len, uint16_t po
         FD_ZERO(&write_fds);
         FD_SET(m_socket_fd, &write_fds);
 
-        struct timeval timeout;
+        struct timeval timeout{};
         timeout.tv_sec = CONNECT_TIMEOUT_MS / 1000;
         timeout.tv_usec = (CONNECT_TIMEOUT_MS % 1000) * 1000;
 
@@ -740,7 +741,7 @@ void P2pProxyClient::HandleProxyData(const ryu_ldn::protocol::ProxyDataHeader& h
                                       const uint8_t* data, size_t data_len) {
     LOG_VERBOSE("P2P client: received ProxyData (%zu bytes)", data_len);
 
-    if (m_packet_callback) {
+    if (m_packet_callback != nullptr) {
         // Create combined buffer for callback
         size_t total_size = sizeof(header) + data_len;
         uint8_t buffer[0x10000];
@@ -760,7 +761,7 @@ void P2pProxyClient::HandleProxyData(const ryu_ldn::protocol::ProxyDataHeader& h
 void P2pProxyClient::HandleProxyConnect(const ryu_ldn::protocol::ProxyConnectRequest& request) {
     LOG_VERBOSE("P2P client: received ProxyConnect");
 
-    if (m_packet_callback) {
+    if (m_packet_callback != nullptr) {
         m_packet_callback(ryu_ldn::protocol::PacketId::ProxyConnect,
                           &request, sizeof(request));
     }
@@ -774,7 +775,7 @@ void P2pProxyClient::HandleProxyConnect(const ryu_ldn::protocol::ProxyConnectReq
 void P2pProxyClient::HandleProxyConnectReply(const ryu_ldn::protocol::ProxyConnectResponse& response) {
     LOG_VERBOSE("P2P client: received ProxyConnectReply");
 
-    if (m_packet_callback) {
+    if (m_packet_callback != nullptr) {
         m_packet_callback(ryu_ldn::protocol::PacketId::ProxyConnectReply,
                           &response, sizeof(response));
     }
@@ -788,7 +789,7 @@ void P2pProxyClient::HandleProxyConnectReply(const ryu_ldn::protocol::ProxyConne
 void P2pProxyClient::HandleProxyDisconnect(const ryu_ldn::protocol::ProxyDisconnectMessage& message) {
     LOG_VERBOSE("P2P client: received ProxyDisconnect");
 
-    if (m_packet_callback) {
+    if (m_packet_callback != nullptr) {
         m_packet_callback(ryu_ldn::protocol::PacketId::ProxyDisconnect,
                           &message, sizeof(message));
     }

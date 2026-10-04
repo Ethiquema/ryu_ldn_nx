@@ -54,6 +54,8 @@
 #include "../ldn/ldn_shared_state.hpp"
 #include "../config/game_whitelist.hpp"
 
+#include <array>
+
 // Atmosphere MITM dispatch macros for IPC forwarding
 #include <stratosphere/sf/sf_mitm_dispatch.h>
 
@@ -62,6 +64,14 @@ extern "C" {
 }
 
 namespace ams::mitm::bsd {
+
+// =============================================================================
+// Static-allocation constants
+// =============================================================================
+
+constexpr size_t MAX_SOCKET_INFO = 128;       ///< Cap for g_socket_info entries
+constexpr size_t MAX_MITM_PIDS = 32;          ///< Cap for g_mitm_pid_count entries (raised from 16 — a multi-session sysmodule can exceed 16 concurrent PIDs)
+constexpr size_t MAX_ABANDONED_SERVICES = 32; ///< Cap for g_abandoned_forward_services (raised from 16 — defensive against session bursts)
 
 // =============================================================================
 // Socket Type/Protocol Tracking
@@ -82,7 +92,7 @@ struct SocketInfo {
 };
 
 /**
- * @brief Socket info tracking table
+ * @brief Socket info tracking table — fixed-size flat array.
  *
  * Maps file descriptor to socket info. This is needed because Socket()
  * creates the fd but Bind/Connect happens later, and we need the socket
@@ -94,7 +104,28 @@ struct SocketInfo {
  * fd collisions are handled by the fact that each BsdMitmService instance
  * forwards to a different real service session.
  */
-static std::unordered_map<s32, SocketInfo> g_socket_info;
+struct SocketInfoEntry {
+    s32 fd = -1;
+    SocketInfo info{};
+    bool valid = false;
+};
+/**
+ * @brief Global socket info tracking table (fixed-size flat array).
+ *
+ * @role Maps every fd created via the BSD MITM `Socket()` to its SocketInfo so
+ *       later `Bind`/`Connect` calls can recover the type/protocol and decide
+ *       whether to wrap the fd in a ProxySocket for LDN tunneling.
+ * @modified_by `BsdMitmService` member functions in this file (Socket, Bind,
+ *              Connect, Close, plus session cleanup) via `FindOrCreateSocketInfoEntry`
+ *              and `EraseSocketInfoEntry` — all under g_socket_info_mutex.
+ * @thread_safety Protected by g_socket_info_mutex. Every reader and writer in
+ *                this file takes `std::scoped_lock lock(g_socket_info_mutex)`
+ *                before touching the array; the only exception is the proxy
+ *                socket close path, which copies entries out under the mutex
+ *                and then closes the proxy socket *without* holding it to
+ *                avoid lock-order inversion.
+ */
+static std::array<SocketInfoEntry, MAX_SOCKET_INFO> g_socket_info{};
 
 /**
  * @brief Mutex protecting g_socket_info
@@ -104,18 +135,119 @@ static std::unordered_map<s32, SocketInfo> g_socket_info;
 static os::Mutex g_socket_info_mutex{false};
 
 /**
- * @brief Map of PIDs to session count for BSD MITM
+ * @brief Find a socket info entry by fd (caller must hold g_socket_info_mutex)
+ */
+static SocketInfoEntry* FindSocketInfoEntry(s32 fd) {
+    for (auto& entry : g_socket_info) {
+        if (entry.valid && entry.fd == fd) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Find an existing socket info entry or allocate a new one.
+ *
+ * Caller must hold g_socket_info_mutex. Returns nullptr if the table is full.
+ */
+static SocketInfoEntry* FindOrCreateSocketInfoEntry(s32 fd) {
+    if (SocketInfoEntry* existing = FindSocketInfoEntry(fd)) {
+        return existing;
+    }
+    for (auto& entry : g_socket_info) {
+        if (!entry.valid) {
+            entry.fd = fd;
+            entry.valid = true;
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Invalidate a socket info entry (caller must hold g_socket_info_mutex)
+ *
+ * Marks the entry as free so it can be reused by a future FindOrCreateSocketInfoEntry.
+ * Does NOT compact the array — entries are slot-reused, not shifted.
+ */
+static void EraseSocketInfoEntry(SocketInfoEntry* entry) {
+    if (entry == nullptr) {
+        return;
+    }
+    entry->fd = -1;
+    entry->info = SocketInfo{};
+    entry->valid = false;
+}
+
+/**
+ * @brief Map of PIDs to session count for BSD MITM — fixed-size flat array.
  *
  * Tracks how many BSD sessions have been intercepted per process.
  * We intercept ALL BSD sessions from whitelisted games because some games
  * (like Mario Kart 8) may use multiple sessions for different operations.
  * Value: number of BSD sessions intercepted for this PID.
  */
-static std::unordered_map<u64, u32> g_mitm_pid_count;
+struct MitmPidEntry {
+    u64 pid = 0;
+    u32 count = 0;
+    bool valid = false;
+};
+/**
+ * @brief Global per-PID BSD session counter table (fixed-size flat array).
+ *
+ * @role Tracks how many BSD sessions have been intercepted per process so the
+ *       MITM can keep intercepting ALL BSD sessions from whitelisted games
+ *       (some games, e.g. Mario Kart 8, open several bsd:u sessions).
+ * @modified_by `BsdMitmService` constructor and destructor paths via
+ *              `FindOrCreateMitmPidEntry` and direct count increments, all
+ *              under g_mitm_pids_mutex.
+ * @thread_safety Protected by g_mitm_pids_mutex. Every access in this file
+ *                is wrapped in `std::scoped_lock lock(g_mitm_pids_mutex)`.
+ */
+static std::array<MitmPidEntry, MAX_MITM_PIDS> g_mitm_pid_count{};
+
+/**
+ * @brief Mutex protecting g_mitm_pid_count.
+ *
+ * Held by any code that reads or mutates g_mitm_pid_count (see the
+ * `std::scoped_lock lock(g_mitm_pids_mutex)` sites in this file).
+ */
 static os::Mutex g_mitm_pids_mutex{false};
 
 /**
+ * @brief Find a mitm pid entry by pid (caller must hold g_mitm_pids_mutex)
+ */
+static MitmPidEntry* FindMitmPidEntry(u64 pid) {
+    for (auto& entry : g_mitm_pid_count) {
+        if (entry.valid && entry.pid == pid) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Find or create a mitm pid entry (caller must hold g_mitm_pids_mutex)
+ */
+static MitmPidEntry* FindOrCreateMitmPidEntry(u64 pid) {
+    if (MitmPidEntry* existing = FindMitmPidEntry(pid)) {
+        return existing;
+    }
+    for (auto& entry : g_mitm_pid_count) {
+        if (!entry.valid) {
+            entry.pid = pid;
+            entry.count = 0;
+            entry.valid = true;
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+/**
  * @brief List of abandoned forward services (sessions that never got RegisterClient)
+ * — fixed-size flat array.
  *
  * When a BSD MITM session is closed without ever receiving RegisterClient,
  * we move its forward_service here instead of closing it. This prevents
@@ -124,7 +256,33 @@ static os::Mutex g_mitm_pids_mutex{false};
  * These services will be cleaned up when the game process exits or when
  * we explicitly clean them (e.g., on LDN disconnect).
  */
-static std::vector<std::shared_ptr<::Service>> g_abandoned_forward_services;
+struct AbandonedServiceEntry {
+    std::shared_ptr<::Service> service;
+    bool valid = false;
+};
+/**
+ * @brief Global table of abandoned forward services (fixed-size flat array).
+ *
+ * @role When a BSD MITM session is closed without ever receiving
+ *       `RegisterClient`, its forward_service is moved here instead of being
+ *       closed, to avoid the system freeze that closing an unregistered
+ *       bsd:u session triggers. Entries are cleaned up on game process exit
+ *       or on explicit LDN-disconnect cleanup.
+ * @modified_by `BsdMitmService` destructor / cleanup paths in this file
+ *              (e.g. `CleanupAbandonedServices`, the destructor's forward
+ *              service abandonment path) — all under g_abandoned_services_mutex.
+ * @thread_safety Protected by g_abandoned_services_mutex. Every reader and
+ *                writer in this file takes
+ *                `std::scoped_lock lock(g_abandoned_services_mutex)` first.
+ */
+static std::array<AbandonedServiceEntry, MAX_ABANDONED_SERVICES> g_abandoned_forward_services{};
+
+/**
+ * @brief Mutex protecting g_abandoned_forward_services.
+ *
+ * Held by any code that reads or mutates g_abandoned_forward_services (see the
+ * `std::scoped_lock lock(g_abandoned_services_mutex)` sites in this file).
+ */
 static os::Mutex g_abandoned_services_mutex{false};
 
 // =============================================================================
@@ -153,16 +311,19 @@ static os::Mutex g_abandoned_services_mutex{false};
  * @param s Shared pointer to the original bsd:u service session
  * @param c Process information for the client (PID, program ID, etc.)
  */
-BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)
+// rvalue reference is forwarded to the MitmServiceImplBase constructor
+// ( Atmosphere mitm pattern) — the check cannot see the move through
+// std::forward.
+BsdMitmService::BsdMitmService(std::shared_ptr<::Service>&& s, const sm::MitmProcessInfo& c)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     : MitmServiceImplBase(std::forward<std::shared_ptr<::Service>>(s), c)
     , m_client_pid(c.process_id.value)
     , m_session_id(++s_next_session_id)
 {
     // Get more info about the forward service
     ::Service* fwd = m_forward_service.get();
-    Handle session_handle = fwd ? fwd->session : INVALID_HANDLE;
-    bool is_domain = fwd ? serviceIsDomain(fwd) : false;
-    u32 object_id = fwd ? fwd->object_id : 0;
+    Handle session_handle = (fwd != nullptr) ? fwd->session : INVALID_HANDLE;
+    bool is_domain = (fwd != nullptr) ? serviceIsDomain(fwd) : false;
+    u32 object_id = (fwd != nullptr) ? fwd->object_id : 0;
 
     LOG_INFO("[BSD#%u] CONSTRUCTOR: program_id=0x%016lx, pid=%lu, fwd_srv=%p (handle=0x%x, domain=%d, object_id=%u)",
              m_session_id, c.program_id.value, m_client_pid, fwd, session_handle, is_domain, object_id);
@@ -193,16 +354,14 @@ BsdMitmService::~BsdMitmService() {
     {
         std::scoped_lock lock(g_socket_info_mutex);
         size_t cleaned = 0;
-        for (auto it = g_socket_info.begin(); it != g_socket_info.end(); ) {
-            if (it->second.session_id == m_session_id) {
+        for (auto& entry : g_socket_info) {
+            if (entry.valid && entry.info.session_id == m_session_id) {
                 // Collect proxy sockets to close after releasing the lock
-                if (it->second.is_proxy) {
-                    proxy_fds_to_close.push_back(it->first);
+                if (entry.info.is_proxy) {
+                    proxy_fds_to_close.push_back(entry.fd);
                 }
-                it = g_socket_info.erase(it);
+                EraseSocketInfoEntry(&entry);
                 cleaned++;
-            } else {
-                ++it;
             }
         }
         if (cleaned > 0) {
@@ -222,15 +381,28 @@ BsdMitmService::~BsdMitmService() {
     bool was_last_session = false;
     {
         std::scoped_lock lock(g_mitm_pids_mutex);
-        auto it = g_mitm_pid_count.find(m_client_pid);
-        if (it != g_mitm_pid_count.end()) {
-            if (it->second > 0) {
-                it->second--;
+        MitmPidEntry* entry = FindMitmPidEntry(m_client_pid);
+        if (entry != nullptr) {
+            if (entry->count > 0) {
+                entry->count--;
             }
-            if (it->second == 0) {
-                g_mitm_pid_count.erase(it);
+            if (entry->count == 0) {
+                // Free the slot
+                entry->pid = 0;
+                entry->count = 0;
+                entry->valid = false;
                 was_last_session = true;
             }
+        } else {
+            // FIX (#saturation): No PID entry for this process. This can happen
+            // when the PID table was saturated and slots were recycled by other
+            // processes. To guarantee that abandoned forward services are still
+            // cleaned up at least once per process lifetime, treat this as the
+            // last session and run the cleanup. The cleanup is idempotent and
+            // mutex-protected, so calling it extra times is safe.
+            LOG_WARN("[BSD#%u] No PID entry for pid=%lu on destruction — running abandoned cleanup as fail-safe",
+                     m_session_id, m_client_pid);
+            was_last_session = true;
         }
     }
 
@@ -255,16 +427,14 @@ BsdMitmService::~BsdMitmService() {
     auto& shared_state = ams::mitm::ldn::SharedState::GetInstance();
     u32 remaining = shared_state.DecrementSessionCount();
     LOG_INFO("[BSD#%u] Destructor: active sessions remaining = %u", m_session_id, remaining);
-
-    if (remaining == 0) {
-        LOG_INFO("[BSD#%u] Destructor: no active sessions — game closed, terminating sysmodule", m_session_id);
-        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("ldn:u"));
-        (void)sm::mitm::UninstallMitm(sm::ServiceName::Encode("bsd:u"));
-        ryu_ldn::debug::g_logger.flush();
-        svc::ExitProcess();
-    }
+    // NOTE: We intentionally do NOT call svc::ExitProcess() here.
+    // This sysmodule is a boot2 process (TitleID 4200000000000010) that
+    // must survive across multiple game sessions. When the game exits,
+    // Atmosphere destroys the IPC sessions and these destructors run,
+    // but the sysmodule itself stays alive. The session counter resets
+    // naturally when a new game opens new ldn:u/bsd:u sessions.
     ::Service* fwd = m_forward_service.get();
-    Handle session_handle = fwd ? fwd->session : INVALID_HANDLE;
+    Handle session_handle = (fwd != nullptr) ? fwd->session : INVALID_HANDLE;
     LOG_INFO("[BSD#%u] DESTRUCTOR: pid=%lu, fwd_srv=%p (handle=0x%x), commands=%u, registered=%d",
              m_session_id, m_client_pid, fwd, session_handle, m_command_count, m_registered);
 
@@ -277,9 +447,54 @@ BsdMitmService::~BsdMitmService() {
         if (m_forward_service) {
             LOG_WARN("[BSD#%u] Session never registered - moving forward_service to abandoned list to prevent freeze",
                      m_session_id);
-            std::scoped_lock lock(g_abandoned_services_mutex);
-            g_abandoned_forward_services.push_back(std::move(m_forward_service));
-            LOG_INFO("[BSD#%u] Abandoned services count: %zu", m_session_id, g_abandoned_forward_services.size());
+
+            // FIX (#saturation): If the abandoned table is full, force a
+            // synchronous cleanup first to free slots, then retry the
+            // insertion. This prevents the shared_ptr destructor of the base
+            // class from closing an unregistered session, which freezes the
+            // Switch. CleanupAbandonedServices() is idempotent and
+            // mutex-protected. We call it OUTSIDE the abandoned mutex to
+            // respect lock ordering (cleanup takes g_abandoned_services_mutex
+            // internally).
+            // Capture safe: lambda does not outlive *this — it is invoked
+            // synchronously twice below (try_insert() calls) inside this
+            // destructor body, before *this goes away. The lambda is not
+            // stored, copied, or queued onto any outlasting structure.
+            auto try_insert = [this]() -> bool {
+                std::scoped_lock lock(g_abandoned_services_mutex);
+                for (auto& slot : g_abandoned_forward_services) {
+                    if (!slot.valid) {
+                        slot.service = std::move(m_forward_service);
+                        slot.valid = true;
+                        size_t count = 0;
+                        for (const auto& s : g_abandoned_forward_services) {
+                            if (s.valid) { count++;
+}
+                        }
+                        LOG_INFO("[BSD#%u] Abandoned services count: %zu", m_session_id, count);
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            // invoked synchronously, capture safe (see lambda contract above)
+            if (!try_insert()) {
+                LOG_WARN("[BSD#%u] Abandoned services table full — forcing synchronous cleanup to free slots",
+                         m_session_id);
+                CleanupAbandonedServices();
+                // invoked synchronously, capture safe (see lambda contract above)
+                if (!try_insert()) {
+                    // Still full after cleanup: the forward_service stays held
+                    // by this instance and will be closed by the base class
+                    // destructor — this is the freeze path, but it only happens
+                    // if MAX_ABANDONED_SERVICES is exceeded by concurrent
+                    // unregistered sessions, which should not occur with the
+                    // raised cap (32) and the cleanup-before-insert gate.
+                    LOG_ERROR("[BSD#%u] Abandoned services table STILL full after cleanup — forward_service will be closed by base destructor (freeze risk)",
+                              m_session_id);
+                }
+            }
         }
     }
     // For registered sessions, m_forward_service will be closed normally
@@ -337,8 +552,20 @@ bool BsdMitmService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
     // Track session count and decide whether to intercept
     {
         std::scoped_lock lock(g_mitm_pids_mutex);
-        u32& count = g_mitm_pid_count[client_info.process_id.value];
-        count++;
+        MitmPidEntry* entry = FindOrCreateMitmPidEntry(client_info.process_id.value);
+        if (entry == nullptr) {
+            // FIX (#saturation): PID table full — preserve defensive behavior:
+            // do NOT intercept. Returning true here would create a session with
+            // no PID entry, so the destructor's FindMitmPidEntry() would return
+            // nullptr, was_last_session would stay false, and
+            // CleanupAbandonedServices() would never run for this process,
+            // leaking abandoned forward services. Falling back to transparent
+            // forwarding keeps the session count consistent.
+            LOG_WARN("BSD ShouldMitm #%u: pid table full (%zu entries) - falling back to transparent pass-through for pid=%lu",
+                     call_id, MAX_MITM_PIDS, client_info.process_id.value);
+            return false;
+        }
+        u32 count = ++entry->count;
 
         // Skip the first BSD session from each game process.
         // Games typically open a "dummy" first session that is never used
@@ -370,18 +597,27 @@ bool BsdMitmService::ShouldMitm(const sm::MitmProcessInfo& client_info) {
 void BsdMitmService::CleanupAbandonedServices() {
     std::scoped_lock lock(g_abandoned_services_mutex);
 
-    if (g_abandoned_forward_services.empty()) {
+    size_t count = 0;
+    for (const auto& slot : g_abandoned_forward_services) {
+        if (slot.valid) { count++;
+}
+    }
+    if (count == 0) {
         return;
     }
 
-    LOG_INFO("BSD CleanupAbandonedServices: cleaning up %zu abandoned services",
-             g_abandoned_forward_services.size());
+    LOG_INFO("BSD CleanupAbandonedServices: cleaning up %zu abandoned services", count);
 
-    // Clear the vector - this will call serviceClose() on each service
+    // Clear the array - this will call serviceClose() on each service
     // We do this here (during LDN disconnect) rather than during session
     // destruction because it's safer to close these sessions when the
     // game is no longer actively using BSD.
-    g_abandoned_forward_services.clear();
+    for (auto& slot : g_abandoned_forward_services) {
+        if (slot.valid) {
+            slot.service.reset();
+            slot.valid = false;
+        }
+    }
 
     LOG_INFO("BSD CleanupAbandonedServices: cleanup complete");
 }
@@ -427,7 +663,7 @@ Result BsdMitmService::RegisterClient(
     const ryu_ldn::bsd::LibraryConfigData& config,
     const sf::ClientProcessId& client_pid,
     u64 tmem_size,
-    sf::CopyHandle&& transfer_memory)
+    sf::CopyHandle&& transfer_memory)  // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved) — forwarded to real bsd:u below
 {
     m_command_count++;
 
@@ -453,7 +689,7 @@ Result BsdMitmService::RegisterClient(
         ryu_ldn::bsd::LibraryConfigData config;
         u64 pid_placeholder;  // Always 0
         u64 tmem_size;
-    } forward_input = { config, 0, tmem_size };
+    } forward_input = { .config=config, .pid_placeholder=0, .tmem_size=tmem_size };
 
     u64 pid_out = 0;
 
@@ -569,7 +805,7 @@ Result BsdMitmService::Socket(
         s32 domain;
         s32 type;
         s32 protocol;
-    } in = { domain, type, protocol };
+    } in = { .domain=domain, .type=type, .protocol=protocol };
 
     struct {
         s32 errno_val;
@@ -588,7 +824,7 @@ Result BsdMitmService::Socket(
     // Track socket info for later Bind/Connect calls
     if (R_SUCCEEDED(rc) && out.errno_val == 0 && out.fd >= 0) {
         // Determine protocol from type if not specified
-        ryu_ldn::bsd::ProtocolType proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
+        auto proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
         if (protocol == 0) {
             // Default protocol based on type
             if (type == static_cast<s32>(ryu_ldn::bsd::SocketType::Stream)) {
@@ -600,13 +836,18 @@ Result BsdMitmService::Socket(
 
         {
             std::scoped_lock lock(g_socket_info_mutex);
-            g_socket_info[out.fd] = SocketInfo{
-                .type = static_cast<ryu_ldn::bsd::SocketType>(type),
-                .protocol = proto,
-                .is_proxy = false,
-                .broadcast = false,
-                .session_id = m_session_id,
-            };
+            SocketInfoEntry* entry = FindOrCreateSocketInfoEntry(out.fd);
+            if (entry != nullptr) {
+                entry->info = SocketInfo{
+                    .type = static_cast<ryu_ldn::bsd::SocketType>(type),
+                    .protocol = proto,
+                    .is_proxy = false,
+                    .broadcast = false,
+                    .session_id = m_session_id,
+                };
+            } else {
+                LOG_WARN("BSD Socket fd=%d tracking table full", out.fd);
+            }
         }
         LOG_VERBOSE("BSD Socket tracked fd=%d type=%d proto=%d session=%u", out.fd, type, static_cast<s32>(proto), m_session_id);
     }
@@ -643,7 +884,7 @@ Result BsdMitmService::SocketExempt(
         s32 domain;
         s32 type;
         s32 protocol;
-    } in = { domain, type, protocol };
+    } in = { .domain=domain, .type=type, .protocol=protocol };
 
     struct {
         s32 errno_val;
@@ -659,7 +900,7 @@ Result BsdMitmService::SocketExempt(
 
     // Track socket info (same logic as Socket)
     if (R_SUCCEEDED(rc) && out.errno_val == 0 && out.fd >= 0) {
-        ryu_ldn::bsd::ProtocolType proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
+        auto proto = static_cast<ryu_ldn::bsd::ProtocolType>(protocol);
         if (protocol == 0) {
             if (type == static_cast<s32>(ryu_ldn::bsd::SocketType::Stream)) {
                 proto = ryu_ldn::bsd::ProtocolType::Tcp;
@@ -670,13 +911,18 @@ Result BsdMitmService::SocketExempt(
 
         {
             std::scoped_lock lock(g_socket_info_mutex);
-            g_socket_info[out.fd] = SocketInfo{
-                .type = static_cast<ryu_ldn::bsd::SocketType>(type),
-                .protocol = proto,
-                .is_proxy = false,
-                .broadcast = false,
-                .session_id = m_session_id,
-            };
+            SocketInfoEntry* entry = FindOrCreateSocketInfoEntry(out.fd);
+            if (entry != nullptr) {
+                entry->info = SocketInfo{
+                    .type = static_cast<ryu_ldn::bsd::SocketType>(type),
+                    .protocol = proto,
+                    .is_proxy = false,
+                    .broadcast = false,
+                    .session_id = m_session_id,
+                };
+            } else {
+                LOG_WARN("BSD SocketExempt fd=%d tracking table full", out.fd);
+            }
         }
         LOG_VERBOSE("BSD SocketExempt tracked fd=%d type=%d proto=%d session=%u", out.fd, type, static_cast<s32>(proto), m_session_id);
     }
@@ -769,9 +1015,9 @@ Result BsdMitmService::Close(
     // Check if this is a proxy socket
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end()) {
-            if (it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr) {
+            if (entry->info.is_proxy) {
                 // Close the proxy socket
                 auto& manager = ProxySocketManager::GetInstance();
                 if (manager.CloseProxySocket(fd)) {
@@ -779,7 +1025,7 @@ Result BsdMitmService::Close(
                 }
             }
             // Remove from tracking table
-            g_socket_info.erase(it);
+            EraseSocketInfoEntry(entry);
         }
     }
 
@@ -828,7 +1074,7 @@ Result BsdMitmService::DuplicateSocket(
         s32 fd;
         u32 _pad;
         u64 target_pid;
-    } in = { fd, 0, target_pid };
+    } in = { .fd=fd, ._pad=0, .target_pid=target_pid };
 
     struct {
         s32 errno_val;
@@ -883,7 +1129,7 @@ Result BsdMitmService::RegisterClientShared(
         ryu_ldn::bsd::LibraryConfigData config;
         u64 pid_placeholder;
         u64 tmem_size;
-    } forward_input = { config, 0, tmem_size };
+    } forward_input = { .config=config, .pid_placeholder=0, .tmem_size=tmem_size };
 
     u64 pid_out = 0;
 
@@ -941,8 +1187,8 @@ Result BsdMitmService::RecvMMsg(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -955,7 +1201,7 @@ Result BsdMitmService::RecvMMsg(
     }
 
     // Forward to real service
-    struct { s32 fd; s32 vlen; s32 flags; s32 timeout; } in = { fd, vlen, flags, timeout };
+    struct { s32 fd; s32 vlen; s32 flags; s32 timeout; } in = { .fd=fd, .vlen=vlen, .flags=flags, .timeout=timeout };
     struct { s32 errno_val; s32 count; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
@@ -982,8 +1228,8 @@ Result BsdMitmService::SendMMsg(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -997,13 +1243,15 @@ Result BsdMitmService::SendMMsg(
     }
 
     // Forward to real service
-    struct { s32 fd; s32 vlen; s32 flags; } in = { fd, vlen, flags };
+    struct { s32 fd; s32 vlen; s32 flags; } in = { .fd=fd, .vlen=vlen, .flags=flags };
     struct { s32 errno_val; s32 count; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
         m_forward_service.get(), 30, in, out,
         .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcAutoSelect },
-        .buffers = { { const_cast<void*>(static_cast<const void*>(in_data.GetPointer())), in_data.GetSize() } },
+        // const_cast: the Atmosphere sf C API takes void* for ALL buffers
+        // (In and Out alike) — the const-ness is expressed by SfBufferAttr_In.
+        .buffers = { { const_cast<void*>(static_cast<const void*>(in_data.GetPointer())), in_data.GetSize() } },  // NOLINT(cppcoreguidelines-pro-type-const-cast)
     );
 
     out_errno.SetValue(out.errno_val);
@@ -1018,7 +1266,7 @@ Result BsdMitmService::EventFd(
     m_command_count++;
     LOG_INFO("BSD EventFd: initval=%lu, flags=%d", initval, flags);
 
-    struct { u64 initval; s32 flags; u32 _pad; } in = { initval, flags, 0 };
+    struct { u64 initval; s32 flags; u32 _pad; } in = { .initval=initval, .flags=flags, ._pad=0 };
     struct { s32 errno_val; s32 fd; } out = {};
 
     Result rc = serviceMitmDispatchInOut(
@@ -1042,7 +1290,9 @@ Result BsdMitmService::RegisterResourceStatisticsName(
     Result rc = serviceMitmDispatchInOut(
         m_forward_service.get(), 32, pid, errno_out,
         .buffer_attrs = { SfBufferAttr_In | SfBufferAttr_HipcMapAlias },
-        .buffers = { { const_cast<void*>(static_cast<const void*>(name.GetPointer())), name.GetSize() } },
+        // const_cast: the Atmosphere sf C API takes void* for ALL buffers
+        // (In and Out alike) — the const-ness is expressed by SfBufferAttr_In.
+        .buffers = { { const_cast<void*>(static_cast<const void*>(name.GetPointer())), name.GetSize() } },  // NOLINT(cppcoreguidelines-pro-type-const-cast)
     );
 
     out_errno.SetValue(errno_out);
@@ -1094,7 +1344,7 @@ Result BsdMitmService::Bind(
     // Copy to aligned stack buffer — IPC pointer may be misaligned,
     // and SockAddrIn::IsLdnAddress() does __builtin_bswap32 which faults on ARM64.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn sock_addr_copy;
+        ryu_ldn::bsd::SockAddrIn sock_addr_copy{};
         __builtin_memcpy(&sock_addr_copy, addr.GetPointer(), sizeof(sock_addr_copy));
 
         // Log the bind address for debugging
@@ -1122,13 +1372,13 @@ Result BsdMitmService::Bind(
                          sock_addr_copy.GetPort());
 
                 // Get socket info (type and protocol) under lock
-                SocketInfo socket_info;
+                SocketInfo socket_info{};
                 bool found = false;
                 {
                     std::scoped_lock lock(g_socket_info_mutex);
-                    auto it = g_socket_info.find(fd);
-                    if (it != g_socket_info.end()) {
-                        socket_info = it->second;
+                    SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+                    if (entry != nullptr) {
+                        socket_info = entry->info;
                         found = true;
                     }
                 }
@@ -1192,9 +1442,9 @@ Result BsdMitmService::Bind(
                         // Mark as proxy socket
                         {
                             std::scoped_lock lock(g_socket_info_mutex);
-                            auto it = g_socket_info.find(fd);
-                            if (it != g_socket_info.end()) {
-                                it->second.is_proxy = true;
+                            SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+                            if (entry != nullptr) {
+                                entry->info.is_proxy = true;
                             }
                         }
 
@@ -1292,7 +1542,7 @@ Result BsdMitmService::Connect(
     // Copy to aligned stack buffer — IPC pointer may be misaligned,
     // and SockAddrIn::IsLdnAddress() does __builtin_bswap32 which faults on ARM64.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn sock_addr_copy;
+        ryu_ldn::bsd::SockAddrIn sock_addr_copy{};
         __builtin_memcpy(&sock_addr_copy, addr.GetPointer(), sizeof(sock_addr_copy));
 
         // Check address family is IPv4 and address is LDN
@@ -1308,13 +1558,13 @@ Result BsdMitmService::Connect(
                      sock_addr_copy.GetPort());
 
             // Get socket info (type and protocol) under lock
-            SocketInfo socket_info;
+            SocketInfo socket_info{};
             bool found = false;
             {
                 std::scoped_lock lock(g_socket_info_mutex);
-                auto it = g_socket_info.find(fd);
-                if (it != g_socket_info.end()) {
-                    socket_info = it->second;
+                SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+                if (entry != nullptr) {
+                    socket_info = entry->info;
                     found = true;
                 }
             }
@@ -1375,9 +1625,9 @@ Result BsdMitmService::Connect(
                 // Mark as proxy socket
                 {
                     std::scoped_lock lock(g_socket_info_mutex);
-                    auto it = g_socket_info.find(fd);
-                    if (it != g_socket_info.end()) {
-                        it->second.is_proxy = true;
+                    SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+                    if (entry != nullptr) {
+                        entry->info.is_proxy = true;
                     }
                 }
 
@@ -1632,8 +1882,8 @@ Result BsdMitmService::Send(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -1664,7 +1914,7 @@ Result BsdMitmService::Send(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -1733,16 +1983,16 @@ Result BsdMitmService::SendTo(
 
     // Check if this is a proxy socket or if dest is LDN
     bool is_proxy = false;
-    SocketInfo socket_info;
+    SocketInfo socket_info{};
     bool found = false;
 
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end()) {
-            socket_info = it->second;
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr) {
+            socket_info = entry->info;
             found = true;
-            is_proxy = it->second.is_proxy;
+            is_proxy = entry->info.is_proxy;
         }
     }
 
@@ -1751,7 +2001,7 @@ Result BsdMitmService::SendTo(
     // may be misaligned, and SockAddrIn::IsLdnAddress() does
     // __builtin_bswap32 on sin_addr which faults on ARM64 if unaligned.
     if (addr.GetSize() >= sizeof(ryu_ldn::bsd::SockAddrIn) && addr.GetPointer() != nullptr) {
-        ryu_ldn::bsd::SockAddrIn dest_addr_copy;
+        ryu_ldn::bsd::SockAddrIn dest_addr_copy{};
         __builtin_memcpy(&dest_addr_copy, addr.GetPointer(), sizeof(dest_addr_copy));
 
         if (dest_addr_copy.sin_family == static_cast<uint8_t>(ryu_ldn::bsd::AddressFamily::Inet) &&
@@ -1786,9 +2036,9 @@ Result BsdMitmService::SendTo(
                 // Mark as proxy
                 {
                     std::scoped_lock lock(g_socket_info_mutex);
-                    auto it = g_socket_info.find(fd);
-                    if (it != g_socket_info.end()) {
-                        it->second.is_proxy = true;
+                    SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+                    if (entry != nullptr) {
+                        entry->info.is_proxy = true;
                     }
                 }
             }
@@ -1803,7 +2053,7 @@ Result BsdMitmService::SendTo(
             // Copy to aligned stack buffer — IPC buffer pointer may be misaligned,
             // and dereferencing a packed struct via reinterpret_cast faults on ARM64
             // when IsLdnAddress() uses __builtin_bswap32 on sin_addr.
-            ryu_ldn::bsd::SockAddrIn dest_addr_copy;
+            ryu_ldn::bsd::SockAddrIn dest_addr_copy{};
             __builtin_memcpy(&dest_addr_copy, addr.GetPointer(), sizeof(dest_addr_copy));
 
             // Send via proxy socket
@@ -1832,7 +2082,7 @@ Result BsdMitmService::SendTo(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -1902,8 +2152,8 @@ Result BsdMitmService::Recv(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -1934,7 +2184,7 @@ Result BsdMitmService::Recv(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 errno_val;
@@ -1997,8 +2247,8 @@ Result BsdMitmService::RecvFrom(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -2042,7 +2292,7 @@ Result BsdMitmService::RecvFrom(
     struct {
         s32 fd;
         s32 flags;
-    } in = { fd, flags };
+    } in = { .fd=fd, .flags=flags };
 
     struct {
         s32 ret;
@@ -2104,8 +2354,8 @@ Result BsdMitmService::Write(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -2189,8 +2439,8 @@ Result BsdMitmService::Read(
     bool is_proxy = false;
     {
         std::scoped_lock lock(g_socket_info_mutex);
-        auto it = g_socket_info.find(fd);
-        if (it != g_socket_info.end() && it->second.is_proxy) {
+        SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+        if (entry != nullptr && entry->info.is_proxy) {
             is_proxy = true;
         }
     }
@@ -2297,19 +2547,23 @@ Result BsdMitmService::Select(
 
     // Helper to check if fd is set in fd_set
     auto fd_isset = [](s32 fd, const void* fds, size_t size) -> bool {
-        if (fds == nullptr || fd < 0) return false;
+        if (fds == nullptr || fd < 0) { return false;
+}
         size_t byte_idx = static_cast<size_t>(fd) / 8;
-        if (byte_idx >= size) return false;
-        uint8_t bit = 1u << (fd % 8);
+        if (byte_idx >= size) { return false;
+}
+        uint8_t bit = 1U << (fd % 8);
         return (static_cast<const uint8_t*>(fds)[byte_idx] & bit) != 0;
     };
 
     // Helper to set fd in fd_set
     auto fd_set_bit = [](s32 fd, void* fds, size_t size) {
-        if (fds == nullptr || fd < 0) return;
+        if (fds == nullptr || fd < 0) { return;
+}
         size_t byte_idx = static_cast<size_t>(fd) / 8;
-        if (byte_idx >= size) return;
-        uint8_t bit = 1u << (fd % 8);
+        if (byte_idx >= size) { return;
+}
+        uint8_t bit = 1U << (fd % 8);
         static_cast<uint8_t*>(fds)[byte_idx] |= bit;
     };
 
@@ -2325,6 +2579,42 @@ Result BsdMitmService::Select(
     }
 
     // Check for LDN proxy sockets in the fd sets
+    //
+    // Merge strategy for select() results:
+    //
+    // The game may pass a mix of real BSD sockets (tunneled to the kernel
+    // bsd:u service) and proxy sockets (LDN virtual sockets tracked by
+    // ProxySocketManager) in the same fd_set. We cannot forward proxy fds
+    // to the real bsd:u select() — the kernel does not know about them —
+    // so we split the fd_set in three branches:
+    //
+    //   1. Proxy-only: every fd in the set is a proxy socket. We compute
+    //      readiness locally (HasPendingData / always-writable / Closed)
+    //      and return immediately without calling the real bsd:u service.
+    //      This avoids a pointless IPC round-trip and lets the game poll
+    //      LDN sockets with zero latency.
+    //
+    //   2. Mixed, proxy ready: at least one proxy fd is already ready
+    //      (pending data, writable, or closed). We return the proxy
+    //      results immediately and skip the real select(). The game gets
+    //      a prompt wakeup on the LDN socket; real-socket readiness will
+    //      be reported on the next select() call. This is the same
+    //      trade-off as POSIX select() returning early on any ready fd:
+    //      the caller is expected to re-enter the loop.
+    //
+    //   3. Mixed or real-only, no proxy ready: we forward the call to the
+    //      real bsd:u service with the *original* fd_sets intact (proxy
+    //      bits still set — the kernel will simply report them as not
+    //      ready since they are not real fds). After the forward call
+    //      returns, we OR-in the proxy readiness bits computed locally
+    //      (post-real-select merge, lines further below) so the final
+    //      output fd_sets reflect both real and proxy state.
+    //
+    // Counting: `ready_count`/`out.count` accumulates the proxy
+    // contributions; the real bsd:u service returns its own `count` for
+    // real fds, which is then incremented by the proxy merge below.
+    // Per-fd bit setting (readfds_out/writefds_out/errorfds_out) is
+    // additive — we never clear a bit set by the real service.
     bool has_proxy_sockets = false;
     bool has_real_sockets = false;
     s32 ready_count = 0;
@@ -2334,7 +2624,8 @@ Result BsdMitmService::Select(
         bool in_write = fd_isset(fd, writefds_in.GetPointer(), writefds_in.GetSize());
         bool in_error = fd_isset(fd, errorfds_in.GetPointer(), errorfds_in.GetSize());
 
-        if (!in_read && !in_write && !in_error) continue;
+        if (!in_read && !in_write && !in_error) { continue;
+}
 
         ProxySocket* proxy = manager.GetProxySocket(fd);
         if (proxy != nullptr) {
@@ -2407,6 +2698,17 @@ Result BsdMitmService::Select(
     );
 
     // If we have proxy sockets, merge results after real select
+    //
+    // Post-forward merge (branch 3 above): the real bsd:u service has
+    // filled readfds_out/writefds_out/errorfds_out with readiness bits
+    // for the *real* fds only. We now OR-in the readiness bits for any
+    // proxy fds that were in the original input sets, so the caller
+    // observes a unified view. The proxy bits computed here are
+    // identical to the ones computed in the pre-forward scan above; we
+    // recompute them (rather than caching) because proxy state can
+    // change during the real select() blocking wait — a ProxyData packet
+    // may have arrived and been dispatched to the socket's receive queue
+    // by the receive thread while we were blocked in bsd:u.
     if (has_proxy_sockets && R_SUCCEEDED(rc)) {
         for (s32 fd = 0; fd < nfds; fd++) {
             ProxySocket* proxy = manager.GetProxySocket(fd);
@@ -2496,12 +2798,12 @@ Result BsdMitmService::Poll(
 
             // Use system POLL* macros from poll.h
             // Check read readiness
-            if ((poll_fds[i].events & POLLIN) && proxy->HasPendingData()) {
+            if (((poll_fds[i].events & POLLIN) != 0) && proxy->HasPendingData()) {
                 poll_fds[i].revents |= static_cast<int16_t>(POLLIN);
             }
 
             // Proxy sockets are always writable (write goes to queue)
-            if (poll_fds[i].events & POLLOUT) {
+            if ((poll_fds[i].events & POLLOUT) != 0) {
                 poll_fds[i].revents |= static_cast<int16_t>(POLLOUT);
             }
 
@@ -2547,7 +2849,7 @@ Result BsdMitmService::Poll(
     struct {
         s32 nfds;
         s32 timeout;
-    } in = { nfds, timeout };
+    } in = { .nfds=nfds, .timeout=timeout };
 
     struct {
         s32 errno_val;
@@ -2574,11 +2876,11 @@ Result BsdMitmService::Poll(
             if (proxy != nullptr) {
                 poll_fds[i].revents = 0;
 
-                if ((poll_fds[i].events & POLLIN) && proxy->HasPendingData()) {
+                if (((poll_fds[i].events & POLLIN) != 0) && proxy->HasPendingData()) {
                     poll_fds[i].revents |= static_cast<int16_t>(POLLIN);
                     out.count++;
                 }
-                if (poll_fds[i].events & POLLOUT) {
+                if ((poll_fds[i].events & POLLOUT) != 0) {
                     poll_fds[i].revents |= static_cast<int16_t>(POLLOUT);
                     out.count++;
                 }
@@ -2716,7 +3018,7 @@ Result BsdMitmService::Ioctl(
         s32 fd;
         u32 request;
         u32 bufcount;
-    } in = { fd, request, bufcount };
+    } in = { .fd=fd, .request=request, .bufcount=bufcount };
 
     struct {
         s32 errno_val;
@@ -2807,7 +3109,7 @@ Result BsdMitmService::Fcntl(
         s32 fd;
         s32 cmd;
         s32 arg;
-    } in = { fd, cmd, arg };
+    } in = { .fd=fd, .cmd=cmd, .arg=arg };
 
     struct {
         s32 errno_val;
@@ -2877,7 +3179,7 @@ Result BsdMitmService::GetSockOpt(
         s32 fd;
         s32 level;
         s32 optname;
-    } in = { fd, level, optname };
+    } in = { .fd=fd, .level=level, .optname=optname };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -2948,9 +3250,9 @@ Result BsdMitmService::SetSockOpt(
         if (optval.GetSize() >= sizeof(s32)) {
             s32 value = *reinterpret_cast<const s32*>(optval.GetPointer());
             std::scoped_lock lock(g_socket_info_mutex);
-            auto it = g_socket_info.find(fd);
-            if (it != g_socket_info.end()) {
-                it->second.broadcast = (value != 0);
+            SocketInfoEntry* entry = FindSocketInfoEntry(fd);
+            if (entry != nullptr) {
+                entry->info.broadcast = (value != 0);
                 LOG_INFO("BSD SetSockOpt fd=%d SO_BROADCAST=%d (saved for proxy)", fd, value);
             }
         }
@@ -2961,7 +3263,7 @@ Result BsdMitmService::SetSockOpt(
         s32 fd;
         s32 level;
         s32 optname;
-    } in = { fd, level, optname };
+    } in = { .fd=fd, .level=level, .optname=optname };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3008,7 +3310,7 @@ Result BsdMitmService::Listen(
     struct {
         s32 fd;
         s32 backlog;
-    } in = { fd, backlog };
+    } in = { .fd=fd, .backlog=backlog };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3049,7 +3351,7 @@ Result BsdMitmService::Shutdown(
     struct {
         s32 fd;
         s32 how;
-    } in = { fd, how };
+    } in = { .fd=fd, .how=how };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(
@@ -3090,7 +3392,7 @@ Result BsdMitmService::ShutdownAllSockets(
     struct {
         u64 pid;
         s32 how;
-    } in = { pid, how };
+    } in = { .pid=pid, .how=how };
 
     s32 errno_out = 0;
     Result rc = serviceMitmDispatchInOut(

@@ -43,14 +43,13 @@ namespace ryu_ldn::network {
 /**
  * @brief Default constructor - creates disconnected client
  *
- * Initializes internal buffers. No connection is established.
+ * Member buffers are zero-initialized via their `= {}` value-initialization
+ * in the header (LINT-22). m_send_buffer is overwritten on every send path
+ * before being transmitted, so the zero state is never observable on the wire;
+ * the initialization is defensive — it guarantees no uninitialized bytes
+ * leak if a future code path reads the buffer before writing it.
  */
-TcpClient::TcpClient()
-    : m_socket()
-    , m_recv_buffer()
-{
-    // Send buffer is uninitialized - will be filled during send operations
-}
+TcpClient::TcpClient() = default;
 
 /**
  * @brief Destructor - ensures clean disconnection
@@ -73,7 +72,7 @@ bool TcpClient::initialize() {
  */
 TcpClient::TcpClient(TcpClient&& other) noexcept
     : m_socket(std::move(other.m_socket))
-    , m_recv_buffer()  // PacketBuffer doesn't have move semantics, just reset
+    
 {
     // Copy buffer state manually if needed (for simplicity, just reset)
     other.m_recv_buffer.reset();
@@ -272,7 +271,7 @@ ClientResult TcpClient::send_passphrase(const char* passphrase) {
     std::memset(msg.passphrase, 0, sizeof(msg.passphrase));
     if (passphrase != nullptr) {
         size_t len = std::strlen(passphrase);
-        if (len > 127) len = 127;
+        len = std::min<size_t>(len, 127);
         std::memcpy(msg.passphrase, passphrase, len);
     }
     return send_passphrase(msg);
@@ -359,7 +358,7 @@ ClientResult TcpClient::send_create_access_point(const protocol::CreateAccessPoi
     std::memcpy(m_send_buffer + offset, &request, sizeof(request));
     offset += sizeof(request);
 
-    if (advertise_data && advertise_size > 0) {
+    if ((advertise_data != nullptr) && advertise_size > 0) {
         std::memcpy(m_send_buffer + offset, advertise_data, advertise_size);
         offset += advertise_size;
     }
@@ -389,9 +388,9 @@ ClientResult TcpClient::send_create_access_point(const protocol::CreateAccessPoi
         constexpr size_t RowBytes = 32;
         for (size_t row_start = 0; row_start < dump_len; row_start += RowBytes) {
             const size_t row_len = std::min<size_t>(RowBytes, dump_len - row_start);
-            char hex[3 * RowBytes + 1] = {};
+            char hex[(3 * RowBytes) + 1] = {};
             for (size_t i = 0; i < row_len; i++) {
-                std::snprintf(hex + i * 3, 4, "%02X ", m_send_buffer[row_start + i]);
+                std::snprintf(hex + (i * 3), 4, "%02X ", m_send_buffer[row_start + i]);
             }
             LOG_INFO("send_create_access_point wire [%03zu..%03zu]: %s",
                      row_start, row_start + row_len - 1, hex);
@@ -475,7 +474,7 @@ ClientResult TcpClient::send_create_access_point_private(
     offset += sizeof(request);
 
     // Copy advertise data if present
-    if (advertise_data && advertise_size > 0) {
+    if ((advertise_data != nullptr) && advertise_size > 0) {
         std::memcpy(m_send_buffer + offset, advertise_data, advertise_size);
         offset += advertise_size;
     }
@@ -591,9 +590,7 @@ ClientResult TcpClient::send_set_advertise_data(const uint8_t* data, size_t size
     std::scoped_lock send_lock(m_send_mutex);
 
     // Limit to max advertise data size (384 bytes as per protocol)
-    if (size > 384) {
-        size = 384;
-    }
+    size = std::min<size_t>(size, 384);
 
     // Build header manually for variable-size payload
     protocol::LdnHeader header{};
@@ -605,7 +602,7 @@ ClientResult TcpClient::send_set_advertise_data(const uint8_t* data, size_t size
     // Encode header
     std::memcpy(m_send_buffer, &header, sizeof(header));
     // Append data
-    if (data && size > 0) {
+    if ((data != nullptr) && size > 0) {
         std::memcpy(m_send_buffer + sizeof(header), data, size);
     }
 
@@ -683,7 +680,7 @@ ClientResult TcpClient::receive_packet(protocol::PacketId& type,
     }
 
     // Decode header to get type and payload size
-    protocol::LdnHeader header;
+    protocol::LdnHeader header{};
     protocol::DecodeResult decode_result = protocol::decode_header(
         m_recv_buffer.data(), m_recv_buffer.size(), header);
 
@@ -692,7 +689,7 @@ ClientResult TcpClient::receive_packet(protocol::PacketId& type,
     }
 
     // Check if payload fits in user buffer
-    size_t packet_payload_size = static_cast<size_t>(header.data_size);
+    auto packet_payload_size = static_cast<size_t>(header.data_size);
     payload_size = packet_payload_size;
 
     if (packet_payload_size > payload_buffer_size) {
@@ -752,11 +749,13 @@ ClientResult TcpClient::set_nodelay(bool enable) {
  */
 ClientResult TcpClient::socket_to_client_result(SocketResult socket_result) {
     switch (socket_result) {
+        // WouldBlock is mapped to Success because in non-blocking mode a
+        // recv/send returning EAGAIN/EWOULDBLOCK means "no data yet, try
+        // later" — the caller's polling loop treats this the same as a
+        // successful zero-byte read and retries on the next iteration.
         case SocketResult::Success:
-            return ClientResult::Success;
-
         case SocketResult::WouldBlock:
-            return ClientResult::Success;  // Not an error in async context
+            return ClientResult::Success;
 
         case SocketResult::Timeout:
             return ClientResult::Timeout;

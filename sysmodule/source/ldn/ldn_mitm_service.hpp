@@ -82,7 +82,7 @@ public:
      * @param out Output pointer for the created monitor
      * @return Result code
      */
-    Result CreateClientProcessMonitor(
+    static Result CreateClientProcessMonitor(
         sf::Out<sf::SharedPointer<IClientProcessMonitorInterface>> out);
 };
 

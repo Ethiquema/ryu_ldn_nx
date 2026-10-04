@@ -13,6 +13,7 @@
 
 #include <stratosphere.hpp>
 #include <atomic>
+#include <memory>
 #include "ldn_types.hpp"
 #include "ldn_state_machine.hpp"
 #include "ldn_node_mapper.hpp"
@@ -20,8 +21,17 @@
 #include "ldn_network_timeout.hpp"
 #include "interfaces/icommunication.hpp"
 #include "../network/client.hpp"
-#include "../p2p/p2p_proxy_client.hpp"
-#include "../p2p/p2p_proxy_server.hpp"
+
+// Forward declarations — P2P types are only held as raw pointers in this
+// header (m_p2p_client / m_p2p_server), so their full definitions are not
+// required here. The complete headers (p2p_proxy_client.hpp /
+// p2p_proxy_server.hpp) are included explicitly in ldn_icommunication.cpp,
+// where the types are instantiated (new P2pProxyClient / new P2pProxyServer)
+// and their public methods are invoked.
+namespace ams::mitm::p2p {
+    class P2pProxyClient;
+    class P2pProxyServer;
+}
 
 namespace ams::mitm::ldn {
 
@@ -89,7 +99,7 @@ public:
      * @return Result code
      */
     /// @gdb{tag="LDN:OPS", msg="GetIpv4Address"}
-    Result GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask);
+    Result GetIpv4Address(ams::sf::Out<u32> address, ams::sf::Out<u32> mask) const;
 
     /**
      * @brief Get last disconnect reason
@@ -331,7 +341,7 @@ public:
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="SetWirelessControllerRestriction"}
-    Result SetWirelessControllerRestriction();
+    static Result SetWirelessControllerRestriction();
 
     /**
      * @brief Reject a node from the network
@@ -347,14 +357,14 @@ public:
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="AddAcceptFilterEntry"}
-    Result AddAcceptFilterEntry();
+    static Result AddAcceptFilterEntry();
 
     /**
      * @brief Clear accept filter
      * @return Result code (stub)
      */
     /// @gdb{tag="LDN:OPS", msg="ClearAcceptFilter"}
-    Result ClearAcceptFilter();
+    static Result ClearAcceptFilter();
 
 private:
     /**
@@ -482,6 +492,32 @@ private:
     // Response handling with events (like Ryujinx ManualResetEvent/AutoResetEvent)
     // Using AutoClear for response/scan/reject so TimedWaitAny consumes the signal
     // automatically — mirrors C# WaitHandle.WaitAny semantics exactly.
+    //
+    // Each os::Event serves a distinct, non-overlapping purpose:
+    //   m_response_event  — Connect/CreateNetwork/ConnectPrivate handshake
+    //                       reply (Connected / RejectReply / ProxyConnectReply).
+    //                       Single-use per IPC call; re-armed on each request.
+    //   m_scan_event      — Scan / ScanPrivate batch end (ScanReplyEnd).
+    //                       Routed through TimedWaitAny separately from the
+    //                       single-packet response event because a scan
+    //                       produces N ScanReply packets followed by one
+    //                       ScanReplyEnd, so the wake-up condition differs.
+    //   m_error_event     — Asynchronous NetworkError from the server (e.g.
+    //                       PortUnreachable disabling P2P). Independent from
+    //                       the response event so an unsolicited error cannot
+    //                       be mistaken for a reply to a synchronous call.
+    //   m_reject_event    — RejectReply (host kicked us). Distinct from
+    //                       m_response_event because Reject can arrive
+    //                       out-of-band while a different IPC call is in
+    //                       progress, and WaitForResponse must not consume it.
+    //   m_handshake_event — RyuLdnClient reached Ready (TCP + Initialize
+    //                       handshake complete). Decouples the IPC connect
+    //                       path from the network client's state callback.
+    //
+    // These events cannot be merged: each one is signalled from a different
+    // receive-thread code path and waited on by a different IPC handler.
+    // Merging them would force every waiter to re-dispatch on packet id,
+    // reintroducing the spurious-wake-up bug fixed by the per-event split.
     os::Event m_response_event;             ///< Signaled when expected response received
     os::Event m_scan_event;                 ///< Signaled when scan completes (ScanReplyEnd)
     os::Event m_error_event;                 ///< Signaled on network error
@@ -514,8 +550,11 @@ private:
     bool m_use_p2p_proxy;                                   ///< True if P2P proxy enabled
     ryu_ldn::protocol::ProxyConfig m_proxy_config;          ///< Current proxy configuration
     ryu_ldn::protocol::ExternalProxyConfig m_external_proxy_config; ///< External proxy config
-    p2p::P2pProxyClient* m_p2p_client;                      ///< Connected P2P proxy client (joiner side)
-    p2p::P2pProxyServer* m_p2p_server;                      ///< Hosted P2P proxy server (host side)
+    // Owning pointers (cppcoreguidelines-owning-memory): released
+    // automatically on service destruction — no manual delete path
+    // can be forgotten.
+    std::unique_ptr<p2p::P2pProxyClient> m_p2p_client;      ///< Connected P2P proxy client (joiner side)
+    std::unique_ptr<p2p::P2pProxyServer> m_p2p_server;     ///< Hosted P2P proxy server (host side)
 
     // Async ExternalProxy connect thread — mirrors Ryujinx's architecture
     // where HandleExternalProxy runs on the receive thread (NetCoreServer
@@ -537,6 +576,7 @@ private:
     // os::Event (via TimedWaitAny) which the receive thread signals.
     os::ThreadType m_recv_thread;                           ///< Receive thread (replaces old bg thread)
     std::atomic<bool> m_recv_thread_running;                 ///< Receive thread running flag
+    bool m_recv_thread_stopped;                              ///< True if Finalize() already stopped+destroyed the receive thread
 
     // Mutex protecting shared state written by the receive thread and read
     // by IPC handlers: m_network_info, m_network_connected, m_scan_results,

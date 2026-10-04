@@ -32,13 +32,26 @@ ProxySocket* ProxySocketManager::CreateProxySocket(s32 fd, ryu_ldn::bsd::SocketT
     std::scoped_lock lock(m_mutex);
 
     // Check if fd already has a proxy socket
-    if (m_sockets.find(fd) != m_sockets.end()) {
+    if (ProxySocketEntry* existing = FindSocketEntry(fd)) {
         // Already exists - return existing
-        return m_sockets[fd].get();
+        return existing->socket.get();
     }
 
     // Check limit
-    if (m_sockets.size() >= MAX_PROXY_SOCKETS) {
+    if (m_socket_count >= MAX_PROXY_SOCKETS) {
+        return nullptr;
+    }
+
+    // Find first free slot (fd == INVALID_FD)
+    ProxySocketEntry* slot = nullptr;
+    for (auto& entry : m_sockets) {
+        if (entry.fd == INVALID_FD) {
+            slot = &entry;
+            break;
+        }
+    }
+    if (slot == nullptr) {
+        // Shouldn't happen if m_socket_count is consistent, but guard anyway
         return nullptr;
     }
 
@@ -47,37 +60,56 @@ ProxySocket* ProxySocketManager::CreateProxySocket(s32 fd, ryu_ldn::bsd::SocketT
     ProxySocket* result = socket.get();
 
     // Add to registry
-    m_sockets[fd] = std::move(socket);
+    slot->fd = fd;
+    slot->socket = std::move(socket);
+    m_socket_count++;
 
     return result;
 }
 
 ProxySocket* ProxySocketManager::GetProxySocket(s32 fd) {
     std::scoped_lock lock(m_mutex);
-
-    auto it = m_sockets.find(fd);
-    if (it != m_sockets.end()) {
-        return it->second.get();
+    if (ProxySocketEntry* entry = FindSocketEntry(fd)) {
+        return entry->socket.get();
     }
+    return nullptr;
+}
 
+ProxySocketManager::ProxySocketEntry* ProxySocketManager::FindSocketEntry(s32 fd) {
+    // Caller must hold m_mutex
+    for (auto& entry : m_sockets) {
+        if (entry.fd != INVALID_FD && entry.fd == fd) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+const ProxySocketManager::ProxySocketEntry* ProxySocketManager::FindSocketEntry(s32 fd) const {
+    // Caller must hold m_mutex
+    for (const auto& entry : m_sockets) {
+        if (entry.fd != INVALID_FD && entry.fd == fd) {
+            return &entry;
+        }
+    }
     return nullptr;
 }
 
 bool ProxySocketManager::IsProxySocket(s32 fd) const {
     std::scoped_lock lock(m_mutex);
-    return m_sockets.find(fd) != m_sockets.end();
+    return FindSocketEntry(fd) != nullptr;
 }
 
 bool ProxySocketManager::CloseProxySocket(s32 fd) {
     std::scoped_lock lock(m_mutex);
 
-    auto it = m_sockets.find(fd);
-    if (it == m_sockets.end()) {
+    ProxySocketEntry* entry = FindSocketEntry(fd);
+    if (entry == nullptr) {
         return false;
     }
 
     // Get socket info before closing
-    ProxySocket* socket = it->second.get();
+    ProxySocket* socket = entry->socket.get();
     if (socket != nullptr) {
         // Release the port
         const auto& local_addr = socket->GetLocalAddr();
@@ -94,7 +126,11 @@ bool ProxySocketManager::CloseProxySocket(s32 fd) {
     }
 
     // Remove from registry
-    m_sockets.erase(it);
+    entry->fd = INVALID_FD;
+    entry->socket.reset();
+    if (m_socket_count > 0) {
+        m_socket_count--;
+    }
 
     return true;
 }
@@ -103,18 +139,18 @@ void ProxySocketManager::CloseAllProxySockets() {
     std::scoped_lock lock(m_mutex);
 
     // Close all sockets
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket != nullptr) {
-            Result close_result = socket->Close();
+    for (auto& entry : m_sockets) {
+        if (entry.fd != INVALID_FD && entry.socket != nullptr) {
+            Result close_result = entry.socket->Close();
             if (R_FAILED(close_result)) {
                 // Log but continue cleanup - socket will be destroyed regardless
                 AMS_UNUSED(close_result);
             }
+            entry.fd = INVALID_FD;
+            entry.socket.reset();
         }
     }
-
-    // Clear registry
-    m_sockets.clear();
+    m_socket_count = 0;
 
     // Release all ports
     m_port_pool.ReleaseAll();
@@ -124,13 +160,15 @@ void ProxySocketManager::Reset() {
     std::scoped_lock lock(m_mutex);
 
     // Close all proxy sockets
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket != nullptr) {
-            Result close_result = socket->Close();
+    for (auto& entry : m_sockets) {
+        if (entry.fd != INVALID_FD && entry.socket != nullptr) {
+            Result close_result = entry.socket->Close();
             AMS_UNUSED(close_result);
+            entry.fd = INVALID_FD;
+            entry.socket.reset();
         }
     }
-    m_sockets.clear();
+    m_socket_count = 0;
 
     // Release all ports
     m_port_pool.ReleaseAll();
@@ -269,10 +307,11 @@ bool ProxySocketManager::RouteConnectResponse(const ryu_ldn::protocol::ProxyConn
     uint32_t dest_ip = response.info.source_ipv4;  // Response comes back to our source
     uint16_t dest_port = response.info.source_port;
 
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket == nullptr) {
+    for (auto& entry : m_sockets) {
+        if (entry.fd == INVALID_FD || entry.socket == nullptr) {
             continue;
         }
+        ProxySocket* socket = entry.socket.get();
 
         // Check if socket is connecting
         if (socket->GetState() != ProxySocketState::Connecting) {
@@ -300,10 +339,11 @@ bool ProxySocketManager::RouteConnectRequest(const ryu_ldn::protocol::ProxyConne
     uint32_t dest_ip = request.info.dest_ipv4;
     uint16_t dest_port = request.info.dest_port;
 
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket == nullptr) {
+    for (auto& entry : m_sockets) {
+        if (entry.fd == INVALID_FD || entry.socket == nullptr) {
             continue;
         }
+        ProxySocket* socket = entry.socket.get();
 
         // Check if socket is listening
         if (socket->GetState() != ProxySocketState::Listening) {
@@ -421,10 +461,11 @@ ProxySocket* ProxySocketManager::FindSocketByDestination(uint32_t dest_ip, uint1
     bool is_broadcast = ((dest_ip & 0x000000FF) == 0x000000FF) ||   // x.x.x.255 in Ryujinx format
                         ((dest_ip & 0x0000FFFF) == 0x0000FFFF);     // x.x.255.255 in Ryujinx format
 
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket == nullptr) {
+    for (auto& entry : m_sockets) {
+        if (entry.fd == INVALID_FD || entry.socket == nullptr) {
             continue;
         }
+        ProxySocket* socket = entry.socket.get();
 
         // Check protocol matches
         if (socket->GetProtocol() != protocol) {
@@ -448,11 +489,11 @@ ProxySocket* ProxySocketManager::FindSocketByDestination(uint32_t dest_ip, uint1
         uint32_t local_ip = local_addr.sin_addr;  // Direct access - Ryujinx format
         if (local_ip == 0) {
             // Bound to INADDR_ANY - accepts all
-            return socket.get();
+            return socket;
         }
         if (local_ip == dest_ip) {
             // Exact match
-            return socket.get();
+            return socket;
         }
         if (is_broadcast) {
             // Broadcast packet - deliver to any socket bound on this port
@@ -460,7 +501,7 @@ ProxySocket* ProxySocketManager::FindSocketByDestination(uint32_t dest_ip, uint1
             // In Ryujinx format: 0x0A72xxxx where 0x0A72 is the subnet (10.114)
             // Subnet is in HIGH 16 bits, so mask is 0xFFFF0000
             if ((local_ip & 0xFFFF0000) == (dest_ip & 0xFFFF0000)) {
-                return socket.get();
+                return socket;
             }
         }
     }
@@ -478,10 +519,11 @@ size_t ProxySocketManager::FindAllSocketsByDestination(uint32_t dest_ip, uint16_
 
     size_t count = 0;
 
-    for (auto& [fd, socket] : m_sockets) {
-        if (socket == nullptr) {
+    for (auto& entry : m_sockets) {
+        if (entry.fd == INVALID_FD || entry.socket == nullptr) {
             continue;
         }
+        ProxySocket* socket = entry.socket.get();
         if (count >= max_sockets) {
             break;
         }
@@ -499,16 +541,16 @@ size_t ProxySocketManager::FindAllSocketsByDestination(uint32_t dest_ip, uint16_
         uint32_t local_ip = local_addr.sin_addr;
 
         if (local_ip == 0) {
-            out_sockets[count++] = socket.get();
+            out_sockets[count++] = socket;
             continue;
         }
         if (local_ip == dest_ip) {
-            out_sockets[count++] = socket.get();
+            out_sockets[count++] = socket;
             continue;
         }
         if (is_broadcast) {
             if ((local_ip & 0xFFFF0000) == (dest_ip & 0xFFFF0000)) {
-                out_sockets[count++] = socket.get();
+                out_sockets[count++] = socket;
                 continue;
             }
         }
@@ -537,7 +579,7 @@ uint32_t ProxySocketManager::GetLocalIp() const {
 
 size_t ProxySocketManager::GetActiveSocketCount() const {
     std::scoped_lock lock(m_mutex);
-    return m_sockets.size();
+    return m_socket_count;
 }
 
 size_t ProxySocketManager::GetAvailablePortCount(ryu_ldn::bsd::ProtocolType protocol) const {

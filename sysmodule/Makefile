@@ -35,6 +35,70 @@ CFLAGS		+= $(VERSION_DEFINES)
 CXXFLAGS	+= $(VERSION_DEFINES)
 
 #---------------------------------------------------------------------------------
+# Compilation hardening (H4) + warning policy (DEV-H8)
+#---------------------------------------------------------------------------------
+# -fstack-protector-strong : stack canaries on functions with non-trivial
+#   buffers. RISK (N4, not verified in this gate): under devkitPro/newlib
+#   (aarch64-none-elf toolchain + libnx runtime), the canary symbol
+#   __stack_chk_guard / __stack_chk_fail must be provided by the runtime.
+#   The pre-built libstratosphere.a in the GHCR image has NOT been build-
+#   verified with this flag in this session — the build was not re-run
+#   here. If `docker compose run --rm build` produces a missing-symbol
+#   linker error on __stack_chk_*, drop this flag (the runtime still
+#   gets RELRO + NX + PIE from the inherited stratosphere.mk SETTINGS).
+#   Action: re-run `docker compose run --rm build` after this change to
+#   confirm linkage before merging.
+# -D_FORTIFY_SOURCE=2      : REMOVED — newlib (devkitPro) has partial
+#   _FORTIFY_SOURCE support that emits calls to __*_chk runtime functions
+#   (__fprintf_chk, __sprintf_chk, __memcpy_chk, etc.). These fortified
+#   wrappers call abort() when __builtin_object_size returns 0 or (size_t)-1
+#   for heap/stack buffers whose size the compiler cannot statically determine
+#   — a common case in sysmodule code that uses void* allocators and fixed
+#   char arrays. The runtime abort manifests as std::abort (0xFFE) at boot
+#   during the first fprintf/fopen call in InitializeSystemModule().
+#   Upstream Atmosphere-libs/stratosphere.mk does NOT emit _FORTIFY_SOURCE;
+#   the flag was a project-local addition, not inherited. Same class of
+#   problem as -fstack-protector-strong (missing/untested runtime support).
+# -Wall -Wextra -Werror     : strict warnings promoted to errors
+#   NOTE: -Wextra and -Werror are already inherited from stratosphere.mk
+#   (SETTINGS), but we re-emit them at project level for explicit intent and
+#   to keep the policy visible without reading the submodule.
+# -Wl,-z,relro -Wl,-z,now    : full RELRO; also inherited from stratosphere.mk
+#   LDFLAGS, re-emitted here for project-level visibility (duplicate linker
+#   flags are deduplicated by the linker — harmless). The two flags are
+#   emitted as separate -Wl, tokens so each RELRO/now option reaches the
+#   linker as its own argument (combining them in a single -Wl, requires the
+#   linker to parse comma-separated sub-options, which works with GNU ld but
+#   is fragile across toolchains — devkitPro uses arm-none-elf-g++ which
+#   inherits binutils behavior and historically rejects the combined form
+#   in some versions).
+# -Wno-missing-field-initializers : benign; aggregates intentionally use
+#   partial initialization (e.g. NetworkInfo nodes). Already set in
+#   stratosphere.mk SETTINGS; re-emitted here so the project keeps building
+#   even if a future Atmosphere-libs bump drops it from the submodule.
+# -Wno-unused-result       : see UNUSED_RESULT_WARNING below. Suppressed
+#   globally (rather than per-call via (void) casts) because the ignored
+#   returns are spread across libnx/stratosphere wrappers and the project's
+#   own Result types: a top-level check on a Result-ifying wrapper already
+#   covers correctness, while the underlying libc-style returns
+#   (e.g. ::write, ::read on BSD sockets) have their failure paths handled
+#   by the surrounding SocketResult state machine. A targeted suppression
+#   would require touching every call site and would not be less risky than
+#   the global flag — the global flag is the documented trade-off.
+#---------------------------------------------------------------------------------
+HARDENING_FLAGS	:=
+WARN_FLAGS		:= -Wall -Wextra -Werror \
+				   -Wno-missing-field-initializers \
+				   -Wno-unused-result
+# Two separate -Wl, tokens so each linker option stands on its own
+# (see header comment for the rationale — combined form is fragile).
+LINK_HARDENING	:= -Wl,-z,relro -Wl,-z,now
+
+CFLAGS		+= $(HARDENING_FLAGS) $(WARN_FLAGS)
+CXXFLAGS	+= $(HARDENING_FLAGS) $(WARN_FLAGS)
+LDFLAGS		+= $(LINK_HARDENING)
+
+#---------------------------------------------------------------------------------
 # Additional libraries for P2P/UPnP support
 # switch-miniupnpc is provided by devkitPro
 #---------------------------------------------------------------------------------

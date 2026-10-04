@@ -225,7 +225,7 @@ void LdnSessionHandler::handle_connected(const protocol::LdnHeader& header,
     set_state(LdnSessionState::Station);
 
     // Notify application
-    if (m_network_updated_callback) {
+    if (m_network_updated_callback != nullptr) {
         m_network_updated_callback(m_network_info);
     }
 }
@@ -269,7 +269,7 @@ void LdnSessionHandler::handle_sync_network(const protocol::LdnHeader& header,
     }
 
     // Notify application
-    if (m_network_updated_callback) {
+    if (m_network_updated_callback != nullptr) {
         m_network_updated_callback(m_network_info);
     }
 }
@@ -290,7 +290,7 @@ void LdnSessionHandler::handle_scan_reply(const protocol::LdnHeader& header,
     (void)header;
 
     // Forward to application callback
-    if (m_scan_result_callback) {
+    if (m_scan_result_callback != nullptr) {
         m_scan_result_callback(info);
     }
 }
@@ -308,7 +308,7 @@ void LdnSessionHandler::handle_scan_reply_end(const protocol::LdnHeader& header)
     (void)header;
 
     // Notify application that scan is complete
-    if (m_scan_completed_callback) {
+    if (m_scan_completed_callback != nullptr) {
         m_scan_completed_callback();
     }
 }
@@ -353,7 +353,7 @@ void LdnSessionHandler::handle_disconnect(const protocol::LdnHeader& header,
     (void)header;
 
     // Notify application
-    if (m_disconnected_callback) {
+    if (m_disconnected_callback != nullptr) {
         m_disconnected_callback(msg.disconnect_ip);
     }
 
@@ -381,11 +381,11 @@ void LdnSessionHandler::handle_network_error(const protocol::LdnHeader& header,
     (void)header;
 
     // Convert to typed error code
-    protocol::NetworkErrorCode code =
+    auto code =
         static_cast<protocol::NetworkErrorCode>(msg.error_code);
 
     // Notify application
-    if (m_error_callback) {
+    if (m_error_callback != nullptr) {
         m_error_callback(code);
     }
 }
@@ -407,7 +407,7 @@ void LdnSessionHandler::handle_reject(const protocol::LdnHeader& header,
     (void)header;
 
     // Notify application
-    if (m_rejected_callback) {
+    if (m_rejected_callback != nullptr) {
         m_rejected_callback(req.node_id, req.disconnect_reason);
     }
 
@@ -450,7 +450,7 @@ void LdnSessionHandler::handle_set_accept_policy(const protocol::LdnHeader& head
     m_accept_policy = static_cast<protocol::AcceptPolicy>(req.accept_policy);
 
     // Notify application
-    if (m_accept_policy_changed_callback) {
+    if (m_accept_policy_changed_callback != nullptr) {
         m_accept_policy_changed_callback(m_accept_policy);
     }
 }
@@ -576,7 +576,7 @@ void LdnSessionHandler::set_state(LdnSessionState new_state) {
     m_state = new_state;
 
     // Notify callback
-    if (m_state_callback) {
+    if (m_state_callback != nullptr) {
         m_state_callback(old_state, new_state);
     }
 }

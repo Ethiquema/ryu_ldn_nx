@@ -393,7 +393,7 @@ public:
      * @param header Packet header
      */
     /// @gdb{tag="LDN:SESSION_HANDLER", msg="handle_reject_reply"}
-    void handle_reject_reply(const protocol::LdnHeader& header);
+    static void handle_reject_reply(const protocol::LdnHeader& header);
 
     /**
      * @brief Handle SetAcceptPolicy response

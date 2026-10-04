@@ -93,7 +93,7 @@ void SharedState::LoadLdnWhitelist(const std::vector<u64>& game_ids) {
 
 bool SharedState::IsLdnGame(u64 program_id) const {
     std::scoped_lock lk(m_mutex);
-    return m_ldn_games.find(program_id) != m_ldn_games.end();
+    return m_ldn_games.contains(program_id);
 }
 
 size_t SharedState::GetWhitelistSize() const {

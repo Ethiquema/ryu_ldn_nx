@@ -12,8 +12,6 @@ dprintf ryu_ldn::ipc::ConfigService::GetServerAddress, "[CONFIG:IPC] GetServerAd
 dprintf ryu_ldn::ipc::ConfigService::SetServerAddress, "[CONFIG:IPC] SetServerAddress\n"
 dprintf ryu_ldn::ipc::ConfigService::GetLdnEnabled, "[CONFIG:IPC] GetLdnEnabled\n"
 dprintf ryu_ldn::ipc::ConfigService::SetLdnEnabled, "[CONFIG:IPC] SetLdnEnabled\n"
-dprintf ryu_ldn::ipc::ConfigService::GetUseTls, "[CONFIG:IPC] GetUseTls\n"
-dprintf ryu_ldn::ipc::ConfigService::SetUseTls, "[CONFIG:IPC] SetUseTls\n"
 dprintf ryu_ldn::ipc::ConfigService::GetDebugEnabled, "[CONFIG:IPC] GetDebugEnabled\n"
 dprintf ryu_ldn::ipc::ConfigService::SetDebugEnabled, "[CONFIG:IPC] SetDebugEnabled\n"
 dprintf ryu_ldn::ipc::ConfigService::GetDebugLevel, "[CONFIG:IPC] GetDebugLevel\n"
@@ -36,4 +34,4 @@ dprintf ryu_ldn::ipc::ConfigService::GetActiveProcessId, "[CONFIG:IPC] GetActive
 dprintf ryu_ldn::ipc::ConfigService::GetDisableP2p, "[CONFIG:IPC] GetDisableP2p\n"
 dprintf ryu_ldn::ipc::ConfigService::SetDisableP2p, "[CONFIG:IPC] SetDisableP2p\n"
 
-echo [CONFIG] ipc: 31 dprintf points\n
+echo [CONFIG] ipc: 29 dprintf points\n

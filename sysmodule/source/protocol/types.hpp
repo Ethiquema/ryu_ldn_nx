@@ -212,6 +212,16 @@ struct __attribute__((packed)) LdnHeader {
     uint8_t  type;       ///< Offset 4: Packet type from PacketId enum
     uint8_t  version;    ///< Offset 5: Protocol version (must be PROTOCOL_VERSION = 1)
     uint16_t reserved;   ///< Offset 6: Padding to align data_size on 4-byte boundary
+    /// @note Signed `int32_t` (not `uint32_t`) on purpose: the C# server
+    ///   declares `LdnHeader.DataSize` as `int` (System.Int32, signed) under
+    ///   `[StructLayout(LayoutKind.Sequential, Size = 0xA)]`. Switching the C++
+    ///   side to `uint32_t` would still be wire-compatible (same 4 bytes) but
+    ///   would diverge from the C# type and break the `MemoryMarshal.Read`
+    ///   semantics the server relies on. The decoder validates
+    ///   `data_size >= 0 && data_size <= MAX_PACKET_SIZE` (see ryu_protocol.hpp
+    ///   decode_header), so negative values are rejected before use — the
+    ///   signedness is purely a cross-language type-parity concern, not a
+    ///   domain signal that negative sizes are meaningful.
     int32_t  data_size;  ///< Offset 8: Size of payload following header (may be 0)
 };
 static_assert(sizeof(LdnHeader) == 0x0C, "LdnHeader must be 12 bytes to match C# server layout");
@@ -564,7 +574,9 @@ static_assert(sizeof(InitializeMessage) == 0x16, "InitializeMessage must be 22 b
  * 4. Server responds with Initialize (assigned ID/MAC)
  *
  * ## Security Note
- * Passphrase is sent in plaintext. Use TLS for transport security.
+ * Passphrase is sent in plaintext over raw TCP (the LDN protocol does not
+ * use TLS — transport security is the responsibility of the application
+ * layer if required).
  */
 struct __attribute__((packed)) PassphraseMessage {
     uint8_t passphrase[128];  ///< UTF-8 passphrase (null-padded, max 128 chars)

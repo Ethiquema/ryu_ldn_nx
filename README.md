@@ -66,7 +66,6 @@ Create `sdmc:/config/ryu_ldn_nx/config.ini` (or let the sysmodule auto-create it
 [server]
 host = ryuldnnx.ddns.net    ; IP address or hostname
 port = 30456
-use_tls = 0                      ; NOT IMPLEMENTED — no TLS code exists
 
 [network]
 connect_timeout = 5000
@@ -183,6 +182,73 @@ python3 scripts/gdb_codegen.py verify
 ```
 
 Log files on Switch: `config/ryu_ldn_nx/ryu_ldn_nx.log` (when `log_to_file=1`).
+
+### Advanced Debugging
+
+The repository ships a full GDB debugging toolkit under `scripts/debugger/`. The
+`debug.sh` entrypoint loads presets and component-specific tracepoints
+automatically.
+
+#### GDB presets
+
+Presets live in `scripts/debugger/presets/` and are loaded on session start.
+Pick the one that matches the issue under investigation:
+
+| Preset            | File                  | When to use |
+|-------------------|-----------------------|-------------|
+| Minimal           | `minimal.gdb`         | Lightweight attach, no automatic tracepoints |
+| Crash analysis    | `crash-analysis.gdb`  | Post-mortem on a DABRT/fault, backtrace focus |
+| Crash only        | `crash-only.gdb`      | Just catch crashes, no other instrumentation |
+| LDN focus         | `ldn-focus.gdb`       | LDN state machine + IPC issues |
+| Network focus     | `network-focus.gdb`   | TCP client / reconnect / connection-state issues |
+
+```bash
+# Launch debugger with a specific preset (example: LDN focus)
+GDB_PRESET=ldn-focus docker compose run --rm debugger <SWITCH_IP> [PID]
+```
+
+#### Component-specific tracepoints
+
+Per-component GDB scripts in `scripts/debugger/components/` target individual
+subsystems. They are generated from `@gdb{tag="...", msg="...", args="..."}`
+annotations co-located with the C++ source (see `AGENTS.md` → "GDB Tracepoint
+Annotations").
+
+| Component | Path                              | Traces |
+|-----------|-----------------------------------|--------|
+| LDN       | `scripts/debugger/components/ldn/`  | Lifecycle, IPC ops, async receive thread |
+| Network   | `scripts/debugger/components/network/` | TCP client, connection state, reconnect |
+| Config    | `scripts/debugger/components/config/`  | INI parser, ConfigManager, IPC service |
+| P2P       | `scripts/debugger/components/p2p/`     | P2P proxy client/server, UPnP |
+| BSD       | `scripts/debugger/components/bsd/`     | BSD MITM, ProxySocket, ProxySocketManager |
+| Debug     | `scripts/debugger/components/debug/`   | File logger, circular buffer |
+
+#### Regenerating tracepoint files
+
+The `.gdb` files under `scripts/debugger/` are generated from inline `@gdb{}`
+annotations in the C++ headers by `scripts/gdb_codegen.py`:
+
+```bash
+# Regenerate all .gdb files from current source annotations
+python3 scripts/gdb_codegen.py generate
+
+# Compare annotations against existing .gdb files (CI check)
+python3 scripts/gdb_codegen.py verify
+
+# Back-port .gdb entries back into source headers
+python3 scripts/gdb_codegen.py inject
+```
+
+See `scripts/gdb_codegen/README.md` for the annotation grammar and the
+tag → file mapping rules.
+
+#### Reading logs on the Switch
+
+- Log file: `config/ryu_ldn_nx/ryu_ldn_nx.log` (on SD card when `log_to_file=1`).
+- The logger uses a 2 s idle-timeout close thread and a circular buffer for the
+  Tesla overlay. Read deltas per test run rather than the full file.
+- Verbosity is controlled live by the Tesla overlay (`ryu:cfg` IPC) or via the
+  `[debug] level` key in `config.ini` (0 = off, 1 = info, 2 = verbose).
 
 ## Contributing
 

@@ -24,7 +24,7 @@ public:
     /// @gdb{tag="LDN:LIFECYCLE", msg="ClientProcessMonitor destroyed"}
     ~IClientProcessMonitor();
 
-    Result RegisterClient(const sf::ClientProcessId &client_process_id);
+    static Result RegisterClient(const sf::ClientProcessId &client_process_id);
 };
 
 static_assert(ams::mitm::ldn::IsIClientProcessMonitorInterface<IClientProcessMonitor>);

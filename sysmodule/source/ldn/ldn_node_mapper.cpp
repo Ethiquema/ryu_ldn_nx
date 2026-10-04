@@ -31,8 +31,8 @@ namespace ams::mitm::ldn {
  * - is_connected: false
  */
 LdnNodeMapper::LdnNodeMapper()
-    : m_mutex()
-    , m_nodes{}
+    : 
+     m_nodes{}
     , m_local_node_id(0xFF)  // 0xFF = not assigned
 {
     // Initialize empty node entries with their respective IDs
@@ -130,8 +130,8 @@ size_t LdnNodeMapper::GetConnectedCount() const {
     std::scoped_lock lk(m_mutex);
 
     size_t count = 0;
-    for (size_t i = 0; i < MaxNodes; i++) {
-        if (m_nodes[i].is_connected) {
+    for (auto m_node : m_nodes) {
+        if (m_node.is_connected) {
             count++;
         }
     }
@@ -149,9 +149,9 @@ size_t LdnNodeMapper::GetConnectedCount() const {
 void LdnNodeMapper::Clear() {
     std::scoped_lock lk(m_mutex);
 
-    for (size_t i = 0; i < MaxNodes; i++) {
-        m_nodes[i].ipv4_address = 0;
-        m_nodes[i].is_connected = false;
+    for (auto & m_node : m_nodes) {
+        m_node.ipv4_address = 0;
+        m_node.is_connected = false;
     }
     m_local_node_id = 0xFF;  // Reset local node assignment
 }
@@ -173,9 +173,9 @@ void LdnNodeMapper::UpdateFromNetworkInfo(const NetworkInfo& info) {
     std::scoped_lock lk(m_mutex);
 
     // Clear existing nodes first
-    for (size_t i = 0; i < MaxNodes; i++) {
-        m_nodes[i].ipv4_address = 0;
-        m_nodes[i].is_connected = false;
+    for (auto & m_node : m_nodes) {
+        m_node.ipv4_address = 0;
+        m_node.is_connected = false;
     }
 
     // Add nodes from network info
@@ -184,7 +184,7 @@ void LdnNodeMapper::UpdateFromNetworkInfo(const NetworkInfo& info) {
         const auto& node = info.ldn.nodes[i];
 
         // Only add nodes that are marked as connected
-        if (node.isConnected) {
+        if (node.isConnected != 0) {
             m_nodes[node.nodeId].ipv4_address = node.ipv4Address;
             m_nodes[node.nodeId].is_connected = true;
         }

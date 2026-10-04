@@ -12,8 +12,6 @@ dprintf ams::mitm::ldn::LdnConfigService::GetPassphrase, "[LDN:CONFIG] GetPassph
 dprintf ams::mitm::ldn::LdnConfigService::SetPassphrase, "[LDN:CONFIG] SetPassphrase\n"
 dprintf ams::mitm::ldn::LdnConfigService::GetLdnEnabled, "[LDN:CONFIG] GetLdnEnabled\n"
 dprintf ams::mitm::ldn::LdnConfigService::SetLdnEnabled, "[LDN:CONFIG] SetLdnEnabled\n"
-dprintf ams::mitm::ldn::LdnConfigService::GetUseTls, "[LDN:CONFIG] GetUseTls\n"
-dprintf ams::mitm::ldn::LdnConfigService::SetUseTls, "[LDN:CONFIG] SetUseTls\n"
 dprintf ams::mitm::ldn::LdnConfigService::GetConnectTimeout, "[LDN:CONFIG] GetConnectTimeout\n"
 dprintf ams::mitm::ldn::LdnConfigService::SetConnectTimeout, "[LDN:CONFIG] SetConnectTimeout\n"
 dprintf ams::mitm::ldn::LdnConfigService::GetPingInterval, "[LDN:CONFIG] GetPingInterval\n"
@@ -29,4 +27,4 @@ dprintf ams::mitm::ldn::LdnConfigService::SetLogToFile, "[LDN:CONFIG] SetLogToFi
 dprintf ams::mitm::ldn::LdnConfigService::SaveConfig, "[LDN:CONFIG] SaveConfig\n"
 dprintf ams::mitm::ldn::LdnConfigService::ReloadConfig, "[LDN:CONFIG] ReloadConfig\n"
 
-echo [LDN] config: 24 dprintf points\n
+echo [LDN] config: 22 dprintf points\n
